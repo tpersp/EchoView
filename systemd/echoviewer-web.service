@@ -1,0 +1,13 @@
+[Unit]
+Description=EchoViewer Web Controller Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/uvicorn web.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+User=pi
+WorkingDirectory=/path/to/project/root
+
+[Install]
+WantedBy=multi-user.target

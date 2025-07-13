@@ -1,0 +1,198 @@
+/* EchoViewer Main Stylesheet */
+:root {
+  --bg: #181a1b;
+  --panel: #23272e;
+  --text: #f3f3f3;
+  --accent: #2d8cf0;
+  --accent-hover: #1a73e8;
+  --border: #333a;
+  --radius: 14px;
+  --shadow: 0 4px 24px #0006;
+}
+html, body {
+  height: 100%;
+  width: 100vw;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  margin: 0; padding: 0;
+  min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  transition: background 0.3s, color 0.3s;
+}
+.topbar {
+  position: sticky;
+  top: 0; left: 0; right: 0;
+  width: 100vw;
+  background: var(--panel);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.7em 2em;
+  z-index: 100;
+  box-shadow: 0 2px 8px #0003;
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+  margin-bottom: 1.5em;
+  gap: 2em;
+}
+.topbar h1 {
+  font-size: 1.3em;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  padding-left: 0.2em;
+}
+.nav {
+  display: flex;
+  gap: 1.2em;
+  align-items: center;
+}
+.nav a {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 1em;
+  padding: 0.2em 0.7em;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+.nav a.active, .nav a:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.container {
+  width: 100%;
+  max-width: 480px;
+  margin: 3em auto 2em auto;
+  padding: 2.5em 1.5em 2em 1.5em;
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5em;
+  box-sizing: border-box;
+}
+h2 {
+  color: var(--text);
+  font-size: 1.2em;
+  font-weight: 600;
+  margin: 0 0 0.5em 0;
+  letter-spacing: 0.01em;
+}
+label, input, select, button {
+  font-size: 1em;
+  font-family: inherit;
+}
+input, select, button {
+  padding: 0.5em 1em;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  margin: 0.2em 0.2em 0.2em 0;
+  background: #23272e;
+  color: var(--text);
+  outline: none;
+  transition: border 0.2s, background 0.2s;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px #0002;
+  transition: background 0.2s;
+}
+button:hover {
+  background: var(--accent-hover);
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  align-items: center;
+  margin-bottom: 0.5em;
+}
+.screen-block {
+  background: #23272e;
+  border-radius: 10px;
+  border: 1px solid #333a;
+  margin-bottom: 2em;
+  padding: 1.2em 1em 1em 1em;
+  box-shadow: 0 2px 8px #0002;
+}
+.screen-title {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-bottom: 0.7em;
+  color: #fff;
+}
+.screen-res {
+  color: #aaa;
+  font-size: 0.95em;
+  font-weight: 400;
+  margin-left: 0.5em;
+}
+.screen-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7em;
+}
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+  margin-bottom: 0.2em;
+}
+.form-row label {
+  min-width: 160px;
+  color: #eee;
+  font-weight: 500;
+}
+.form-row input[type='number'], .form-row select {
+  background: #181a1b;
+  color: #fff;
+  border: 1px solid #333a;
+  border-radius: 6px;
+  padding: 0.3em 0.7em;
+  font-size: 1em;
+}
+.form-row input[type='checkbox'] {
+  margin-right: 0.5em;
+}
+.spotify-info {
+  background: #181a1b;
+  border-radius: 6px;
+  padding: 0.5em 1em;
+  color: #b3e5fc;
+  font-size: 1em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+}
+@media (max-width: 600px) {
+  .container {
+    max-width: 98vw;
+    margin: 1.5em auto 1em auto;
+    padding: 1.2em 0.7em 1em 0.7em;
+  }
+  .topbar {
+    padding: 0.7em 0.7em;
+    margin-bottom: 1em;
+    gap: 1em;
+  }
+  .topbar h1 {
+    font-size: 1.1em;
+    padding-left: 0;
+  }
+}

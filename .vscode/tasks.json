@@ -1,0 +1,19 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run FastAPI Web Server",
+            "type": "shell",
+            "command": "uvicorn web.main:app --reload",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run PySide6 Display App",
+            "type": "shell",
+            "command": "python display/main.py",
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}

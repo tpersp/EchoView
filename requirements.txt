@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pyside6
+python-multipart
+requests
+spotipy
+psutil
+Jinja2
+aiofiles
