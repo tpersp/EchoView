@@ -22,4 +22,3 @@ async def update_slideshow_config(request: Request):
     save_config(cfg)
     return JSONResponse(content={"message": "Slideshow config updated."})
 
-# This file is intentionally left empty. All extension logic is now in web/extensions/*.py.
