@@ -21,4 +21,3 @@ async def update_slideshow_config(request: Request):
     cfg["slideshow"] = data
     save_config(cfg)
     return JSONResponse(content={"message": "Slideshow config updated."})
-

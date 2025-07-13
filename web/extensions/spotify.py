@@ -42,4 +42,3 @@ async def update_spotify_config(request: Request):
     cfg["spotify"] = data
     save_config(cfg)
     return JSONResponse(content={"message": "Spotify config updated."})
-
