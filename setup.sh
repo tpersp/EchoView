@@ -161,6 +161,8 @@ else
   pip3 install --break-system-packages flask psutil requests spotipy PySide6
 fi
 
+# PySide6 is installed via apt, not pip. Do not include PySide6 in dependencies.txt.
+
 # -------------------------------------------------------
 # 3) Disable screen blanking and hide mouse cursor
 # -------------------------------------------------------

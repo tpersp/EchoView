@@ -128,7 +128,7 @@ EchoView/
 Two services are created:
 
 - **echoviewer.service**
-  - Runs `piviewer.py` at boot, so the slideshows start automatically on every connected screen.
+  - Runs `echoview.py` at boot, so the slideshows start automatically on every connected screen.
 - **controller.service**
   - Runs `app.py`, the Flask server on port 8080.
 
@@ -148,7 +148,7 @@ sudo journalctl -u controller.service
 - **Wrong screen**? Confirm you have multiple monitors recognized by X. PiViewer uses PySide6’s screen geometry, so make sure your environment is not on Wayland.
 - **Spotify issues**? Check `.spotify_cache` for the saved token. Re-authorize if needed.
 - **Overlay not transparent?** You need a compositor (like **picom**) running for real transparency.
-- **Check logs**: Look at `piviewer.log` (in your `VIEWER_HOME`) or `journalctl -u piviewer.service`.
+- **Check logs**: Look at `echoview.log` (in your `VIEWER_HOME`) or `journalctl -u echoview.service`.
 
 ## Contributing
 
