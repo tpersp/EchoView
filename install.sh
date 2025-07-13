@@ -4,6 +4,17 @@
 
 set -e
 
+# 0. Confirm X11 is enabled (required for display app)
+echo "\n---"
+echo "EchoView Display requires X11 (graphical desktop) to run."
+read -p "Is X11 (Desktop GUI) enabled on this system? (y/n): " x11_choice
+if [[ "$x11_choice" =~ ^[Yy]$ ]]; then
+    echo "Proceeding with installation..."
+else
+    echo "X11 is required for the display app. Exiting installation."
+    exit 1
+fi
+
 # 1. Check for Python 3
 if ! command -v python3 &> /dev/null; then
     echo "Python 3 is not installed. Please install Python 3 and rerun this script."
