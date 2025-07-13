@@ -1,12 +1,13 @@
 [Unit]
-Description=EchoViewer Display Service
+Description=EchoView Display Service
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /path/to/display/main.py
+ExecStart=/usr/bin/python3 /home/pi/EchoView/display/main.py
 Restart=on-failure
 User=pi
+WorkingDirectory=/home/pi/EchoView
 
 [Install]
 WantedBy=multi-user.target

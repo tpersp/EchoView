@@ -1,5 +1,5 @@
 #!/bin/bash
-# EchoViewer Install Script
+# EchoView Install Script
 # This script installs dependencies and guides the user through setup on a Linux system (e.g., Raspberry Pi)
 
 set -e
@@ -69,14 +69,14 @@ cat << EOF
 Systemd Integration:
 1. Edit the ExecStart and WorkingDirectory paths in systemd/*.service files to match your installation.
 2. Copy the service files to /etc/systemd/system/:
-   sudo cp systemd/echoviewer-*.service /etc/systemd/system/
+   sudo cp systemd/echoview-*.service /etc/systemd/system/
 3. Reload systemd:
    sudo systemctl daemon-reload
 4. Enable and start the services:
-   sudo systemctl enable echoviewer-display.service
-   sudo systemctl start echoviewer-display.service
-   sudo systemctl enable echoviewer-web.service
-   sudo systemctl start echoviewer-web.service
+   sudo systemctl enable echoview-display.service
+   sudo systemctl start echoview-display.service
+   sudo systemctl enable echoview-web.service
+   sudo systemctl start echoview-web.service
 
 ---
 
@@ -88,5 +88,20 @@ To run the display app manually:
 
 For more info, see README.md
 EOF
+
+# 8. Optional: Install and start systemd services
+read -p "Do you want to install and start EchoView system services? (y/n): " sysd_choice
+if [[ "$sysd_choice" =~ ^[Yy]$ ]]; then
+    sudo cp systemd/echoviewer-display.service /etc/systemd/system/echoview-display.service
+    sudo cp systemd/echoviewer-web.service /etc/systemd/system/echoview-web.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable echoview-display.service
+    sudo systemctl start echoview-display.service
+    sudo systemctl enable echoview-web.service
+    sudo systemctl start echoview-web.service
+    echo "EchoView system services installed and started."
+else
+    echo "Skipping systemd service installation."
+fi
 
 echo "\nInstallation complete!"

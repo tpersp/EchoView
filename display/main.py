@@ -12,11 +12,11 @@ import shutil
 class DisplayWindow(QMainWindow):
     def __init__(self, screen=None):
         super().__init__()
-        self.setWindowTitle("EchoViewer Display")
+        self.setWindowTitle("EchoView Display")
         self.label = QLabel(self)
         self.label.setAlignment(Qt.AlignCenter)
         self.setCentralWidget(self.label)
-        self.api_url = os.environ.get("ECHOVIEWER_API_URL", "http://localhost:8000")
+        self.api_url = os.environ.get("ECHOVIEW_API_URL", "http://localhost:8000")
         self.current_file = None
         self.movie = None
         self.video_widget = None
@@ -34,9 +34,9 @@ class DisplayWindow(QMainWindow):
         self.gif_cache = {}
         self.image_cache = {}  # filename -> QPixmap
         self.video_cache = set()  # set of cached video filenames (local path)
-        self.gif_cache_dir = os.path.join(tempfile.gettempdir(), "echoviewer_gifcache")
-        self.image_cache_dir = os.path.join(tempfile.gettempdir(), "echoviewer_imgcache")
-        self.video_cache_dir = os.path.join(tempfile.gettempdir(), "echoviewer_vidcache")
+        self.gif_cache_dir = os.path.join(tempfile.gettempdir(), "echoview_gifcache")
+        self.image_cache_dir = os.path.join(tempfile.gettempdir(), "echoview_imgcache")
+        self.video_cache_dir = os.path.join(tempfile.gettempdir(), "echoview_vidcache")
         os.makedirs(self.gif_cache_dir, exist_ok=True)
         os.makedirs(self.image_cache_dir, exist_ok=True)
         os.makedirs(self.video_cache_dir, exist_ok=True)

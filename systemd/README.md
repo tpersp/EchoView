@@ -1,16 +1,16 @@
-# Systemd Integration for EchoViewer
+# Systemd Integration for EchoView
 
-This folder contains example systemd service files for running EchoViewer components as services on Linux.
+This folder contains example systemd service files for running EchoView components as services on Linux.
 
 ## Services
-- `echoviewer-display.service`: Runs the PySide6 display app
-- `echoviewer-web.service`: Runs the FastAPI web controller
+- `echoview-display.service`: Runs the PySide6 display app
+- `echoview-web.service`: Runs the FastAPI web controller
 
 ## Usage
 1. Edit the `ExecStart` and `WorkingDirectory` paths to match your installation.
 2. Copy the service files to `/etc/systemd/system/`:
    ```sh
-   sudo cp echoviewer-*.service /etc/systemd/system/
+   sudo cp echoview-*.service /etc/systemd/system/
    ```
 3. Reload systemd:
    ```sh
@@ -18,8 +18,8 @@ This folder contains example systemd service files for running EchoViewer compon
    ```
 4. Enable and start the services:
    ```sh
-   sudo systemctl enable echoviewer-display.service
-   sudo systemctl start echoviewer-display.service
-   sudo systemctl enable echoviewer-web.service
-   sudo systemctl start echoviewer-web.service
+   sudo systemctl enable echoview-display.service
+   sudo systemctl start echoview-display.service
+   sudo systemctl enable echoview-web.service
+   sudo systemctl start echoview-web.service
    ```

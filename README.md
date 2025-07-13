@@ -1,6 +1,6 @@
-# EchoViewer
+# EchoView
 
-EchoViewer is a lightweight, cross-device visual display system for Linux-based devices (e.g., Raspberry Pi). It supports multiple monitors, each running a customizable slideshow or display mode (images, GIFs, videos, Spotify album art, etc.).
+EchoView is a lightweight, cross-device visual display system for Linux-based devices (e.g., Raspberry Pi). It supports multiple monitors, each running a customizable slideshow or display mode (images, GIFs, videos, Spotify album art, etc.).
 
 ## Features
 - Multi-monitor support

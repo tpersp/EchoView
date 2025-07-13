@@ -247,15 +247,15 @@ templates = Jinja2Templates(directory=os.path.dirname(__file__))
 
 @app.get("/")
 def root(request: Request):
-    return templates.TemplateResponse("screens.html", {"request": request, "title": "EchoViewer Controller", "active": "screens"})
+    return templates.TemplateResponse("screens.html", {"request": request, "title": "EchoView Controller", "active": "screens"})
 
 @app.get("/upload")
 def upload_page(request: Request):
-    return templates.TemplateResponse("upload.html", {"request": request, "title": "Upload Media - EchoViewer", "active": "upload"})
+    return templates.TemplateResponse("upload.html", {"request": request, "title": "Upload Media - EchoView", "active": "upload"})
 
 @app.get("/settings")
 def settings_page(request: Request):
-    return templates.TemplateResponse("settings.html", {"request": request, "title": "Settings - EchoViewer", "active": "settings"})
+    return templates.TemplateResponse("settings.html", {"request": request, "title": "Settings - EchoView", "active": "settings"})
 
 @app.get("/screen-settings-ui")
 def screen_settings_ui(request: Request):
@@ -274,7 +274,7 @@ def screen_settings_ui(request: Request):
     <head>
     <meta charset='UTF-8'>
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>Screen Settings - EchoViewer</title>
+    <title>Screen Settings - EchoView</title>
     <link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap' rel='stylesheet'>
     <style>
     body {{ background: #181a1b; color: #f3f3f3; font-family: 'Inter', sans-serif; }}
@@ -403,7 +403,7 @@ def screen_settings_ui_post(request: Request):
 
 @app.get("/update")
 def update_page(request: Request):
-    return templates.TemplateResponse("update.html", {"request": request, "title": "Update - EchoViewer", "active": "update"})
+    return templates.TemplateResponse("update.html", {"request": request, "title": "Update - EchoView", "active": "update"})
 
 # Modular extension loading
 from web.extensions import slideshow, settings, update
