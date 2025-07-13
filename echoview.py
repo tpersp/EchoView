@@ -5,7 +5,6 @@ echoview.py
 Shows images in random/mixed/specific/spotify mode on each connected monitor,
 and can display an overlay with clock, weather, and Spotify track info.
 '''
-# ...existing code from piviewer.py...
 
 import sys
 import os
@@ -889,8 +888,7 @@ class DisplayWindow(QMainWindow):
             percent = 0
         self.spotify_progress_bar.setValue(int(percent))
 
-    def pull_displays_from_remote(self, ip):
-        pass  # Placeholder if needed
+# Device management features have been removed.
 
 # EchoView
 class EchoViewGUI:

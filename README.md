@@ -69,11 +69,6 @@ Browse to `http://<PI-IP>:8080` to access the interface. You’ll see:
   - Set the web theme (Dark, Light, or Custom) and optionally upload a background image
   - Configure weather (API key, location) used by the overlay
 
-- **Device Manager** (only if role=main)
-  - Add sub-devices by name + IP
-  - Push or pull display configs from each sub device
-  - Remotely configure them
-
 - **Overlay Settings**
   - Enable or disable the overlay box
   - Position, size, and color of the overlay
@@ -155,4 +150,8 @@ sudo journalctl -u controller.service
 Feel free to open pull requests or issues. Any improvements to multi-monitor detection, new overlay features, or theming are welcome.
 
 **Enjoy EchoView!**
+
+---
+
+> **Note**: Device management features have been removed.
 
