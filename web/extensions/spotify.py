@@ -1,3 +1,3 @@
 from fastapi import APIRouter
 router = APIRouter()
-# Add endpoints for slideshow management
+# Add endpoints for Spotify integration
