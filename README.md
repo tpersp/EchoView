@@ -18,6 +18,26 @@ EchoView is a lightweight, cross-device visual display system for Linux-based de
 - PySide6 (GUI)
 - FastAPI (web controller)
 
+## Before Running install.sh
+1. **Enable X11 (Desktop GUI):**
+   - EchoView Display requires X11 (graphical desktop) to run.
+   - If using Raspberry Pi OS Lite, install X11 and desktop environment:
+     ```sh
+     sudo apt-get update
+     sudo apt-get install --no-install-recommends raspberrypi-ui-mods lxsession lightdm
+     sudo reboot
+     ```
+   - After reboot, use `sudo raspi-config` to set boot to desktop if desired.
+2. **Clone the repository:**
+   ```sh
+   git clone https://github.com/tpersp/EchoView.git
+   cd EchoView
+   ```
+3. **Make install.sh executable:**
+   ```sh
+   chmod +x install.sh
+   ```
+
 ## Getting Started
 1. Install Python 3.x and pip.
 2. Install dependencies:

@@ -35,14 +35,14 @@ sudo apt-get install -y libxcb-cursor0 libxcb-xinerama0 libxcb-xinput0 ffmpeg
 pip3 install --upgrade pip
 pip3 install -r requirements.txt
 
-# 5. Optional: Create a Python venv
-read -p "Do you want to create a Python virtual environment? (y/n): " venv_choice
-if [[ "$venv_choice" =~ ^[Yy]$ ]]; then
+# 5. Create and activate Python virtual environment automatically
+if [ ! -d ".venv" ]; then
+    echo "Creating Python virtual environment (.venv)..."
     python3 -m venv .venv
-    source .venv/bin/activate
-    pip install --upgrade pip
-    pip install -r requirements.txt
 fi
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
 
 # 6. Mount network share (optional, default: skip)
 echo "\n---"
@@ -105,6 +105,9 @@ read -p "Do you want to install and start EchoView system services? (y/n): " sys
 if [[ "$sysd_choice" =~ ^[Yy]$ ]]; then
     sudo cp systemd/echoviewer-display.service /etc/systemd/system/echoview-display.service
     sudo cp systemd/echoviewer-web.service /etc/systemd/system/echoview-web.service
+    # Update ExecStart in service files to use venv python/uvicorn
+    sudo sed -i 's|ExecStart=.*display/main.py|ExecStart=/home/pi/EchoView/.venv/bin/python /home/pi/EchoView/display/main.py|' /etc/systemd/system/echoview-display.service
+    sudo sed -i 's|ExecStart=.*uvicorn web.main:app.*|ExecStart=/home/pi/EchoView/.venv/bin/uvicorn web.main:app --host 0.0.0.0 --port 8000|' /etc/systemd/system/echoview-web.service
     sudo systemctl daemon-reload
     sudo systemctl enable echoview-display.service
     sudo systemctl start echoview-display.service
