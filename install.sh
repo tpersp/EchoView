@@ -31,9 +31,9 @@ fi
 sudo apt-get update
 sudo apt-get install -y libxcb-cursor0 libxcb-xinerama0 libxcb-xinput0 ffmpeg
 
-# 4. Install Python dependencies
-pip3 install --upgrade pip
-pip3 install -r requirements.txt
+# 4. Remove system-wide pip installs (PEP 668 compliance)
+# pip3 install --upgrade pip
+# pip3 install -r requirements.txt
 
 # 5. Create and activate Python virtual environment automatically
 if [ ! -d ".venv" ]; then
