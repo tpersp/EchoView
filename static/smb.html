@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>SMB Browser</title>
+    <link rel="stylesheet" href="/static/style.css">
     <script>
     async function loadFolders() {
         const res = await fetch('/api/smb/folders');
@@ -47,6 +48,11 @@
     </script>
 </head>
 <body>
+    <nav>
+        <a href="/static/">Home</a>
+        <a href="/static/smb.html">SMB Browser</a>
+        <a href="/static/display.html">Display</a>
+    </nav>
     <h1>SMB Folder Browser</h1>
     <ul id="folders"></ul>
     <button onclick="selectFolders()">Select Folders</button>

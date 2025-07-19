@@ -3,48 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <title>Display</title>
-    <style>
-        html, body {
-            margin: 0;
-            background: black;
-            height: 100%;
-            overflow: hidden;
-        }
-        #background {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-size: cover;
-            background-position: center;
-            filter: blur(20px);
-            transform: scale(1.1);
-            z-index: -1;
-        }
-        #container {
-            width: 100vw;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        img, video, iframe {
-            width: 100vw;
-            height: 100vh;
-            object-fit: contain;
-            background: black;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<nav>
+    <a href="/static/">Home</a>
+    <a href="/static/smb.html">SMB Browser</a>
+    <a href="/static/display.html">Display</a>
+</nav>
 <div id="background"></div>
 <div id="container"></div>
-<div id="spotify" style="position:absolute;bottom:0;left:0;right:0;text-align:center;color:white;background:rgba(0,0,0,0.5);display:none;">
-    <img id="album" src="" style="height:100px"><br>
+<div id="spotify">
+    <img id="album" src=""><br>
     <span id="artist"></span> - <span id="title"></span>
-    <div style="width:100%;background:#333;height:5px;">
-        <div id="progress" style="background:#1db954;height:5px;width:0%"></div>
+    <div class="progress-container">
+        <div id="progress"></div>
     </div>
 </div>
 <script>
