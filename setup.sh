@@ -2,6 +2,9 @@
 set -e
 
 echo "=== EchoView Setup ==="
+echo "Installing display dependencies..."
+sudo apt-get update
+sudo apt-get install -y chromium-browser xserver-xorg xinit
 MEDIA_ROOT="$(pwd)/media"
 read -p "Use SMB share? (y/n) " use_smb
 if [ "$use_smb" = "y" ]; then
@@ -23,7 +26,7 @@ mkdir -p config
 python3 - <<PY
 import json
 import os
-conf={'media_root': '$MEDIA_ROOT','selected_folders': []}
+conf={'media_root': '$MEDIA_ROOT','selected_folders': [],'current_media': ''}
 os.makedirs('config', exist_ok=True)
 with open('config/settings.json','w') as f:
     json.dump(conf,f)
@@ -45,8 +48,28 @@ Restart=always
 WantedBy=multi-user.target
 SERVICE
 
-sudo systemctl daemon-reload
+
 sudo systemctl enable echoview
 sudo systemctl start echoview
+
+DISPLAY_SERVICE=/etc/systemd/system/echoview-display.service
+sudo bash -c "cat > $DISPLAY_SERVICE" <<SERVICE
+[Unit]
+Description=EchoView kiosk display
+After=echoview.service
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/xinit /usr/bin/chromium-browser --noerrdialogs --disable-infobars --kiosk http://localhost:8000/static/display.html -- :0
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+sudo systemctl daemon-reload
+sudo systemctl enable echoview-display
+sudo systemctl start echoview-display
 
 echo "Setup complete!"

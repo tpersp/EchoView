@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Display</title>
+    <style>
+        html, body {
+            margin: 0;
+            background: black;
+            height: 100%;
+            overflow: hidden;
+        }
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        img, video, iframe {
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+            background: black;
+        }
+    </style>
+</head>
+<body>
+<div id="container"></div>
+<script>
+let current = '';
+function showMedia(file){
+    const container = document.getElementById('container');
+    container.innerHTML = '';
+    if(!file) return;
+    const ext = file.split('.').pop().toLowerCase();
+    if(['mp4','webm','ogg'].includes(ext)){
+        const vid=document.createElement('video');
+        vid.src='/media/'+file;
+        vid.autoplay=true;
+        vid.loop=true;
+        vid.controls=false;
+        container.appendChild(vid);
+    } else if(['html','htm'].includes(ext)){
+        const frame=document.createElement('iframe');
+        frame.src='/media/'+file;
+        container.appendChild(frame);
+    } else {
+        const img=document.createElement('img');
+        img.src='/media/'+file;
+        container.appendChild(img);
+    }
+}
+async function poll(){
+    const res = await fetch('/api/display');
+    const data = await res.json();
+    if(data.file !== current){
+        current = data.file;
+        showMedia(current);
+    }
+}
+setInterval(poll, 2000);
+poll();
+</script>
+</body>
+</html>
