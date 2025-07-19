@@ -13,6 +13,7 @@
     <p><a href="/static/smb.html">SMB Browser</a></p>
     <p><button id="spotifyLogin">Connect Spotify</button></p>
     <p>Fallback when Spotify idle: <select id="fallbackSelect"></select> <button id="setFallback">Set</button></p>
+    <p><button id="updateBtn">Update from GitHub</button></p>
     <div id="result"></div>
     <h2>Files</h2>
     <ul id="files"></ul>
@@ -32,7 +33,9 @@
         const res = await fetch('/api/media/list');
         const data = await res.json();
         const list = document.getElementById('files');
+        const fallback = document.getElementById('fallbackSelect');
         list.innerHTML = '';
+        fallback.innerHTML = '';
         if (data.files) {
             data.files.forEach(f => {
                 const li = document.createElement('li');
@@ -45,7 +48,7 @@
                 const opt = document.createElement('option');
                 opt.value = f;
                 opt.textContent = f;
-                document.getElementById('fallbackSelect').appendChild(opt);
+                fallback.appendChild(opt);
             });
         }
     }
@@ -68,6 +71,11 @@
             headers:{'Content-Type':'application/json'},
             body: JSON.stringify({file})
         });
+    };
+    document.getElementById('updateBtn').onclick = async () => {
+        const res = await fetch('/update', {method:'POST'});
+        const data = await res.json();
+        alert(data.status || 'Update failed');
     };
     window.onload = () => {loadFiles();loadSpotify();};
     </script>
