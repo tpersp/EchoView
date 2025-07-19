@@ -8,8 +8,9 @@ A modular, web-controlled media display application for Linux devices (e.g., Ras
 - Persistent settings
 - Updatable from GitHub
 - SMB share integration
-- Spotify integration (planned)
+- Spotify integration with fallback display
 - Fullscreen media display controllable from the web UI
+- Remote website support in the display
 
 ## Getting Started
 

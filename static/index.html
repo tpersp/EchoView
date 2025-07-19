@@ -11,6 +11,8 @@
         <button type="submit">Upload</button>
     </form>
     <p><a href="/static/smb.html">SMB Browser</a></p>
+    <p><button id="spotifyLogin">Connect Spotify</button></p>
+    <p>Fallback when Spotify idle: <select id="fallbackSelect"></select> <button id="setFallback">Set</button></p>
     <div id="result"></div>
     <h2>Files</h2>
     <ul id="files"></ul>
@@ -40,10 +42,34 @@
                 li.textContent = f + ' ';
                 li.appendChild(btn);
                 list.appendChild(li);
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.textContent = f;
+                document.getElementById('fallbackSelect').appendChild(opt);
             });
         }
     }
-    window.onload = loadFiles;
+    async function loadSpotify(){
+        const res = await fetch('/api/spotify/status');
+        const data = await res.json();
+        if(data.fallback){
+            document.getElementById('fallbackSelect').value = data.fallback;
+        }
+    }
+    document.getElementById('spotifyLogin').onclick = async () => {
+        const res = await fetch('/api/spotify/auth_url');
+        const data = await res.json();
+        if(data.url) window.location = data.url;
+    };
+    document.getElementById('setFallback').onclick = async () => {
+        const file = document.getElementById('fallbackSelect').value;
+        await fetch('/api/spotify/fallback', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({file})
+        });
+    };
+    window.onload = () => {loadFiles();loadSpotify();};
     </script>
 </body>
 </html>
