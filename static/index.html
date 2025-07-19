@@ -12,6 +12,8 @@
     </form>
     <p><a href="/static/smb.html">SMB Browser</a></p>
     <div id="result"></div>
+    <h2>Files</h2>
+    <ul id="files"></ul>
     <script>
     document.getElementById('uploadForm').onsubmit = async (e) => {
         e.preventDefault();
@@ -21,7 +23,27 @@
         const res = await fetch('/api/upload', {method: 'POST', body: fd});
         const data = await res.json();
         document.getElementById('result').textContent = data.status ? 'Uploaded ' + data.filename : 'Error';
+        loadFiles();
     };
+
+    async function loadFiles() {
+        const res = await fetch('/api/media/list');
+        const data = await res.json();
+        const list = document.getElementById('files');
+        list.innerHTML = '';
+        if (data.files) {
+            data.files.forEach(f => {
+                const li = document.createElement('li');
+                const btn = document.createElement('button');
+                btn.textContent = 'Show';
+                btn.onclick = () => fetch('/api/display/' + encodeURIComponent(f), {method: 'POST'});
+                li.textContent = f + ' ';
+                li.appendChild(btn);
+                list.appendChild(li);
+            });
+        }
+    }
+    window.onload = loadFiles;
     </script>
 </body>
 </html>

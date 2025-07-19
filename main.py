@@ -29,6 +29,7 @@ def save_config(conf):
 config = load_config()
 config.setdefault('media_root', 'media')
 config.setdefault('selected_folders', [])
+config.setdefault('current_media', '')
 os.makedirs(config['media_root'], exist_ok=True)
 
 # expose helpers for modules
@@ -46,8 +47,9 @@ for module_name in os.listdir(MODULES_PATH):
             mod.init_module(app, config)
         loaded_modules[module_name] = mod
 
-# Mount static files for frontend
+# Mount static files for frontend and media files
 app.mount('/static', StaticFiles(directory='static'), name='static')
+app.mount('/media', StaticFiles(directory=config['media_root']), name='media')
 
 @app.get('/')
 def root():
