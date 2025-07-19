@@ -13,7 +13,11 @@
         if (data.folders) {
             data.folders.forEach(f => {
                 const li = document.createElement('li');
-                li.innerHTML = `<label><input type='checkbox' value='${f}'> ${f}</label>`;
+                li.innerHTML = `<label><input type='checkbox' value='${f}' onchange='loadFiles("${f}", this.checked)'> ${f}</label>`;
+                const files = document.createElement('ul');
+                files.id = `files_${f}`;
+                files.className = 'grid hidden';
+                li.appendChild(files);
                 list.appendChild(li);
             });
         } else {
@@ -29,6 +33,33 @@
         });
         loadMix();
     }
+
+    async function loadFiles(folder, show) {
+        const container = document.getElementById('files_' + folder);
+        if (!show) { container.classList.add('hidden'); return; }
+        const res = await fetch('/api/smb/files/' + encodeURIComponent(folder));
+        const data = await res.json();
+        container.innerHTML = '';
+        container.classList.remove('hidden');
+        if (data.files) {
+            data.files.forEach(f => {
+                const li = document.createElement('li');
+                li.className = 'item';
+                const thumb = document.createElement('img');
+                thumb.src = '/media/' + folder + '/' + f;
+                thumb.className = 'thumb';
+                const btn = document.createElement('button');
+                btn.textContent = 'Show';
+                btn.onclick = () => fetch('/api/display/' + encodeURIComponent(folder + '/' + f), {method:'POST'});
+                li.appendChild(thumb);
+                li.appendChild(document.createTextNode(f));
+                li.appendChild(document.createElement('br'));
+                li.appendChild(btn);
+                container.appendChild(li);
+            });
+        }
+    }
+
     async function loadMix() {
         const res = await fetch('/api/smb/mix');
         const data = await res.json();
@@ -40,10 +71,9 @@
                 li.textContent = f;
                 list.appendChild(li);
             });
-        } else {
-            list.innerHTML = 'Error: ' + (data.error || 'Unknown');
         }
     }
+
     window.onload = loadFolders;
     </script>
 </head>

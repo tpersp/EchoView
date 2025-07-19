@@ -21,7 +21,7 @@
     <p><button id="updateBtn">Update from GitHub</button></p>
     <div id="result"></div>
     <h2>Files</h2>
-    <ul id="files"></ul>
+    <ul id="files" class="grid"></ul>
     <script>
     document.getElementById('uploadForm').onsubmit = async (e) => {
         e.preventDefault();
@@ -44,10 +44,25 @@
         if (data.files) {
             data.files.forEach(f => {
                 const li = document.createElement('li');
+                li.className = 'item';
+                const ext = f.split('.').pop().toLowerCase();
+                let thumb;
+                if(['jpg','jpeg','png','gif','webp'].includes(ext)){
+                    thumb = document.createElement('img');
+                    thumb.src = '/media/' + f;
+                    thumb.className = 'thumb';
+                }else{
+                    thumb = document.createElement('div');
+                    thumb.className = 'thumb placeholder';
+                    thumb.textContent = ext.toUpperCase();
+                }
                 const btn = document.createElement('button');
                 btn.textContent = 'Show';
                 btn.onclick = () => fetch('/api/display/' + encodeURIComponent(f), {method: 'POST'});
-                li.textContent = f + ' ';
+                const caption = document.createElement('div');
+                caption.textContent = f;
+                li.appendChild(thumb);
+                li.appendChild(caption);
                 li.appendChild(btn);
                 list.appendChild(li);
                 const opt = document.createElement('option');

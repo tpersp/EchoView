@@ -36,6 +36,30 @@ ul {
     list-style: none;
     padding: 0;
 }
+.grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.item {
+    width: 150px;
+    text-align: center;
+}
+.thumb {
+    width: 150px;
+    height: 150px;
+    object-fit: cover;
+    background: #222;
+    margin-bottom: 5px;
+}
+.placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
+    font-size: 12px;
+}
+.hidden { display: none; }
 #container {
     width: 100vw;
     height: 100vh;

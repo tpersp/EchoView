@@ -1,6 +1,6 @@
 import os
 import random
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
 
 
 def init_module(app, config):
@@ -21,6 +21,18 @@ def init_module(app, config):
         config['selected_folders'] = folders
         app.state.save_config(config)
         return {'status': 'ok'}
+
+    @router.get('/api/smb/files/{folder}')
+    def list_files(folder: str):
+        normalized = os.path.normpath(folder)
+        folder_path = os.path.join(media_root, normalized)
+        if os.path.commonpath([os.path.abspath(folder_path), os.path.abspath(media_root)]) != os.path.abspath(media_root):
+            raise HTTPException(status_code=400, detail='Invalid folder')
+        if not os.path.isdir(folder_path):
+            raise HTTPException(status_code=404, detail='Folder not found')
+        files = [f for f in os.listdir(folder_path)
+                 if os.path.isfile(os.path.join(folder_path, f))]
+        return {'files': files}
 
     @router.get('/api/smb/mix')
     def mix():
