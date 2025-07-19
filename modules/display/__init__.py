@@ -19,6 +19,11 @@ def init_module(app, config):
 
     @router.post('/api/display/{path:path}')
     def set_display(path: str):
+        if path.startswith('http://') or path.startswith('https://'):
+            config['current_media'] = path
+            app.state.save_config(config)
+            return {'status': 'ok'}
+
         normalized = os.path.normpath(path)
         full = os.path.join(media_root, normalized)
         if not os.path.isfile(full):

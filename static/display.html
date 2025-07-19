@@ -27,6 +27,13 @@
 </head>
 <body>
 <div id="container"></div>
+<div id="spotify" style="position:absolute;bottom:0;left:0;right:0;text-align:center;color:white;background:rgba(0,0,0,0.5);display:none;">
+    <img id="album" src="" style="height:100px"><br>
+    <span id="artist"></span> - <span id="title"></span>
+    <div style="width:100%;background:#333;height:5px;">
+        <div id="progress" style="background:#1db954;height:5px;width:0%"></div>
+    </div>
+</div>
 <script>
 let current = '';
 function showMedia(file){
@@ -36,27 +43,49 @@ function showMedia(file){
     const ext = file.split('.').pop().toLowerCase();
     if(['mp4','webm','ogg'].includes(ext)){
         const vid=document.createElement('video');
-        vid.src='/media/'+file;
+        vid.src=file.startsWith('http')?file:'/media/'+file;
         vid.autoplay=true;
         vid.loop=true;
         vid.controls=false;
         container.appendChild(vid);
     } else if(['html','htm'].includes(ext)){
         const frame=document.createElement('iframe');
-        frame.src='/media/'+file;
+        frame.src=file.startsWith('http')?file:'/media/'+file;
         container.appendChild(frame);
     } else {
         const img=document.createElement('img');
-        img.src='/media/'+file;
+        img.src=file.startsWith('http')?file:'/media/'+file;
         container.appendChild(img);
     }
 }
+function showSpotify(stat){
+    const s=document.getElementById('spotify');
+    s.style.display='block';
+    document.getElementById('album').src=stat.album_image;
+    document.getElementById('artist').textContent=stat.artist;
+    document.getElementById('title').textContent=stat.title;
+    if(stat.duration_ms>0){
+        document.getElementById('progress').style.width=(stat.progress_ms/stat.duration_ms*100)+'%';
+    }
+}
 async function poll(){
-    const res = await fetch('/api/display');
-    const data = await res.json();
-    if(data.file !== current){
-        current = data.file;
-        showMedia(current);
+    const [dispRes, spotRes] = await Promise.all([
+        fetch('/api/display'),
+        fetch('/api/spotify/status')
+    ]);
+    const data = await dispRes.json();
+    const sp = await spotRes.json();
+    const spot = sp.status;
+    if(spot.playing){
+        if(current !== 'spotify'){ current='spotify'; }
+        showSpotify(spot);
+    } else {
+        document.getElementById('spotify').style.display='none';
+        const target = data.file || sp.fallback;
+        if(target !== current){
+            current = target;
+            showMedia(target);
+        }
     }
 }
 setInterval(poll, 2000);
