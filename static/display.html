@@ -10,6 +10,18 @@
             height: 100%;
             overflow: hidden;
         }
+        #background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-size: cover;
+            background-position: center;
+            filter: blur(20px);
+            transform: scale(1.1);
+            z-index: -1;
+        }
         #container {
             width: 100vw;
             height: 100vh;
@@ -26,6 +38,7 @@
     </style>
 </head>
 <body>
+<div id="background"></div>
 <div id="container"></div>
 <div id="spotify" style="position:absolute;bottom:0;left:0;right:0;text-align:center;color:white;background:rgba(0,0,0,0.5);display:none;">
     <img id="album" src="" style="height:100px"><br>
@@ -36,26 +49,34 @@
 </div>
 <script>
 let current = '';
+let queue = [];
+let qIndex = 0;
+let preloaded = {};
 function showMedia(file){
     const container = document.getElementById('container');
+    const bg = document.getElementById('background');
     container.innerHTML = '';
-    if(!file) return;
+    if(!file){ bg.style.backgroundImage=''; return; }
+    const url = file.startsWith('http')?file:'/media/'+file;
     const ext = file.split('.').pop().toLowerCase();
     if(['mp4','webm','ogg'].includes(ext)){
         const vid=document.createElement('video');
-        vid.src=file.startsWith('http')?file:'/media/'+file;
+        vid.src=url;
         vid.autoplay=true;
         vid.loop=true;
         vid.controls=false;
         container.appendChild(vid);
+        bg.style.backgroundImage='url("'+url+'");'
     } else if(['html','htm'].includes(ext)){
         const frame=document.createElement('iframe');
-        frame.src=file.startsWith('http')?file:'/media/'+file;
+        frame.src=url;
         container.appendChild(frame);
+        bg.style.backgroundImage='';
     } else {
         const img=document.createElement('img');
-        img.src=file.startsWith('http')?file:'/media/'+file;
+        img.src=url;
         container.appendChild(img);
+        bg.style.backgroundImage='url("'+url+'");'
     }
 }
 function showSpotify(stat){
@@ -68,6 +89,46 @@ function showSpotify(stat){
         document.getElementById('progress').style.width=(stat.progress_ms/stat.duration_ms*100)+'%';
     }
 }
+async function loadQueue(){
+    const res = await fetch('/api/smb/mix');
+    const data = await res.json();
+    queue = data.files || [];
+    qIndex = 0;
+    updatePreload();
+}
+
+function updatePreload(){
+    const needed = [];
+    for(let i=0;i<3 && i<queue.length;i++){
+        const idx = (qIndex+i)%queue.length;
+        needed.push(queue[idx]);
+        const f = queue[idx];
+        if(!preloaded[f]){
+            const ext = f.split('.').pop().toLowerCase();
+            const url = '/media/'+f;
+            if(['mp4','webm','ogg'].includes(ext)){
+                const v=document.createElement('video');
+                v.src=url;
+            }else{
+                const img=new Image();
+                img.src=url;
+            }
+            preloaded[f]=true;
+        }
+    }
+    for(const f in preloaded){
+        if(!needed.includes(f)) delete preloaded[f];
+    }
+}
+
+function nextFromQueue(){
+    if(queue.length===0) return null;
+    const f = queue[qIndex];
+    qIndex = (qIndex+1)%queue.length;
+    updatePreload();
+    return f;
+}
+
 async function poll(){
     const [dispRes, spotRes] = await Promise.all([
         fetch('/api/display'),
@@ -81,14 +142,18 @@ async function poll(){
         showSpotify(spot);
     } else {
         document.getElementById('spotify').style.display='none';
-        const target = data.file || sp.fallback;
-        if(target !== current){
+        let target = data.file || sp.fallback;
+        if(!target){
+            if(queue.length===0) await loadQueue();
+            target = nextFromQueue();
+        }
+        if(target && target !== current){
             current = target;
             showMedia(target);
         }
     }
 }
-setInterval(poll, 2000);
+setInterval(poll, 5000);
 poll();
 </script>
 </body>

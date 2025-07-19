@@ -11,6 +11,8 @@ A modular, web-controlled media display application for Linux devices (e.g., Ras
 - Spotify integration with fallback display
 - Fullscreen media display controllable from the web UI
 - Remote website support in the display
+- Media viewer preloads upcoming items and shows a blurred background of the
+  current frame for seamless transitions
 
 ## Getting Started
 
@@ -48,6 +50,8 @@ exposed at `/update` which will fetch the latest commit from
 `https://github.com/tpersp/EchoView.git` and reset the local copy. Any JSON
 configuration files are backed up and restored so your settings remain intact.
 Local changes to the code are discarded.
+The main web page includes an **Update from GitHub** button that triggers this
+endpoint so you can easily stay on the latest release.
 
 ## Persistent Settings
 Settings are stored in `config/settings.json` and survive reboots/service
