@@ -9,18 +9,31 @@ app = FastAPI()
 
 # Persistent config
 CONFIG_PATH = 'config/settings.json'
+
+
 def load_config():
     if not os.path.exists(CONFIG_PATH):
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
         with open(CONFIG_PATH, 'w') as f:
             json.dump({}, f)
     with open(CONFIG_PATH, 'r') as f:
         return json.load(f)
 
-def save_config(config):
+
+def save_config(conf):
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
     with open(CONFIG_PATH, 'w') as f:
-        json.dump(config, f)
+        json.dump(conf, f)
+
 
 config = load_config()
+config.setdefault('media_root', 'media')
+config.setdefault('selected_folders', [])
+os.makedirs(config['media_root'], exist_ok=True)
+
+# expose helpers for modules
+app.state.config = config
+app.state.save_config = save_config
 
 # Modular loader
 MODULES_PATH = 'modules'
