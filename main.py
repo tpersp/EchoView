@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, responses
 from fastapi.staticfiles import StaticFiles
 import importlib
 import os
@@ -48,12 +48,13 @@ for module_name in os.listdir(MODULES_PATH):
         loaded_modules[module_name] = mod
 
 # Mount static files for frontend and media files
-app.mount('/static', StaticFiles(directory='static'), name='static')
+app.mount('/static', StaticFiles(directory='static', html=True), name='static')
 app.mount('/media', StaticFiles(directory=config['media_root']), name='media')
 
 @app.get('/')
 def root():
-    return {'message': 'EchoView server running'}
+    """Redirect the browser to the main web interface."""
+    return responses.RedirectResponse(url='/static/')
 
 
 @app.post('/update')
