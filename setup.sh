@@ -4,7 +4,7 @@ set -e
 echo "=== EchoView Setup ==="
 echo "Installing display dependencies..."
 sudo apt-get update
-sudo apt-get install -y chromium-browser xserver-xorg xinit python3-pip
+sudo apt-get install -y xserver-xorg xinit python3-pip
 echo "Installing Python dependencies..."
 pip3 install --break-system-packages -r requirements.txt
 MEDIA_ROOT="$(pwd)/media"
@@ -63,7 +63,7 @@ After=echoview.service
 [Service]
 Type=simple
 Environment=DISPLAY=:0
-ExecStart=/usr/bin/xinit /usr/bin/chromium-browser --noerrdialogs --disable-infobars --kiosk http://localhost:8000/static/display.html --no-sandbox -- :0
+ExecStart=/usr/bin/xinit $(which python3) $(pwd)/viewer.py -- :0
 Restart=always
 
 [Install]

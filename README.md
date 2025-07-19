@@ -23,8 +23,9 @@ pip install -r requirements.txt
 
 ### 2. Run setup (optional)
 Use `./setup.sh` to configure local or SMB media storage and install systemd
-services. The script also installs a minimal X server and Chromium to show the
-fullscreen display. You can run the server manually as shown below.
+services. The script installs a minimal X server and a small Python based
+viewer that displays the fullscreen slideshow without launching a full browser.
+You can run the server manually as shown below.
 
 ### 3. Run the server
 ```bash
@@ -34,8 +35,16 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 ### 4. Access the web UI
 Open your browser and go to `http://<device-ip>:8000/static/`
 
-The device itself runs a browser in kiosk mode showing `/static/display.html`.
-Selecting a file in the web UI will immediately update the fullscreen display.
+The device itself runs a lightweight viewer that loads `/static/display.html` in
+fullscreen. Selecting a file in the web UI will immediately update the
+displayed content.
+
+### 5. Run the viewer manually
+If you are not using the systemd service from `setup.sh`, you can start the
+fullscreen viewer yourself:
+```bash
+python viewer.py
+```
 
 ### Uploading media
 Use the form on the index page to upload files. They are stored in the media
