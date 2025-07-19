@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SMB Browser</title>
+    <script>
+    async function loadFolders() {
+        const res = await fetch('/api/smb/folders');
+        const data = await res.json();
+        const list = document.getElementById('folders');
+        list.innerHTML = '';
+        if (data.folders) {
+            data.folders.forEach(f => {
+                const li = document.createElement('li');
+                li.innerHTML = `<label><input type='checkbox' value='${f}'> ${f}</label>`;
+                list.appendChild(li);
+            });
+        } else {
+            list.innerHTML = 'Error: ' + (data.error || 'Unknown');
+        }
+    }
+    async function selectFolders() {
+        const checked = Array.from(document.querySelectorAll('#folders input:checked')).map(i => i.value);
+        await fetch('/api/smb/select', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(checked)
+        });
+        loadMix();
+    }
+    async function loadMix() {
+        const res = await fetch('/api/smb/mix');
+        const data = await res.json();
+        const list = document.getElementById('mix');
+        list.innerHTML = '';
+        if (data.files) {
+            data.files.forEach(f => {
+                const li = document.createElement('li');
+                li.textContent = f;
+                list.appendChild(li);
+            });
+        } else {
+            list.innerHTML = 'Error: ' + (data.error || 'Unknown');
+        }
+    }
+    window.onload = loadFolders;
+    </script>
+</head>
+<body>
+    <h1>SMB Folder Browser</h1>
+    <ul id="folders"></ul>
+    <button onclick="selectFolders()">Select Folders</button>
+    <h2>Mixed Files</h2>
+    <ul id="mix"></ul>
+</body>
+</html>
