@@ -7,7 +7,7 @@ A modular, web-controlled media display application for Linux devices (e.g., Ras
 - Web-based control panel
 - Persistent settings
 - Updatable from GitHub
-- SMB share integration (planned)
+- SMB share integration
 - Spotify integration (planned)
 
 ## Getting Started
@@ -17,13 +17,21 @@ A modular, web-controlled media display application for Linux devices (e.g., Ras
 pip install -r requirements.txt
 ```
 
-### 2. Run the server
+### 2. Run setup (optional)
+Use `./setup.sh` to configure local or SMB media storage and install a systemd
+service. You can also run the server manually as shown below.
+
+### 3. Run the server
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-### 3. Access the web UI
+### 4. Access the web UI
 Open your browser and go to `http://<device-ip>:8000/static/`
+
+### Uploading media
+Use the form on the index page to upload files. They are stored in the media
+directory configured during setup.
 
 ## Adding Features
 Add new modules in the `modules/` directory. Each module should have an `init_module(app, config)` function.

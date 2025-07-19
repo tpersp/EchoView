@@ -6,6 +6,22 @@
 </head>
 <body>
     <h1>EchoView Web Control</h1>
-    <div id="app"></div>
+    <form id="uploadForm">
+        <input type="file" name="file" id="fileInput" />
+        <button type="submit">Upload</button>
+    </form>
+    <p><a href="/static/smb.html">SMB Browser</a></p>
+    <div id="result"></div>
+    <script>
+    document.getElementById('uploadForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const file = document.getElementById('fileInput').files[0];
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await fetch('/api/upload', {method: 'POST', body: fd});
+        const data = await res.json();
+        document.getElementById('result').textContent = data.status ? 'Uploaded ' + data.filename : 'Error';
+    };
+    </script>
 </body>
 </html>
