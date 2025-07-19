@@ -63,7 +63,7 @@ After=echoview.service
 [Service]
 Type=simple
 Environment=DISPLAY=:0
-ExecStart=/usr/bin/xinit /usr/bin/chromium-browser --noerrdialogs --disable-infobars --kiosk http://localhost:8000/static/display.html -- :0
+ExecStart=/usr/bin/xinit /usr/bin/chromium-browser --noerrdialogs --disable-infobars --kiosk http://localhost:8000/static/display.html --no-sandbox -- :0
 Restart=always
 
 [Install]
