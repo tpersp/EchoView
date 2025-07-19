@@ -1,0 +1,87 @@
+:root {
+    --bg-color: #121212;
+    --text-color: #e0e0e0;
+    --accent-color: #1db954;
+    --nav-bg: #1f1f1f;
+    --nav-link-color: #e0e0e0;
+    --nav-link-hover: #1db954;
+}
+body {
+    background: var(--bg-color);
+    color: var(--text-color);
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+nav {
+    background: var(--nav-bg);
+    padding: 10px;
+}
+nav a {
+    color: var(--nav-link-color);
+    text-decoration: none;
+    margin-right: 15px;
+}
+nav a:hover {
+    color: var(--nav-link-hover);
+}
+button, input, select {
+    background: #333;
+    color: var(--text-color);
+    border: 1px solid #555;
+    padding: 5px 10px;
+    border-radius: 3px;
+}
+ul {
+    list-style: none;
+    padding: 0;
+}
+#container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+img, video, iframe {
+    width: 100vw;
+    height: 100vh;
+    object-fit: contain;
+    background: black;
+}
+#background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-size: cover;
+    background-position: center;
+    filter: blur(20px);
+    transform: scale(1.1);
+    z-index: -1;
+}
+#spotify {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    text-align: center;
+    color: white;
+    background: rgba(0,0,0,0.5);
+    display: none;
+}
+#spotify img {
+    height: 100px;
+}
+.progress-container {
+    width: 100%;
+    background: #333;
+    height: 5px;
+}
+#progress {
+    background: var(--accent-color);
+    height: 5px;
+    width: 0%;
+}
+
