@@ -4,7 +4,9 @@ set -e
 echo "=== EchoView Setup ==="
 echo "Installing display dependencies..."
 sudo apt-get update
-sudo apt-get install -y chromium-browser xserver-xorg xinit
+sudo apt-get install -y chromium-browser xserver-xorg xinit python3-pip
+echo "Installing Python dependencies..."
+pip3 install -r requirements.txt
 MEDIA_ROOT="$(pwd)/media"
 read -p "Use SMB share? (y/n) " use_smb
 if [ "$use_smb" = "y" ]; then
