@@ -29,10 +29,16 @@ Open your browser and go to `http://<device-ip>:8000/static/`
 Add new modules in the `modules/` directory. Each module should have an `init_module(app, config)` function.
 
 ## Updating from GitHub
-(Updater logic to be implemented)
+The application can update itself from the official repository. An endpoint is
+exposed at `/update` which will fetch the latest commit from
+`https://github.com/tpersp/EchoView.git` and reset the local copy. Any JSON
+configuration files are backed up and restored so your settings remain intact.
+Local changes to the code are discarded.
 
 ## Persistent Settings
-Settings are stored in `config/settings.json` and survive reboots/service restarts.
+Settings are stored in `config/settings.json` and survive reboots/service
+restarts. The file is ignored by Git so updates will not overwrite your
+configuration.
 
 ---
 
