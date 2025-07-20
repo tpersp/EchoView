@@ -43,6 +43,25 @@ echo "== Step 2: Installing Python dependencies =="
 pip3 install --break-system-packages -r "$APP_DIR/requirements.txt"
 
 # -------------------------------------------------------
+# 3) Disable screen blanking and hide mouse cursor
+# -------------------------------------------------------
+echo
+echo "== Step 3: Disabling screen blanking via raspi-config =="
+if command -v raspi-config &>/dev/null; then
+  raspi-config nonint do_blanking 1
+  if [ $? -eq 0 ]; then
+    echo "Screen blanking disabled."
+  else
+    echo "Warning: raspi-config do_blanking failed. You may need to disable blanking manually."
+  fi
+else
+  echo "Warning: raspi-config not found; skipping screen-blanking changes."
+fi
+
+# Remove mouse cursor from X sessions
+sed -i -- "s/#xserver-command=X/xserver-command=X -nocursor/" /etc/lightdm/lightdm.conf
+
+# -------------------------------------------------------
 # Configuration prompts
 # -------------------------------------------------------
 
@@ -153,6 +172,47 @@ SERVICE
 systemctl daemon-reload
 systemctl enable echoview.service echoview-display.service
 systemctl start echoview.service echoview-display.service
+
+# -------------------------------------------------------
+# 8b) Ask to enable network watchdog reboot cronjob
+# -------------------------------------------------------
+if [[ "$AUTO_UPDATE" == "false" ]]; then
+  echo
+  echo "== Optional: Network Watchdog Reboot =="
+  echo "If your Pi loses connection (e.g. drops off Wi-Fi), it can auto-reboot after a failed ping."
+  read -p "Enable automatic reboot if Pi goes offline? (y/n): " setup_watchdog
+
+  if [[ "$setup_watchdog" =~ ^[Yy]$ ]]; then
+    echo
+    read -p "Enter the host/IP to ping (default: 8.8.8.8): " PING_TARGET
+    PING_TARGET=${PING_TARGET:-8.8.8.8}
+
+    VIEWER_USER="$APP_USER"
+    VIEWER_HOME=$(eval echo "~$VIEWER_USER")
+
+    LOG_PATH="$VIEWER_HOME/viewer.log"
+    echo "Setting up watchdog to log to: $LOG_PATH"
+
+    touch "$LOG_PATH"
+    chown "$VIEWER_USER:$VIEWER_USER" "$LOG_PATH"
+
+    CRON_LINE="*/5 * * * * ping -c 1 -W 1 $PING_TARGET || (echo \"\$(date) - Network fail, rebooting.\" | tee -a $LOG_PATH && /sbin/reboot)"
+
+    EXISTING_CRON=$(crontab -l 2>/dev/null | grep -F "$PING_TARGET" | grep -F "$LOG_PATH")
+
+    if [[ -z "$EXISTING_CRON" ]]; then
+      (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
+      echo "Watchdog cron job added."
+    else
+      echo "Cron job already exists for $PING_TARGET — skipping."
+    fi
+  else
+    echo "Skipping watchdog setup."
+  fi
+else
+  echo
+  echo "== Auto-Update Mode: skipping watchdog cron setup =="
+fi
 
 echo
 echo "Setup complete! EchoView should now be running."
