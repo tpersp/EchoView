@@ -360,7 +360,7 @@ Wants=lightdm.service
 [Service]
 User=$VIEWER_USER
 Group=$VIEWER_USER
-WorkingDirectory=$VIEWER_HOME
+WorkingDirectory=$VIEWER_HOME/echoview
 EnvironmentFile=$ENV_FILE
 Environment="DISPLAY=:0"
 Environment="XAUTHORITY=/home/$VIEWER_USER/.Xauthority"
@@ -387,10 +387,9 @@ Wants=network-online.target
 [Service]
 User=$VIEWER_USER
 Group=$VIEWER_USER
-WorkingDirectory=$VIEWER_HOME
+WorkingDirectory=$VIEWER_HOME/echoview/web
 EnvironmentFile=$ENV_FILE
 
-# Added environment lines for DBus, XDG, X
 Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$USER_ID/bus"
 Environment="XDG_RUNTIME_DIR=/run/user/$USER_ID"
 Environment="DISPLAY=:0"
@@ -404,6 +403,7 @@ Type=simple
 [Install]
 WantedBy=multi-user.target
 EOF
+
 
 echo "Reloading systemd..."
 systemctl daemon-reload
