@@ -533,8 +533,14 @@ class DisplayWindow(QMainWindow):
 
     def clear_foreground_label(self, message):
         if self.current_movie:
-            self.current_movie.stop()
-            self.current_movie.deleteLater()
+            try:
+                self.current_movie.stop()
+            except RuntimeError:
+                pass
+            try:
+                self.current_movie.deleteLater()
+            except RuntimeError:
+                pass
             self.current_movie = None
             self.handling_gif_frames = False
         self.foreground_label.setMovie(None)
@@ -550,8 +556,14 @@ class DisplayWindow(QMainWindow):
             return
 
         if self.current_movie:
-            self.current_movie.stop()
-            self.current_movie.deleteLater()
+            try:
+                self.current_movie.stop()
+            except RuntimeError:
+                pass
+            try:
+                self.current_movie.deleteLater()
+            except RuntimeError:
+                pass
             self.current_movie = None
             self.handling_gif_frames = False
 
