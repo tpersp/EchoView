@@ -9,7 +9,7 @@ import random
 import psutil
 from datetime import datetime
 
-from .config import (
+from config import (
     APP_VERSION,
     VIEWER_HOME,
     IMAGE_DIR,

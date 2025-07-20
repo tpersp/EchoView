@@ -26,8 +26,8 @@ from PySide6.QtWidgets import (
 )
 
 from spotipy.oauth2 import SpotifyOAuth
-from .config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME
-from .utils import load_config, save_config, log_message
+from config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME
+from utils import load_config, save_config, log_message
 
 
 # --- Custom label for negative (difference) text drawing ---
