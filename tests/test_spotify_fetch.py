@@ -2,7 +2,7 @@ import sys
 import types
 import time
 
-# Provide dummy PySide6 modules so piviewer can be imported without the real Qt deps
+# Provide dummy PySide6 modules so echoview can be imported without the real Qt deps
 qtcore = types.ModuleType("PySide6.QtCore")
 class DummyQt:
     AlignCenter = 0
@@ -63,9 +63,9 @@ sys.modules.setdefault("PySide6.QtWidgets", qtwidgets)
 sys.modules.setdefault("spotipy", spotipy)
 sys.modules.setdefault("spotipy.oauth2", oauth2)
 
-import piviewer
+import echoview
 
-DisplayWindow = piviewer.DisplayWindow
+DisplayWindow = echoview.DisplayWindow
 
 
 def test_spotify_fetch_thread_single():

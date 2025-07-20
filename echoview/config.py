@@ -8,7 +8,7 @@ import os
 # ------------------------------------------------------------
 def load_env():
     # Use the default if VIEWER_HOME isn’t already set.
-    default_home = "/home/pi/PiViewer"
+    default_home = "/home/pi/EchoView"
     home = os.environ.get("VIEWER_HOME", default_home)
     env_path = os.path.join(home, ".env")
     if os.path.exists(env_path):
@@ -29,8 +29,8 @@ load_env()
 
 APP_VERSION = "2.4.6" # Added Spotify progress bar.
 
-VIEWER_HOME = os.environ.get("VIEWER_HOME", "/home/pi/PiViewer")
-IMAGE_DIR   = os.environ.get("IMAGE_DIR", "/mnt/PiViewers")
+VIEWER_HOME = os.environ.get("VIEWER_HOME", "/home/pi/EchoView")
+IMAGE_DIR   = os.environ.get("IMAGE_DIR", "/mnt/EchoViews")
 
 CONFIG_PATH = os.path.join(VIEWER_HOME, "viewerconfig.json")
 LOG_PATH    = os.path.join(VIEWER_HOME, "viewer.log")

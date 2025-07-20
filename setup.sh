@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# setup.sh - "It Just Works" for the new PySide6 + Flask PiViewer
+# setup.sh - "It Just Works" for the new PySide6 + Flask EchoView
 #
 #   1) Installs LightDM (with Xorg), python3, PySide6, etc. (but uses distro's PySide6, not pip)
 #   2) Installs pip dependencies (with --break-system-packages) except PySide6
@@ -8,7 +8,7 @@
 #   4) Prompts for user & paths (unless in --auto-update mode)
 #   5) Creates .env in VIEWER_HOME
 #   6) (Optional) mounts a CIFS network share or fallback to local "Uploads"
-#   7) Creates systemd services for piviewer.py + controller
+#   7) Creates systemd services for viewer.py + controller
 #   8) Configure Openbox autologin & picom in openbox autostart
 #   9) Reboots (unless in --auto-update mode)
 #
@@ -37,7 +37,7 @@ fi
 if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo "***************************************************************"
   echo "*                                                             *"
-  echo "*     IMPORTANT: PiViewer requires X11 for proper operation   *"
+  echo "*     IMPORTANT: EchoView requires X11 for proper operation   *"
   echo "*                                                             *"
   echo "*  If you are currently using Wayland, please change your     *"
   echo "*  display server to X11 before continuing.                   *"
@@ -58,7 +58,7 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
   fi
 else
   echo "------------------------------------------------------------------------------"
-  echo "WARNING: PiViewer requires X11. Ensure that your display server is set to X11."
+  echo "WARNING: EchoView requires X11. Ensure that your display server is set to X11."
   echo "------------------------------------------------------------------------------"
 fi
 
@@ -68,9 +68,9 @@ fi
 if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo "==============================================================="
   echo "|                                                             |"
-  echo "|         Welcome to the PiViewer Setup Script                |"
+  echo "|         Welcome to the EchoView Setup Script                |"
   echo "|                                                             |"
-  echo "|   Simple 'It Just Works' Setup with LightDM + PiViewer      |"
+  echo "|   Simple 'It Just Works' Setup with LightDM + EchoView      |"
   echo "|                      (PySide6)                              |"
   echo "|                                                             |"
   echo "==============================================================="
@@ -82,7 +82,7 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo "  4) Prompt for user & paths"
   echo "  5) Create .env in VIEWER_HOME"
   echo "  6) (Optional) Mount a network share or fallback to local uploads folder"
-  echo "  7) Create systemd services for piviewer.py and the controller"
+  echo "  7) Create systemd services for viewer.py and the controller"
   echo "  8) Configure Openbox autologin & picom in openbox autostart"
   echo "  9) Reboot the system"
   echo
@@ -218,11 +218,11 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo
   echo "*******************************************************"
   echo "*                                                     *"
-  echo "*         PiViewer Configuration Setup                *"
+  echo "*         EchoView Configuration Setup                *"
   echo "*                                                     *"
   echo "*******************************************************"
   echo
-  read -p "Enter the Linux username to run PiViewer (default: pi): " VIEWER_USER
+  read -p "Enter the Linux username to run EchoView (default: pi): " VIEWER_USER
   VIEWER_USER=${VIEWER_USER:-pi}
 
   USER_ID="$(id -u "$VIEWER_USER" 2>/dev/null)"
@@ -243,15 +243,15 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo "-------------------------------------------------------"
   echo "  Please specify the installation directories below:"
   echo "-------------------------------------------------------"
-  read -p "Enter the path for VIEWER_HOME (default: /home/$VIEWER_USER/PiViewer): " input_home
+  read -p "Enter the path for VIEWER_HOME (default: /home/$VIEWER_USER/EchoView): " input_home
   if [ -z "$input_home" ]; then
-    VIEWER_HOME="/home/$VIEWER_USER/PiViewer"
+    VIEWER_HOME="/home/$VIEWER_USER/EchoView"
   else
     VIEWER_HOME="$input_home"
   fi
 
-  read -p "Enter the path for IMAGE_DIR (default: /mnt/PiViewers): " input_dir
-  IMAGE_DIR=${input_dir:-/mnt/PiViewers}
+  read -p "Enter the path for IMAGE_DIR (default: /mnt/EchoViews): " input_dir
+  IMAGE_DIR=${input_dir:-/mnt/EchoViews}
 else
   echo
   echo "== Auto-Update Mode: skipping interactive user/path prompts. Using defaults =="
@@ -261,8 +261,8 @@ else
     echo "User 'pi' not found. Exiting auto-update."
     exit 1
   fi
-  VIEWER_HOME="/home/$VIEWER_USER/PiViewer"
-  IMAGE_DIR="/mnt/PiViewers"
+  VIEWER_HOME="/home/$VIEWER_USER/EchoView"
+  IMAGE_DIR="/mnt/EchoViews"
 fi
 
 echo
@@ -344,16 +344,16 @@ else
 fi
 
 # -------------------------------------------------------
-# 7) Create systemd services for piviewer + controller
+# 7) Create systemd services for viewer + controller
 # -------------------------------------------------------
 echo
 echo "== Step 7: Creating systemd service files =="
 
-PIVIEWER_SERVICE="/etc/systemd/system/piviewer.service"
-echo "Creating $PIVIEWER_SERVICE ..."
-cat <<EOF > "$PIVIEWER_SERVICE"
+ECHOVIEW_SERVICE="/etc/systemd/system/echoview.service"
+echo "Creating $ECHOVIEW_SERVICE ..."
+cat <<EOF > "$ECHOVIEW_SERVICE"
 [Unit]
-Description=PiViewer PySide6 Slideshow + Overlay
+Description=EchoView PySide6 Slideshow + Overlay
 After=lightdm.service
 Wants=lightdm.service
 
@@ -366,7 +366,7 @@ Environment="DISPLAY=:0"
 Environment="XAUTHORITY=/home/$VIEWER_USER/.Xauthority"
 Environment="QT_QPA_PLATFORM_PLUGIN_PATH=/usr/local/lib/python3.11/dist-packages/PySide6/Qt/plugins/platforms"
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/bin/python3 $VIEWER_HOME/piviewer.py
+ExecStart=/usr/bin/python3 $VIEWER_HOME/viewer.py
 
 Restart=always
 RestartSec=5
@@ -380,7 +380,7 @@ CONTROLLER_SERVICE="/etc/systemd/system/controller.service"
 echo "Creating $CONTROLLER_SERVICE ..."
 cat <<EOF > "$CONTROLLER_SERVICE"
 [Unit]
-Description=PiViewer Flask Web Controller
+Description=EchoView Flask Web Controller
 After=network-online.target
 Wants=network-online.target
 
@@ -407,9 +407,9 @@ EOF
 
 echo "Reloading systemd..."
 systemctl daemon-reload
-systemctl enable piviewer.service
+systemctl enable echoview.service
 systemctl enable controller.service
-systemctl start piviewer.service
+systemctl start echoview.service
 systemctl start controller.service
 
 # -------------------------------------------------------
@@ -524,7 +524,7 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo "   Upon reboot, you will see:                                  "
   echo "    - LightDM auto-logging into X/Openbox (DISPLAY=:0)         "
   echo "    - openbox/autostart launching picom                        "
-  echo "    - piviewer.service running piviewer.py                     "
+  echo "    - echoview.service running viewer.py                       "
   echo "    - controller.service running Flask at http://<Pi-IP>:8080  "
   echo "==============================================================="
   echo
