@@ -23,8 +23,10 @@ pip install -r requirements.txt
 
 ### 2. Run setup (optional)
 Use `./setup.sh` to configure local or SMB media storage and install systemd
-services. The script installs a minimal X server and a small Python based
-viewer that displays the fullscreen slideshow without launching a full browser.
+services. The script installs the required system packages (X server, GTK/WebKit
+bindings and SMB tools) and then installs all Python dependencies system wide.
+It also sets up a small Python based viewer that displays the fullscreen
+slideshow without launching a full browser.
 You can run the server manually as shown below.
 
 ### 3. Run the server

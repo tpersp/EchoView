@@ -4,9 +4,10 @@ set -e
 echo "=== EchoView Setup ==="
 echo "Installing display dependencies..."
 sudo apt-get update
-sudo apt-get install -y xserver-xorg xinit python3-pip
+sudo apt-get install -y xserver-xorg xinit python3-pip \
+    python3-gi gir1.2-webkit2-4.0 cifs-utils
 echo "Installing Python dependencies..."
-pip3 install --break-system-packages -r requirements.txt
+sudo pip3 install --break-system-packages -r requirements.txt
 MEDIA_ROOT="$(pwd)/media"
 read -p "Use SMB share? (y/n) " use_smb
 if [ "$use_smb" = "y" ]; then
