@@ -14,5 +14,5 @@ def create_app():
 
 if __name__=="__main__":
     app = create_app()
-    log_message(f"Starting PiViewer Flask app version {APP_VERSION}.")
+    log_message(f"Starting EchoView Flask app version {APP_VERSION}.")
     app.run(host="0.0.0.0", port=8080, debug=False)

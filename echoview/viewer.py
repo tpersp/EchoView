@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 '''
-piviewer.py
+echoview.py
 Shows images in random/mixed/specific/spotify mode on each connected monitor,
 and can display an overlay with clock, weather, and Spotify track info.
 '''
@@ -910,7 +910,7 @@ class DisplayWindow(QMainWindow):
     def pull_displays_from_remote(self, ip):
         pass  # Placeholder if needed
 
-class PiViewerGUI:
+class EchoViewGUI:
     def __init__(self):
         self.cfg = load_config()
         self.app = QApplication(sys.argv)
@@ -958,8 +958,8 @@ class PiViewerGUI:
 
 def main():
     try:
-        log_message(f"Starting PiViewer GUI (v{APP_VERSION}).")
-        gui = PiViewerGUI()
+        log_message(f"Starting EchoView GUI (v{APP_VERSION}).")
+        gui = EchoViewGUI()
         gui.run()
     except Exception as e:
         log_message(f"Exception in main: {e}")

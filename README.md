@@ -1,13 +1,13 @@
-# PiViewer
+# EchoView
 
-PiViewer is a modern, easy-to-configure slideshow + overlay viewer written in **Python/PySide6** along with a companion **Flask**-based web interface. It seamlessly supports multiple monitors on a Raspberry Pi and can optionally display a live overlay (e.g. clock, weather) on top of your images or GIFs.
+EchoView is a modern, easy-to-configure slideshow + overlay viewer written in **Python/PySide6** along with a companion **Flask**-based web interface. It seamlessly supports multiple monitors on a Raspberry Pi and can optionally display a live overlay (e.g. clock, weather) on top of your images or GIFs.
 
 ## Key Features
 
 - **Multiple Monitors**: Launches a PySide6 window per detected monitor, each with its own display mode (Random, Mixed, Spotify, etc.).
 - **Web Controller**: A Flask web interface (on port **8080**) lets you manage sub-devices, change the slideshow folder, set intervals, shuffle, or pick a single image.
 - **Systemd Integration**: The `setup.sh` script creates two systemd services:
-  - `piviewer.service` - runs the PySide6 slideshow windows
+  - `echoview.service` - runs the PySide6 slideshow windows
   - `controller.service` - runs the Flask app
 - **Overlay**: Optionally display time, weather, or custom text overlay in a semi-transparent box.
 - **Spotify Integration**: Show currently playing track’s album art on a display.
@@ -22,8 +22,8 @@ These instructions assume you have a clean Raspberry Pi OS image (Lite or Deskto
 sudo apt update
 sudo apt install -y git
 cd ~
-git clone https://github.com/tpersp/PiViewer.git
-cd PiViewer
+git clone https://github.com/tpersp/EchoView.git
+cd EchoView
 ```
 
 2. **Run Setup**:
@@ -45,7 +45,7 @@ During the setup:
 
 3. **Post-Reboot**:
    - LightDM auto-logs into the specified user’s X session.
-   - `piviewer.service` runs, launching a PySide6 slideshow window on each detected screen.
+   - `echoview.service` runs, launching a PySide6 slideshow window on each detected screen.
    - `controller.service` hosts the web UI on **port 8080**.
 
 ## Usage
@@ -85,10 +85,10 @@ Use the **Upload Media** page to add images/GIFs. You can place them in existing
 Below is a simplified layout:
 
 ```
-PiViewer/
+EchoView/
 ├── app.py               # Flask entry point
 ├── config.py            # Paths, version info
-├── piviewer.py          # PySide6 main script creating slideshow windows
+├── viewer.py            # PySide6 main script creating slideshow windows
 ├── routes.py            # All Flask routes
 ├── utils.py             # Shared functions (config I/O, logging, etc.)
 ├── setup.sh             # Automated setup script
@@ -107,36 +107,36 @@ PiViewer/
 └── README.md            # This README
 ```
 
-## Systemd Services
+-## Systemd Services
 
 Two services are created:
 
-- **piviewer.service**
-  - Runs `piviewer.py` at boot, so the slideshows start automatically on every connected screen.
+- **echoview.service**
+  - Runs `viewer.py` at boot, so the slideshows start automatically on every connected screen.
 - **controller.service**
   - Runs `app.py`, the Flask server on port 8080.
 
 You can check their status or logs:
 
 ```bash
-sudo systemctl status piviewer.service
+sudo systemctl status echoview.service
 sudo systemctl status controller.service
 
-sudo journalctl -u piviewer.service
+sudo journalctl -u echoview.service
 sudo journalctl -u controller.service
 ```
 
 ## Troubleshooting
 
-- **No images?** Ensure images exist in the `IMAGE_DIR` (or subfolders). By default, check `/mnt/PiViewers` or wherever you mounted.
-- **Wrong screen**? Confirm you have multiple monitors recognized by X. PiViewer uses PySide6’s screen geometry, so make sure your environment is not on Wayland.
+- **No images?** Ensure images exist in the `IMAGE_DIR` (or subfolders). By default, check `/mnt/EchoViews` or wherever you mounted.
+- **Wrong screen**? Confirm you have multiple monitors recognized by X. EchoView uses PySide6’s screen geometry, so make sure your environment is not on Wayland.
 - **Spotify issues**? Check `.spotify_cache` for the saved token. Re-authorize if needed.
 - **Overlay not transparent?** You need a compositor (like **picom**) running for real transparency.
-- **Check logs**: Look at `piviewer.log` (in your `VIEWER_HOME`) or `journalctl -u piviewer.service`.
+- **Check logs**: Look at `echoview.log` (in your `VIEWER_HOME`) or `journalctl -u echoview.service`.
 
 ## Contributing
 
 Feel free to open pull requests or issues. Any improvements to multi-monitor detection, new overlay features, or theming are welcome.
 
-**Enjoy PiViewer!**
+**Enjoy EchoView!**
 

@@ -211,7 +211,7 @@ def upload_media():
 @main_bp.route("/restart_viewer", methods=["POST"])
 def restart_viewer():
     try:
-        subprocess.check_output(["sudo", "systemctl", "restart", "piviewer.service"])
+        subprocess.check_output(["sudo", "systemctl", "restart", "echoview.service"])
         return redirect(url_for("main.index"))
     except subprocess.CalledProcessError as e:
         return f"Failed to restart service: {e}", 500
@@ -314,16 +314,16 @@ def settings():
 def clear_config():
     """
     Wipes the viewerconfig.json and resets it to defaults.
-    Then restarts piviewer.
+    Then restarts echoview.
     """
     if os.path.exists(CONFIG_PATH):
         os.remove(CONFIG_PATH)
         log_message("viewerconfig.json has been deleted. Re-initializing config.")
     init_config()  # recreate default config
     try:
-        subprocess.check_call(["sudo", "systemctl", "restart", "piviewer.service"])
+        subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
     except subprocess.CalledProcessError as e:
-        log_message(f"Failed to restart piviewer.service after clearing config: {e}")
+        log_message(f"Failed to restart echoview.service after clearing config: {e}")
     return redirect(url_for("main.settings"))
 
 @main_bp.route("/configure_spotify", methods=["GET", "POST"])
@@ -446,9 +446,9 @@ def overlay_config():
                 cfg["displays"][monitor]["overlay"] = new_overlay
         save_config(cfg)
         try:
-            subprocess.check_call(["sudo", "systemctl", "restart", "piviewer.service"])
+            subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
         except subprocess.CalledProcessError as e:
-            log_message(f"Failed to restart piviewer.service: {e}")
+            log_message(f"Failed to restart echoview.service: {e}")
         return redirect(url_for("main.overlay_config"))
     else:
         return render_template(
@@ -566,7 +566,7 @@ def index():
 
             save_config(cfg)
             try:
-                subprocess.check_call(["sudo", "systemctl", "restart", "piviewer.service"])
+                subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
             except:
                 pass
             return redirect(url_for("main.index"))
@@ -701,7 +701,7 @@ def update_app():
     <html>
       <head>
         <meta charset="utf-8"/>
-        <title>PiViewer Update</title>
+        <title>EchoView Update</title>
         <style>
           body {{
             background-color: {page_bg};
@@ -744,7 +744,7 @@ def update_app():
 @main_bp.route("/restart_services", methods=["POST", "GET"])
 def restart_services():
     try:
-        subprocess.check_call(["sudo", "systemctl", "restart", "piviewer.service"])
+        subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
         subprocess.check_call(["sudo", "systemctl", "restart", "controller.service"])
         log_message("Services restarted.")
     except subprocess.CalledProcessError as e:

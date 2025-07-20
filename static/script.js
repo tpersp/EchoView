@@ -1,5 +1,5 @@
 /**************************************************************
- * script.js - Consolidated client-side JS for PiViewer
+ * script.js - Consolidated client-side JS for EchoView
  * - Handles fetching stats (CPU/mem/etc.)
  * - Toggles collapsible sections
  * - Mixed folder UI, lazy thumbnails, overlay dragging, etc.
