@@ -59,7 +59,7 @@ else
 fi
 
 # Remove mouse cursor from X sessions
-sed -i -- "s/#xserver-command=X/xserver-command=X -nocursor/" /etc/lightdm/lightdm.conf
+#sed -i -- "s/#xserver-command=X/xserver-command=X -nocursor/" /etc/lightdm/lightdm.conf <- this line isnt working..
 
 # -------------------------------------------------------
 # Configuration prompts
