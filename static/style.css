@@ -2,9 +2,6 @@
     --bg-color: #121212;
     --text-color: #e0e0e0;
     --accent-color: #1db954;
-    --nav-bg: #1f1f1f;
-    --nav-link-color: #e0e0e0;
-    --nav-link-hover: #1db954;
 }
 body {
     background: var(--bg-color);
@@ -12,18 +9,6 @@ body {
     font-family: Arial, sans-serif;
     margin: 0;
     padding: 0;
-}
-nav {
-    background: var(--nav-bg);
-    padding: 10px;
-}
-nav a {
-    color: var(--nav-link-color);
-    text-decoration: none;
-    margin-right: 15px;
-}
-nav a:hover {
-    color: var(--nav-link-hover);
 }
 button, input, select {
     background: #333;
@@ -107,5 +92,11 @@ img, video, iframe {
     background: var(--accent-color);
     height: 5px;
     width: 0%;
+}
+
+.no-media {
+    color: var(--text-color);
+    text-align: center;
+    font-size: 24px;
 }
 

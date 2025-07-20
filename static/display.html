@@ -6,11 +6,6 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<nav>
-    <a href="/static/">Home</a>
-    <a href="/static/smb.html">SMB Browser</a>
-    <a href="/static/display.html">Display</a>
-</nav>
 <div id="background"></div>
 <div id="container"></div>
 <div id="spotify">
@@ -29,7 +24,11 @@ function showMedia(file){
     const container = document.getElementById('container');
     const bg = document.getElementById('background');
     container.innerHTML = '';
-    if(!file){ bg.style.backgroundImage=''; return; }
+    if(!file){
+        bg.style.backgroundImage='';
+        container.innerHTML = '<div class="no-media">No media available</div>';
+        return;
+    }
     const url = file.startsWith('http')?file:'/media/'+file;
     const ext = file.split('.').pop().toLowerCase();
     if(['mp4','webm','ogg'].includes(ext)){
@@ -120,9 +119,14 @@ async function poll(){
             if(queue.length===0) await loadQueue();
             target = nextFromQueue();
         }
-        if(target && target !== current){
-            current = target;
-            showMedia(target);
+        if(target){
+            if(target !== current){
+                current = target;
+                showMedia(target);
+            }
+        } else if(current !== '') {
+            current = '';
+            showMedia(null);
         }
     }
 }
