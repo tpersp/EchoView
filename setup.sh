@@ -8,7 +8,7 @@
 #   4) Prompts for user & paths (unless in --auto-update mode)
 #   5) Creates .env in VIEWER_HOME
 #   6) (Optional) mounts a CIFS network share or fallback to local "Uploads"
-#   7) Creates systemd services for viewer.py + controller
+#   7) Creates systemd services for echoview/viewer.py + controller
 #   8) Configure Openbox autologin & picom in openbox autostart
 #   9) Reboots (unless in --auto-update mode)
 #
@@ -82,7 +82,7 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo "  4) Prompt for user & paths"
   echo "  5) Create .env in VIEWER_HOME"
   echo "  6) (Optional) Mount a network share or fallback to local uploads folder"
-  echo "  7) Create systemd services for viewer.py and the controller"
+  echo "  7) Create systemd services for echoview/viewer.py and the controller"
   echo "  8) Configure Openbox autologin & picom in openbox autostart"
   echo "  9) Reboot the system"
   echo
@@ -366,7 +366,7 @@ Environment="DISPLAY=:0"
 Environment="XAUTHORITY=/home/$VIEWER_USER/.Xauthority"
 Environment="QT_QPA_PLATFORM_PLUGIN_PATH=/usr/local/lib/python3.11/dist-packages/PySide6/Qt/plugins/platforms"
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/bin/python3 $VIEWER_HOME/viewer.py
+ExecStart=/usr/bin/python3 $VIEWER_HOME/echoview/viewer.py
 
 Restart=always
 RestartSec=5
@@ -396,7 +396,7 @@ Environment="XDG_RUNTIME_DIR=/run/user/$USER_ID"
 Environment="DISPLAY=:0"
 Environment="XAUTHORITY=/home/$VIEWER_USER/.Xauthority"
 
-ExecStart=/usr/bin/python3 $VIEWER_HOME/app.py
+ExecStart=/usr/bin/python3 $VIEWER_HOME/echoview/web/app.py
 Restart=always
 RestartSec=5
 Type=simple
@@ -524,7 +524,7 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo "   Upon reboot, you will see:                                  "
   echo "    - LightDM auto-logging into X/Openbox (DISPLAY=:0)         "
   echo "    - openbox/autostart launching picom                        "
-  echo "    - echoview.service running viewer.py                       "
+  echo "    - echoview.service running echoview/viewer.py              "
   echo "    - controller.service running Flask at http://<Pi-IP>:8080  "
   echo "==============================================================="
   echo

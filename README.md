@@ -86,13 +86,16 @@ Below is a simplified layout:
 
 ```
 EchoView/
-├── app.py               # Flask entry point
-├── config.py            # Paths, version info
-├── viewer.py            # PySide6 main script creating slideshow windows
-├── routes.py            # All Flask routes
-├── utils.py             # Shared functions (config I/O, logging, etc.)
-├── setup.sh             # Automated setup script
-├── dependencies.txt     # Required pip packages
+├── echoview/
+│   ├── config.py          # Paths, version info
+│   ├── utils.py           # Shared functions (config I/O, logging, etc.)
+│   ├── viewer.py          # PySide6 main script creating slideshow windows
+│   └── web/
+│       ├── app.py         # Flask entry point
+│       ├── routes.py      # Flask routes
+│       └── __init__.py
+├── setup.sh               # Automated setup script
+├── dependencies.txt       # Required pip packages
 ├── static/
 │   ├── style.css
 │   ├── favicon.png
@@ -104,17 +107,18 @@ EchoView/
 │   ├── configure_spotify.html
 │   ├── upload_media.html
 │   ...
-└── README.md            # This README
+├── tests/                 # Basic unit tests
+└── README.md              # This README
 ```
 
--## Systemd Services
+## Systemd Services
 
 Two services are created:
 
 - **echoview.service**
-  - Runs `viewer.py` at boot, so the slideshows start automatically on every connected screen.
+  - Runs `echoview/viewer.py` at boot so the slideshows start automatically on every connected screen.
 - **controller.service**
-  - Runs `app.py`, the Flask server on port 8080.
+  - Runs `echoview/web/app.py`, the Flask server on port 8080.
 
 You can check their status or logs:
 
