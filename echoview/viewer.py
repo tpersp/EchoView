@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from spotipy.oauth2 import SpotifyOAuth
-from config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME
+from config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
 from utils import load_config, save_config, log_message
 
 
@@ -838,9 +838,13 @@ class DisplayWindow(QMainWindow):
             if not (cid and csec and ruri):
                 self.spotify_info = None
                 return None
-            auth = SpotifyOAuth(client_id=cid, client_secret=csec,
-                                redirect_uri=ruri, scope=scope,
-                                cache_path=".spotify_cache")
+            auth = SpotifyOAuth(
+                client_id=cid,
+                client_secret=csec,
+                redirect_uri=ruri,
+                scope=scope,
+                cache_path=SPOTIFY_CACHE_PATH,
+            )
             token_info = auth.get_cached_token()
             if not token_info:
                 self.spotify_info = None
