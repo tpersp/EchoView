@@ -75,6 +75,10 @@ Browse to `http://<PI-IP>:8080` to access the interface. You’ll see:
 
 In `Configure Spotify`, provide your **Client ID**, **Client Secret**, and **Redirect URI** from the Spotify Developer Dashboard. Then click **Authorize Spotify** to store the OAuth token. You can set one or more displays to `spotify` mode.
 
+The OAuth token is cached at the location specified by the `SPOTIFY_CACHE_PATH`
+environment variable (default `VIEWER_HOME/.spotify_cache`). You can override
+this path by adding `SPOTIFY_CACHE_PATH` to your `.env` file.
+
 ### Media Upload
 
 Use the **Upload Media** page to add images/GIFs. You can place them in existing subfolders or create a new one. If you have a CIFS share, it will appear under your `IMAGE_DIR`.
@@ -134,7 +138,7 @@ sudo journalctl -u controller.service
 
 - **No images?** Ensure images exist in the `IMAGE_DIR` (or subfolders). By default, check `/mnt/EchoViews` or wherever you mounted.
 - **Wrong screen**? Confirm you have multiple monitors recognized by X. EchoView uses PySide6’s screen geometry, so make sure your environment is not on Wayland.
-- **Spotify issues**? Check `.spotify_cache` for the saved token. Re-authorize if needed.
+- **Spotify issues**? Check the file specified by `SPOTIFY_CACHE_PATH` for the saved token. Re-authorize if needed.
 - **Overlay not transparent?** You need a compositor (like **picom**) running for real transparency.
 - **Check logs**: Look at `echoview.log` (in your `VIEWER_HOME`) or `journalctl -u echoview.service`.
 

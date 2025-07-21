@@ -36,6 +36,14 @@ CONFIG_PATH = os.path.join(VIEWER_HOME, "viewerconfig.json")
 LOG_PATH    = os.path.join(VIEWER_HOME, "viewer.log")
 WEB_BG      = os.path.join(VIEWER_HOME, "web_bg.jpg")
 
+# Location for SpotifyOAuth token cache. Can be overridden with environment
+# variable SPOTIFY_CACHE_PATH. Defaults to a file named '.spotify_cache' in
+# VIEWER_HOME.
+SPOTIFY_CACHE_PATH = os.environ.get(
+    "SPOTIFY_CACHE_PATH",
+    os.path.join(VIEWER_HOME, ".spotify_cache"),
+)
+
 # ------------------------------------------------------------
 # Git Update Branch
 # ------------------------------------------------------------
