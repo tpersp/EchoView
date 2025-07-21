@@ -838,6 +838,7 @@ class DisplayWindow(QMainWindow):
             if not (cid and csec and ruri):
                 self.spotify_info = None
                 return None
+
             # Ensure the cache directory exists so spotipy can write the token
             os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
 

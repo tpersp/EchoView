@@ -370,6 +370,7 @@ def spotify_auth():
     scope = sp_cfg.get("scope", "user-read-currently-playing user-read-playback-state")
     if not (cid and csec and ruri):
         return "Spotify config incomplete", 400
+
     # Ensure the cache directory exists before spotipy writes the token
     os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
 
@@ -392,6 +393,7 @@ def callback():
     csec = sp_cfg.get("client_secret", "")
     ruri = sp_cfg.get("redirect_uri", "")
     scope = sp_cfg.get("scope", "user-read-currently-playing user-read-playback-state")
+
     # Ensure the cache directory exists before spotipy writes the token
     os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
 

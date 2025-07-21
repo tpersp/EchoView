@@ -36,9 +36,11 @@ CONFIG_PATH = os.path.join(VIEWER_HOME, "viewerconfig.json")
 LOG_PATH    = os.path.join(VIEWER_HOME, "viewer.log")
 WEB_BG      = os.path.join(VIEWER_HOME, "web_bg.jpg")
 
+
 # Location for the Spotify OAuth token cache. Set SPOTIFY_CACHE_PATH in your
 # environment to override. When unset, EchoView uses a file named
 # '.spotify_cache' inside VIEWER_HOME.
+
 SPOTIFY_CACHE_PATH = os.environ.get(
     "SPOTIFY_CACHE_PATH",
     os.path.join(VIEWER_HOME, ".spotify_cache"),
