@@ -243,8 +243,6 @@ def power_off():
 @main_bp.route("/settings", methods=["GET", "POST"])
 def settings():
     cfg = load_config()
-    if "weather" not in cfg:
-        cfg["weather"] = {}
     if request.method == "POST":
         new_theme = request.form.get("theme", "dark")
         cfg["theme"] = new_theme
@@ -255,19 +253,6 @@ def settings():
                 if f and f.filename:
                     f.save(WEB_BG)
 
-        # Updated weather settings
-        w_api = request.form.get("weather_api_key", "").strip()
-        w_zip = request.form.get("weather_zip_code", "").strip()
-        w_cc = request.form.get("weather_country_code", "").strip()
-        if w_api and w_zip and w_cc:
-            try:
-                weather_url = f"http://api.openweathermap.org/data/2.5/weather?zip={w_zip},{w_cc}&appid={w_api}&units=metric"
-                requests.get(weather_url, timeout=5)
-            except:
-                pass
-        cfg["weather"]["api_key"] = w_api
-        cfg["weather"]["zip_code"] = w_zip
-        cfg["weather"]["country_code"] = w_cc
 
         if "gui" not in cfg:
             cfg["gui"] = {}
@@ -292,29 +277,11 @@ def settings():
     else:
         cfg = load_config()
         theme = cfg.get("theme", "dark")
-        weather_info = None
-        w_api = cfg.get("weather", {}).get("api_key", "").strip()
-        w_zip = cfg.get("weather", {}).get("zip_code", "").strip()
-        w_cc = cfg.get("weather", {}).get("country_code", "").strip()
-        if w_api and w_zip and w_cc:
-            try:
-                weather_url = f"http://api.openweathermap.org/data/2.5/weather?zip={w_zip},{w_cc}&appid={w_api}&units=metric"
-                r = requests.get(weather_url, timeout=5)
-                if r.status_code == 200:
-                    data = r.json()
-                    weather_info = {
-                        "name": data.get("name", "Unknown"),
-                        "timezone": data.get("timezone", "Unknown"),
-                        "country": data.get("sys", {}).get("country", "Unknown")
-                    }
-            except:
-                weather_info = None
         return render_template(
             "settings.html",
             theme=theme,
             cfg=cfg,
             update_branch=UPDATE_BRANCH,
-            weather_info=weather_info,
             version=APP_VERSION
         )
 
@@ -441,22 +408,13 @@ def callback():
 def overlay_config():
     cfg = load_config()
     if request.method == "POST":
-        # Now storing weather_layout along with everything else
         for monitor in cfg.get("displays", {}):
             new_overlay = {
                 "clock_enabled": (f"{monitor}_clock_enabled" in request.form),
-                "weather_enabled": (f"{monitor}_weather_enabled" in request.form),
                 "clock_font_size": int(request.form.get(f"{monitor}_clock_font_size", "26")),
-                "weather_font_size": int(request.form.get(f"{monitor}_weather_font_size", "22")),
                 "font_color": request.form.get(f"{monitor}_font_color", "#FFFFFF"),
                 "auto_negative_font": (f"{monitor}_auto_negative_font" in request.form),
                 "clock_position": request.form.get(f"{monitor}_clock_position", "bottom-center"),
-                "weather_position": request.form.get(f"{monitor}_weather_position", "bottom-center"),
-                "weather_layout": request.form.get(f"{monitor}_weather_layout", "inline"),
-                "show_desc": (f"{monitor}_show_desc" in request.form),
-                "show_temp": (f"{monitor}_show_temp" in request.form),
-                "show_feels_like": (f"{monitor}_show_feels_like" in request.form),
-                "show_humidity": (f"{monitor}_show_humidity" in request.form)
             }
             if "displays" in cfg and monitor in cfg["displays"]:
                 cfg["displays"][monitor]["overlay"] = new_overlay
@@ -628,11 +586,6 @@ def index():
     else:
         spotify_status = "❌"
 
-    w_cfg = cfg.get("weather", {})
-    if w_cfg.get("api_key") and w_cfg.get("zip_code") and w_cfg.get("country_code"):
-        weather_status = "✅"
-    else:
-        weather_status = "❌"
 
     final_monitors = {}
     for mon_name, minfo in ext_mons.items():
@@ -662,8 +615,7 @@ def index():
         sub_info_line=sub_info_line,
         monitors=final_monitors,
         flash_msg=flash_msg,
-        spotify_status=spotify_status,
-        weather_status=weather_status
+        spotify_status=spotify_status
     )
 
 

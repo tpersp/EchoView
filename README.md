@@ -1,6 +1,6 @@
 # EchoView
 
-EchoView is a modern, easy-to-configure slideshow + overlay viewer written in **Python/PySide6** along with a companion **Flask**-based web interface. It seamlessly supports multiple monitors on a Raspberry Pi and can optionally display a live overlay (e.g. clock, weather) on top of your images or GIFs.
+EchoView is a modern, easy-to-configure slideshow + overlay viewer written in **Python/PySide6** along with a companion **Flask**-based web interface. It seamlessly supports multiple monitors on a Raspberry Pi and can optionally display a live overlay (e.g. clock) on top of your images or GIFs.
 
 ## Key Features
 
@@ -9,7 +9,7 @@ EchoView is a modern, easy-to-configure slideshow + overlay viewer written in **
 - **Systemd Integration**: The `setup.sh` script creates two systemd services:
   - `echoview.service` - runs the PySide6 slideshow windows
   - `controller.service` - runs the Flask app
-- **Overlay**: Optionally display time, weather, or custom text overlay in a semi-transparent box.
+- **Overlay**: Optionally display time or custom text overlay in a semi-transparent box.
 - **Spotify Integration**: Show currently playing track’s album art on a display.
 
 ## Installation
@@ -64,12 +64,11 @@ Browse to `http://<PI-IP>:8080` to access the interface. You’ll see:
 
 - **Settings** Page
   - Set the web theme (Dark, Light, or Custom) and optionally upload a background image
-  - Configure weather (API key, location) used by the overlay
 
 - **Overlay Settings**
   - Enable or disable the overlay box
   - Position, size, and color of the overlay
-  - Font sizes, weather toggles, clock toggles, etc.
+  - Font sizes, clock toggles, etc.
 
 ### Spotify Integration
 
