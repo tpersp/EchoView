@@ -76,8 +76,10 @@ Browse to `http://<PI-IP>:8080` to access the interface. You’ll see:
 In `Configure Spotify`, provide your **Client ID**, **Client Secret**, and **Redirect URI** from the Spotify Developer Dashboard. Then click **Authorize Spotify** to store the OAuth token. You can set one or more displays to `spotify` mode.
 
 The OAuth token is cached at the location specified by the `SPOTIFY_CACHE_PATH`
-environment variable (default `VIEWER_HOME/.spotify_cache`). You can override
-this path by adding `SPOTIFY_CACHE_PATH` to your `.env` file.
+
+environment variable. If you do not set this variable, EchoView stores the
+token in `VIEWER_HOME/.spotify_cache` and will create that directory if needed.
+You can override the path by adding `SPOTIFY_CACHE_PATH` to your `.env` file.
 
 ### Media Upload
 
