@@ -8,7 +8,15 @@ from flask import (
     Blueprint, request, redirect, url_for, render_template,
     send_from_directory, send_file, jsonify
 )
-from config import APP_VERSION, WEB_BG, IMAGE_DIR, LOG_PATH, UPDATE_BRANCH, VIEWER_HOME
+from config import (
+    APP_VERSION,
+    WEB_BG,
+    IMAGE_DIR,
+    LOG_PATH,
+    UPDATE_BRANCH,
+    VIEWER_HOME,
+    SPOTIFY_CACHE_PATH,
+)
 from utils import (
     load_config, save_config, init_config, log_message,
     get_system_stats, get_subfolders, count_files_in_folder,
@@ -362,12 +370,15 @@ def spotify_auth():
     scope = sp_cfg.get("scope", "user-read-currently-playing user-read-playback-state")
     if not (cid and csec and ruri):
         return "Spotify config incomplete", 400
+    # Ensure the cache directory exists before spotipy writes the token
+    os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
+
     sp_oauth = SpotifyOAuth(
         client_id=cid,
         client_secret=csec,
         redirect_uri=ruri,
         scope=scope,
-        cache_path=".spotify_cache"
+        cache_path=SPOTIFY_CACHE_PATH,
     )
     auth_url = sp_oauth.get_authorize_url()
     return redirect(auth_url)
@@ -381,12 +392,15 @@ def callback():
     csec = sp_cfg.get("client_secret", "")
     ruri = sp_cfg.get("redirect_uri", "")
     scope = sp_cfg.get("scope", "user-read-currently-playing user-read-playback-state")
+    # Ensure the cache directory exists before spotipy writes the token
+    os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
+
     sp_oauth = SpotifyOAuth(
         client_id=cid,
         client_secret=csec,
         redirect_uri=ruri,
         scope=scope,
-        cache_path=".spotify_cache"
+        cache_path=SPOTIFY_CACHE_PATH,
     )
     code = request.args.get("code")
     if not code:
@@ -600,9 +614,12 @@ def index():
     sub_info_line = ""
 
     sp_cfg = cfg.get("spotify", {})
-    if sp_cfg.get("client_id") and sp_cfg.get("client_secret") and sp_cfg.get("redirect_uri"):
-        spotify_cache_path = os.path.join(VIEWER_HOME, ".spotify_cache")
-        if os.path.exists(spotify_cache_path):
+    if (
+        sp_cfg.get("client_id")
+        and sp_cfg.get("client_secret")
+        and sp_cfg.get("redirect_uri")
+    ):
+        if os.path.exists(SPOTIFY_CACHE_PATH):
             spotify_status = "✅"
         else:
             spotify_status = "⚠️"
