@@ -417,11 +417,10 @@ class DisplayWindow(QMainWindow):
     def load_and_cache_image(self, fullpath):
         ext = os.path.splitext(fullpath)[1].lower()
         if ext == ".gif":
-            movie = QMovie(fullpath)
             tmp_reader = QImageReader(fullpath)
             tmp_reader.setAutoDetectImageFormat(True)
             first_frame = tmp_reader.read()
-            return {"type": "gif", "movie": movie, "first_frame": first_frame}
+            return {"type": "gif", "path": fullpath, "first_frame": first_frame}
         else:
             pixmap = QPixmap(fullpath)
             return {"type": "static", "pixmap": pixmap}
@@ -570,7 +569,7 @@ class DisplayWindow(QMainWindow):
         data = self.get_cached_image(fullpath)
         if data["type"] == "gif" and not is_spotify:
             if self.fg_scale_percent == 100:
-                self.current_movie = data["movie"]
+                self.current_movie = QMovie(data["path"])
                 ff = data["first_frame"]
                 bw, bh = self.calc_bounding_for_window(ff)
                 if bw > 0 and bh > 0:
@@ -583,7 +582,7 @@ class DisplayWindow(QMainWindow):
                     blurred = self.make_background_cover(pm)
                     self.bg_label.setPixmap(blurred if blurred else QPixmap())
             else:
-                self.current_movie = data["movie"]
+                self.current_movie = QMovie(data["path"])
                 self.handling_gif_frames = True
                 ff = data["first_frame"]
                 if ff.isNull():
