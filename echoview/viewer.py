@@ -3,7 +3,7 @@
 '''
 echoview.py
 Shows images in random/mixed/specific/spotify mode on each connected monitor,
-and can display an overlay with clock, weather, and Spotify track info.
+and can display an overlay with clock and Spotify track info.
 '''
 
 import sys
@@ -127,14 +127,11 @@ class DisplayWindow(QMainWindow):
         self.foreground_label.setAlignment(Qt.AlignCenter)
         self.foreground_label.setStyleSheet("background-color: transparent;")
 
-        # Overlay labels for clock and weather
+        # Overlay label for clock
         self.clock_label = NegativeTextLabel(self.main_widget)
         self.clock_label.setText("00:00:00")
         self.clock_label.setAlignment(Qt.AlignCenter)
         self.clock_label.setStyleSheet("background: transparent;")
-        self.weather_label = NegativeTextLabel(self.main_widget)
-        self.weather_label.setAlignment(Qt.AlignCenter)
-        self.weather_label.setStyleSheet("background: transparent;")
 
         # Spotify info (track details) label
         self.spotify_info = None
@@ -158,10 +155,6 @@ class DisplayWindow(QMainWindow):
         self.clock_timer = QTimer(self)
         self.clock_timer.timeout.connect(self.update_clock)
         self.clock_timer.start(1000)
-        self.weather_timer = QTimer(self)
-        self.weather_timer.timeout.connect(self.update_weather)
-        self.weather_timer.start(60000)
-        self.update_weather()
 
         # Load config and start
         self.cfg = load_config()
@@ -232,7 +225,7 @@ class DisplayWindow(QMainWindow):
             self.spotify_progress_bar.setGeometry(x, y, width, pb_height)
             self.spotify_progress_bar.raise_()
 
-        # Helper function for dynamic overlay labels (clock and weather)
+        # Helper function for dynamic overlay labels (clock)
         def place_overlay_label(lbl, position, container_rect, y_offset=0):
             full_width = container_rect.width() - 2 * margin
             lbl.setFixedWidth(full_width)
@@ -258,17 +251,9 @@ class DisplayWindow(QMainWindow):
             lbl.move(margin, y)
             return (y + h + margin)
 
-        if self.clock_label.isVisible() or self.weather_label.isVisible():
+        if self.clock_label.isVisible():
             clock_pos = self.overlay_config.get("clock_position", "bottom-center")
-            weather_pos = self.overlay_config.get("weather_position", "bottom-center")
-            offset_after_clock = 0
-            if self.clock_label.isVisible():
-                offset_after_clock = place_overlay_label(self.clock_label, clock_pos, rect, 0)
-            if self.weather_label.isVisible():
-                if weather_pos == clock_pos and self.clock_label.isVisible():
-                    place_overlay_label(self.weather_label, weather_pos, rect, offset_after_clock)
-                else:
-                    place_overlay_label(self.weather_label, weather_pos, rect, 0)
+            place_overlay_label(self.clock_label, clock_pos, rect, 0)
 
         if self.current_pixmap and not self.handling_gif_frames:
             self.updateForegroundScaled()
@@ -290,30 +275,17 @@ class DisplayWindow(QMainWindow):
         else:
             self.clock_label.hide()
 
-        if over.get("weather_enabled", False):
-            self.weather_label.show()
-        else:
-            self.weather_label.hide()
-
         cfsize = over.get("clock_font_size", 24)
-        wfsize = over.get("weather_font_size", 18)
         if over.get("auto_negative_font", False):
             self.clock_label.useDifference = True
-            self.weather_label.useDifference = True
             self.clock_label.setStyleSheet("background: transparent;")
-            self.weather_label.setStyleSheet("background: transparent;")
             font_clock = QFont(self.clock_label.font())
             font_clock.setPixelSize(cfsize)
             self.clock_label.setFont(font_clock)
-            font_weather = QFont(self.weather_label.font())
-            font_weather.setPixelSize(wfsize)
-            self.weather_label.setFont(font_weather)
         else:
             self.clock_label.useDifference = False
-            self.weather_label.useDifference = False
             fcolor = over.get("font_color", "#FFFFFF")
             self.clock_label.setStyleSheet(f"color: {fcolor}; font-size: {cfsize}px; background: transparent;")
-            self.weather_label.setStyleSheet(f"color: {fcolor}; font-size: {wfsize}px; background: transparent;")
         self.overlay_config = over
 
         gui_cfg = self.cfg.get("gui", {})
@@ -528,7 +500,6 @@ class DisplayWindow(QMainWindow):
         self.preload_next_images()
         if self.overlay_config.get("auto_negative_font", False):
             self.clock_label.update()
-            self.weather_label.update()
 
     def clear_foreground_label(self, message):
         if self.current_movie:
@@ -629,7 +600,6 @@ class DisplayWindow(QMainWindow):
         self.last_scaled_foreground_image = final_img
         if self.overlay_config.get("auto_negative_font", False):
             self.clock_label.update()
-            self.weather_label.update()
         self.spotify_info_label.raise_()
 
     def calc_bounding_for_window(self, first_frame):
@@ -682,7 +652,6 @@ class DisplayWindow(QMainWindow):
         self.last_scaled_foreground_image = final_img
         if self.overlay_config.get("auto_negative_font", False):
             self.clock_label.update()
-            self.weather_label.update()
 
     def calc_fill_size(self, iw, ih, fw, fh):
         if iw <= 0 or ih <= 0 or fw <= 0 or fh <= 0:
@@ -781,51 +750,6 @@ class DisplayWindow(QMainWindow):
         now_str = datetime.now().strftime("%H:%M:%S")
         self.clock_label.setText(now_str)
 
-    def update_weather(self):
-        cfg = load_config()
-        if "overlay" in self.disp_cfg:
-            over = self.disp_cfg["overlay"]
-        else:
-            over = cfg.get("overlay", {})
-        if not over.get("weather_enabled", False):
-            return
-        wcfg = cfg.get("weather", {})
-        api_key = wcfg.get("api_key", "")
-        zip_code = wcfg.get("zip_code", "")
-        country_code = wcfg.get("country_code", "")
-        if not (api_key and zip_code and country_code):
-            self.weather_label.setText("Weather: config missing")
-            if self.weather_label.isVisible():
-                self.setup_layout()
-            return
-        try:
-            url = f"https://api.openweathermap.org/data/2.5/weather?zip={zip_code},{country_code}&units=metric&appid={api_key}"
-            r = requests.get(url, timeout=5)
-            if r.status_code == 200:
-                data = r.json()
-                parts = []
-                if over.get("show_desc", True):
-                    parts.append(data["weather"][0]["description"].title())
-                if over.get("show_temp", True):
-                    parts.append(f"{data['main']['temp']}\u00B0C")
-                if over.get("show_feels_like", False):
-                    parts.append(f"Feels: {data['main']['feels_like']}\u00B0C")
-                if over.get("show_humidity", False):
-                    parts.append(f"Humidity: {data['main']['humidity']}%")
-                layout_mode = over.get("weather_layout", "inline")
-                if layout_mode == "stacked":
-                    weather_text = "\n".join(parts)
-                else:
-                    weather_text = " | ".join(parts)
-                self.weather_label.setWordWrap(True)
-                self.weather_label.setText(weather_text)
-            else:
-                self.weather_label.setText("Weather: error")
-        except Exception as e:
-            self.weather_label.setText("Weather: error")
-            log_message(f"Error updating weather: {e}")
-        if self.weather_label.isVisible():
-            self.setup_layout()
 
     def fetch_spotify_album_art(self):
         try:

@@ -43,7 +43,6 @@ def init_config():
             "overlay": {
                 "overlay_enabled": True,       # Changed from False so overlay is always on
                 "clock_enabled": False,        # Off by default
-                "weather_enabled": False,      # Off by default
                 "background_enabled": False,   # Off by default
                 "font_color": "#FFFFFF",
                 "bg_color": "#000000",
@@ -53,29 +52,16 @@ def init_config():
                 "overlay_width": 300,
                 "overlay_height": 150,
                 "clock_font_size": 26,
-                "weather_font_size": 22,
                 "clock_position": "top-center",
-                "weather_position": "bottom-center",
                 "layout_style": "stacked",
                 "padding_x": 8,
                 "padding_y": 6,
-                "show_desc": False,            # Off by default
-                "show_temp": False,            # Off by default
-                "show_feels_like": False,
-                "show_humidity": False,
                 "monitor_selection": "All"
             },
             "gui": {
                 "background_blur_radius": 20,
                 "background_scale_percent": 100,
                 "foreground_scale_percent": 100
-            },
-            "weather": {
-                "api_key": "",
-                "zip_code": "",
-                "country_code": "",
-                "lat": None,
-                "lon": None
             },
             "spotify": {
                 "client_id": "",
