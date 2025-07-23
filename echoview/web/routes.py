@@ -8,7 +8,7 @@ from flask import (
     Blueprint, request, redirect, url_for, render_template,
     send_from_directory, send_file, jsonify
 )
-from config import (
+from echoview.config import (
     APP_VERSION,
     WEB_BG,
     IMAGE_DIR,
@@ -17,7 +17,7 @@ from config import (
     VIEWER_HOME,
     SPOTIFY_CACHE_PATH,
 )
-from utils import (
+from echoview.utils import (
     load_config, save_config, init_config, log_message,
     get_system_stats, get_subfolders, count_files_in_folder,
     get_hostname, get_ip_address, get_pi_model,

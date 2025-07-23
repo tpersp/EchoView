@@ -436,7 +436,7 @@ Wants=network-online.target
 [Service]
 User=$VIEWER_USER
 Group=$VIEWER_USER
-WorkingDirectory=$VIEWER_HOME/echoview/web
+WorkingDirectory=$VIEWER_HOME
 EnvironmentFile=$ENV_FILE
 
 Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$USER_ID/bus"
@@ -444,7 +444,7 @@ Environment="XDG_RUNTIME_DIR=/run/user/$USER_ID"
 Environment="DISPLAY=:0"
 Environment="XAUTHORITY=/home/$VIEWER_USER/.Xauthority"
 
-ExecStart=/usr/bin/python3 $VIEWER_HOME/echoview/web/app.py
+ExecStart=/usr/bin/python3 -m echoview.web.app
 Restart=always
 RestartSec=5
 Type=simple
