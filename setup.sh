@@ -5,6 +5,7 @@
 #   1) Installs LightDM (with Xorg), python3, PySide6, etc. (but uses distro's PySide6, not pip)
 #   2) Installs pip dependencies (with --break-system-packages) except PySide6
 #   3) Disables screen blanking (via raspi-config)
+#   3b) Disables Wi-Fi power management
 #   4) Prompts for user & paths (unless in --auto-update mode)
 #   5) Creates .env in VIEWER_HOME
 #   6) (Optional) mounts a CIFS network share or fallback to local "Uploads"
@@ -209,6 +210,19 @@ if [ -f /boot/firmware/config.txt ]; then
   # Insert hdmi_force_hotplug=1 if missing
   grep -q '^hdmi_force_hotplug=1' "/boot/firmware/config.txt" || \
     sed -i '/^max_framebuffers=2/ a hdmi_force_hotplug=1' "/boot/firmware/config.txt"
+fi
+
+# -------------------------------------------------------
+# 3c) Disable Wi-Fi power management to avoid disconnects
+# -------------------------------------------------------
+echo
+echo "== Step 3c: Disabling Wi-Fi power management =="
+WIFI_IFACE=$(iw dev 2>/dev/null | awk '$1=="Interface"{print $2; exit}')
+if [ -n "$WIFI_IFACE" ]; then
+  echo "Turning off power management for interface $WIFI_IFACE"
+  iwconfig "$WIFI_IFACE" power off || echo "Warning: failed to disable power management on $WIFI_IFACE"
+else
+  echo "No Wi-Fi interface detected; skipping power management tweak."
 fi
 
 # -------------------------------------------------------
