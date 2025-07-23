@@ -90,6 +90,9 @@ class DisplayWindow(QMainWindow):
         # Caching
         self.image_cache = OrderedDict()
         self.cache_capacity = 15
+        self.bg_cache = OrderedDict()
+        self.bg_cache_capacity = 10
+        self.preload_count = 5
 
         self.last_displayed_path = None
         self.current_pixmap = None
@@ -407,14 +410,34 @@ class DisplayWindow(QMainWindow):
             self.image_cache.popitem(last=False)
         return data
 
+    def get_cached_background(self, fullpath, pixmap):
+        key = (fullpath, self.bg_blur_radius, self.bg_scale_percent)
+        if key in self.bg_cache:
+            self.bg_cache.move_to_end(key)
+            return self.bg_cache[key]
+        blurred = self.make_background_cover(pixmap)
+        if blurred is not None:
+            self.bg_cache[key] = blurred
+            if len(self.bg_cache) > self.bg_cache_capacity:
+                self.bg_cache.popitem(last=False)
+        return blurred
+
     def preload_next_images(self):
         if not self.image_list:
             return
-        for i in range(1, 4):
+        for i in range(1, self.preload_count + 1):
             idx = (self.index + i) % len(self.image_list)
             path = self.image_list[idx]
-            if path not in self.image_cache:
-                self.get_cached_image(path)
+            data = self.get_cached_image(path)
+            if data["type"] == "gif":
+                frame = data.get("first_frame")
+                if frame and not frame.isNull():
+                    pm = QPixmap.fromImage(frame)
+                else:
+                    pm = QPixmap(path)
+            else:
+                pm = data.get("pixmap")
+            self.get_cached_background(path, pm)
 
     def next_image(self, force=False):
         if not self.running:
@@ -550,7 +573,7 @@ class DisplayWindow(QMainWindow):
                 self.handling_gif_frames = False
                 if not ff.isNull():
                     pm = QPixmap.fromImage(ff)
-                    blurred = self.make_background_cover(pm)
+                    blurred = self.get_cached_background(fullpath, pm)
                     self.bg_label.setPixmap(blurred if blurred else QPixmap())
             else:
                 self.current_movie = QMovie(data["path"])
@@ -560,7 +583,7 @@ class DisplayWindow(QMainWindow):
                     self.clear_foreground_label("GIF error")
                     return
                 pm = QPixmap.fromImage(ff)
-                blurred = self.make_background_cover(pm)
+                blurred = self.get_cached_background(fullpath, pm)
                 self.bg_label.setPixmap(blurred if blurred else QPixmap())
                 bw, bh = self.calc_bounding_for_window(ff)
                 self.gif_bounds = (bw, bh)
@@ -573,7 +596,7 @@ class DisplayWindow(QMainWindow):
                 self.current_pixmap = QPixmap(fullpath)
             self.handling_gif_frames = False
             self.updateForegroundScaled()
-            blurred = self.make_background_cover(self.current_pixmap)
+            blurred = self.get_cached_background(fullpath, self.current_pixmap)
             self.bg_label.setPixmap(blurred if blurred else QPixmap())
         self.spotify_info_label.raise_()
 
