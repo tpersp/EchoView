@@ -121,9 +121,9 @@ EchoView/
 Two services are created:
 
 - **echoview.service**
-  - Runs `echoview/viewer.py` at boot so the slideshows start automatically on every connected screen.
+  - Runs `python3 -m echoview.viewer` at boot so the slideshows start automatically on every connected screen.
 - **controller.service**
-  - Runs `echoview/web/app.py`, the Flask server on port 8080.
+  - Runs `python3 -m echoview.web.app`, the Flask server on port 8080.
 
 You can check their status or logs:
 

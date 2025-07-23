@@ -9,13 +9,13 @@ import random
 import psutil
 from datetime import datetime
 
-from config import (
+from echoview.config import (
     APP_VERSION,
     VIEWER_HOME,
     IMAGE_DIR,
     CONFIG_PATH,
     LOG_PATH,
-    WEB_BG
+    WEB_BG,
 )
 
 def init_config():
