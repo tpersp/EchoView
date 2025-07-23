@@ -226,6 +226,41 @@ else
 fi
 
 # -------------------------------------------------------
+# 3d) Create systemd service to disable Wi-Fi power management at boot
+# -------------------------------------------------------
+echo
+echo "== Step 3d: Setting up Wi-Fi power management service =="
+SERVICE_SCRIPT="/usr/local/sbin/wifi_powersave_off.sh"
+SERVICE_FILE="/etc/systemd/system/wifi-powersave-off.service"
+
+cat <<'EOF' > "$SERVICE_SCRIPT"
+#!/usr/bin/env bash
+WIFI_IFACE=$(iw dev 2>/dev/null | awk '$1=="Interface"{print $2; exit}')
+if [ -n "$WIFI_IFACE" ]; then
+  /sbin/iwconfig "$WIFI_IFACE" power off
+fi
+EOF
+
+chmod +x "$SERVICE_SCRIPT"
+
+cat <<EOF > "$SERVICE_FILE"
+[Unit]
+Description=Disable WiFi power management
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=$SERVICE_SCRIPT
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable wifi-powersave-off.service
+systemctl start wifi-powersave-off.service
+
+# -------------------------------------------------------
 # 4) Prompt user for config (skip if AUTO_UPDATE)
 # -------------------------------------------------------
 if [[ "$AUTO_UPDATE" == "false" ]]; then
