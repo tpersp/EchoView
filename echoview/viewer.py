@@ -260,6 +260,19 @@ class DisplayWindow(QMainWindow):
 
         if self.current_pixmap and not self.handling_gif_frames:
             self.updateForegroundScaled()
+            if self.last_displayed_path:
+                blurred = self.get_cached_background(
+                    self.last_displayed_path, self.current_pixmap
+                )
+                self.bg_label.setPixmap(blurred if blurred else QPixmap())
+        elif self.current_movie and self.handling_gif_frames:
+            frm = self.current_movie.currentImage()
+            if not frm.isNull() and self.last_displayed_path:
+                pm = QPixmap.fromImage(frm)
+                blurred = self.get_cached_background(
+                    self.last_displayed_path, pm
+                )
+                self.bg_label.setPixmap(blurred if blurred else QPixmap())
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
