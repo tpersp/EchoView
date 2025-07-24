@@ -154,7 +154,8 @@ function loadSpecificThumbnails(dispName) {
     const lbl = document.createElement("label");
     lbl.className = "thumb-label";
     const img = document.createElement("img");
-    img.src = "/images/" + filePath;
+    img.src = "/thumb/" + filePath + "?size=60";
+    img.loading = "lazy";
     img.style.width = "60px";
     img.style.height = "60px";
     img.style.objectFit = "cover";

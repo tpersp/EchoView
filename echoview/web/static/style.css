@@ -82,6 +82,9 @@ form input, form select, form button {
   background: var(--input-bg);
   color: var(--text-normal);
 }
+label {
+  color: var(--text-normal);
+}
 
 /* Container for grouping content (cards, forms, etc.) */
 .page-section {
@@ -325,5 +328,25 @@ table td button {
   object-fit: cover;
   border: 2px solid var(--border-muted);
   border-radius: 4px;
+}
+#file-manager details {
+  margin-bottom: 15px;
+}
+#file-manager summary {
+  font-weight: bold;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+#file-manager .upload-thumb {
+  width: 100%;
+  height: 120px;
+  border: 2px dashed var(--border-muted);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  cursor: pointer;
+  color: var(--text-normal);
 }
 
