@@ -187,7 +187,7 @@
               {% endfor %}
             </div>
             {% else %}
-              <p>No images found or category is empty.</p>
+              <p>No images found or category is empty. <a href="{{ url_for('main.upload_media') }}">Upload some?</a></p>
             {% endif %}
           {% endif %}
           <br>
@@ -205,7 +205,7 @@
   <!-- Bottom status row as its own card -->
   <div class="card" style="margin-top:20px; text-align:center;">
     <strong>Status:</strong>
-    Spotify: {{ spotify_status }}
+    Spotify Status: {{ spotify_status }}
   </div>
 </div>
 

@@ -24,4 +24,38 @@
   </form>
 </div>
 
+<div class="page-section" style="max-width:1200px; margin-top:20px;">
+  <h2>Manage Files</h2>
+  {% for folder, files in folder_files.items() %}
+  <div class="card" style="margin-bottom:10px;">
+    <h4>{{ folder }}</h4>
+    <form method="post" action="{{ url_for('main.rename_folder') }}" class="d-flex" style="gap:10px;">
+      <input type="hidden" name="folder" value="{{ folder }}">
+      <input type="text" name="new_name" placeholder="Rename folder">
+      <button type="submit">Rename</button>
+    </form>
+    <form method="post" action="{{ url_for('main.delete_folder') }}" style="margin-top:5px;">
+      <input type="hidden" name="folder" value="{{ folder }}">
+      <button type="submit">Delete Folder</button>
+    </form>
+    <ul>
+      {% for f in files %}
+      <li>
+        {{ f }}
+        <form method="post" action="{{ url_for('main.rename_image') }}" class="d-inline">
+          <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
+          <input type="text" name="new_name" placeholder="rename">
+          <button type="submit">Rename</button>
+        </form>
+        <form method="post" action="{{ url_for('main.delete_image') }}" class="d-inline">
+          <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
+          <button type="submit">Delete</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</div>
+
 {% endblock %}

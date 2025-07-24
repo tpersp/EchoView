@@ -4,6 +4,13 @@
 
 <div class="page-section" style="max-width:1200px;">
   <h2>Configure Spotify Integration</h2>
+  {% if not creds_set %}
+  <div class="flash-message">Missing credentials. Fill in the form below.</div>
+  {% elif not token_cached %}
+  <div class="flash-message">Credentials saved but token not authorized.</div>
+  {% else %}
+  <div class="flash-message">Spotify authorized.</div>
+  {% endif %}
 
   <!-- Collapsible Steps -->
   <div class="collapsible-header">1. Spotify Developer Dashboard</div>
