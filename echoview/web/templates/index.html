@@ -178,7 +178,7 @@
               {% for imgpath in fileList %}
                 {% set bn = imgpath.split('/')[-1] %}
                 <label style="text-align:center; cursor:pointer;">
-                  <img src="/images/{{ imgpath }}" style="width:60px; height:60px; object-fit:cover; border:2px solid #555; border-radius:4px;">
+                  <img src="/thumb/{{ imgpath }}?size=60" loading="lazy" style="width:60px; height:60px; object-fit:cover; border:2px solid #555; border-radius:4px;">
                   <br>
                   <input type="radio" name="{{ dname }}_specific_image" value="{{ bn }}"
                          {% if bn == dcfg.specific_image %}checked{% endif %}>

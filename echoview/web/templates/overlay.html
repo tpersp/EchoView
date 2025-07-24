@@ -73,19 +73,8 @@
       <button type="submit">Save All Overlay Settings</button>
     </div>
   </form>
-  <h3 style="margin-top:20px; text-align:center;">Overlay Layout Preview</h3>
-  <div class="overlay-preview-container">
-    <div id="overlayPreviewBox" class="overlay-preview-box" style="width:{{ preview_w }}px; height:{{ preview_h }}px;">
-      <div id="overlayDraggable" class="overlay-draggable-box" style="width:{{ preview_overlay.width }}px; height:{{ preview_overlay.height }}px; left:{{ offset_x }}px; top:{{ offset_y }}px;"></div>
-    </div>
-  </div>
-  <input type="hidden" name="offset_x" id="offset_x" value="{{ offset_x }}">
-  <input type="hidden" name="offset_y" id="offset_y" value="{{ offset_y }}">
+  {# The draggable overlay preview box was removed as it provided no useful feedback. #}
 </div>
 {% endblock %}
 
-{% block extra_scripts %}
-<script>
-  var scaleFactor = {{ '%.4f' % scale_factor }};
-</script>
-{% endblock %}
+{# No extra scripts needed since preview box was removed #}

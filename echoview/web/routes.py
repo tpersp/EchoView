@@ -170,6 +170,32 @@ def list_folders():
 def serve_image(filename):
     return send_from_directory(IMAGE_DIR, filename)
 
+@main_bp.route("/thumb/<path:filename>")
+def serve_thumbnail(filename):
+    """Return a small JPEG thumbnail for the requested image."""
+    size = request.args.get("size", "200")
+    try:
+        size = int(size)
+    except Exception:
+        size = 200
+    src_path = os.path.join(IMAGE_DIR, filename)
+    if not os.path.exists(src_path):
+        return "", 404
+    thumb_dir = os.path.join(VIEWER_HOME, ".thumbcache")
+    os.makedirs(thumb_dir, exist_ok=True)
+    safe_name = filename.replace("/", "_")
+    thumb_path = os.path.join(thumb_dir, f"{safe_name}_{size}.jpg")
+    if (not os.path.exists(thumb_path) or
+            os.path.getmtime(thumb_path) < os.path.getmtime(src_path)):
+        from PIL import Image
+        try:
+            im = Image.open(src_path)
+            im.thumbnail((size, size))
+            im.convert("RGB").save(thumb_path, "JPEG")
+        except Exception:
+            return send_from_directory(IMAGE_DIR, filename)
+    return send_file(thumb_path, mimetype="image/jpeg")
+
 @main_bp.route("/bg_image")
 def bg_image():
     if os.path.exists(WEB_BG):
@@ -186,25 +212,21 @@ def download_log():
 def upload_media():
     cfg = load_config()
     theme = cfg.get("theme", "dark")
-    subfolders = get_subfolders()
     if request.method == "GET":
         folder_files = {}
-        for sf in subfolders:
+        for sf in get_subfolders():
             try:
                 folder_path = os.path.join(IMAGE_DIR, sf)
                 folder_files[sf] = [f for f in os.listdir(folder_path) if f.lower().endswith((".jpg",".jpeg",".png",".gif"))]
             except Exception:
                 folder_files[sf] = []
-        return render_template("upload_media.html", theme=theme, subfolders=subfolders, folder_files=folder_files)
+        return render_template("upload_media.html", theme=theme, folder_files=folder_files)
 
     files = request.files.getlist("mediafiles")
     if not files:
         return "No files selected", 400
 
     subfolder = request.form.get("subfolder", "")
-    new_subfolder = request.form.get("new_subfolder", "").strip()
-    if new_subfolder:
-        subfolder = new_subfolder
 
     target_dir = os.path.join(IMAGE_DIR, subfolder)
     if not os.path.exists(target_dir):
@@ -289,6 +311,14 @@ def rename_folder():
         dst = os.path.join(IMAGE_DIR, new_name)
         if os.path.isdir(src):
             os.rename(src, dst)
+    return redirect(url_for("main.upload_media"))
+
+@main_bp.route("/create_folder", methods=["POST"])
+def create_folder():
+    name = request.form.get("folder_name", "").strip()
+    if name:
+        path = os.path.join(IMAGE_DIR, name)
+        os.makedirs(path, exist_ok=True)
     return redirect(url_for("main.upload_media"))
 
 @main_bp.route("/settings", methods=["GET", "POST"])
@@ -492,38 +522,10 @@ def overlay_config():
         return redirect(url_for("main.overlay_config"))
     else:
         monitors_cfg = cfg.get("displays", {})
-        overlay_cfg = cfg.get("overlay", {})
-        monitors_dict = get_local_monitors_from_config(cfg)
-        prev_w, prev_h, preview_overlay = compute_overlay_preview(overlay_cfg, monitors_dict)
-
-        sel = overlay_cfg.get("monitor_selection", "All")
-        total_w = 0
-        if sel == "All":
-            for m in monitors_dict.values():
-                try:
-                    w = int(m["resolution"].split("x")[0])
-                    total_w = max(total_w, w)
-                except Exception:
-                    pass
-        else:
-            if sel in monitors_dict:
-                try:
-                    total_w = int(monitors_dict[sel]["resolution"].split("x")[0])
-                except Exception:
-                    total_w = 0
-        scale_factor = float(prev_w) / float(total_w) if total_w else 1.0
-        offset_x = int(overlay_cfg.get("offset_x", 0) * scale_factor)
-        offset_y = int(overlay_cfg.get("offset_y", 0) * scale_factor)
         return render_template(
             "overlay.html",
             theme=cfg.get("theme", "dark"),
             monitors=monitors_cfg,
-            preview_w=prev_w,
-            preview_h=prev_h,
-            preview_overlay=preview_overlay,
-            offset_x=offset_x,
-            offset_y=offset_y,
-            scale_factor=scale_factor,
         )
 
 @main_bp.route("/", methods=["GET", "POST"])

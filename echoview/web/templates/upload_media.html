@@ -1,34 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Upload Media{% endblock %}
 {% block content %}
-
-<div class="page-section" style="max-width:1200px;">
-  <h2>Upload New Media (GIF/PNG/JPG)</h2>
-  <form method="POST" enctype="multipart/form-data">
-    <label>Select Subfolder:</label><br>
-    <select name="subfolder">
-      {% for sf in subfolders %}
-      <option value="{{ sf }}">{{ sf }}</option>
-      {% endfor %}
-    </select>
-    <br><br>
-
-    <label>(Optional) Create new subfolder:</label><br>
-    <input type="text" name="new_subfolder" placeholder="New Folder Name">
-    <br><br>
-
-    <input type="file" name="mediafiles" accept=".gif,.png,.jpg,.jpeg" multiple>
-    <br><br>
-
-    <button type="submit">Upload</button>
-  </form>
-</div>
-
-<div class="page-section" style="max-width:1200px; margin-top:20px;" id="file-manager">
+<div class="page-section" style="max-width:1200px;" id="file-manager">
   <h2>Manage Files</h2>
+  <form method="post" action="{{ url_for('main.create_folder') }}" class="d-flex" style="gap:10px; margin-bottom:10px;">
+    <input type="text" name="folder_name" placeholder="New Folder Name">
+    <button type="submit">Create Folder</button>
+  </form>
   {% for folder, files in folder_files.items() %}
-  <div class="card" style="margin-bottom:10px;">
-    <h4>{{ folder }}</h4>
+  <details class="card">
+    <summary>{{ folder }}</summary>
     <form method="post" action="{{ url_for('main.rename_folder') }}" class="d-flex" style="gap:10px;">
       <input type="hidden" name="folder" value="{{ folder }}">
       <input type="text" name="new_name" placeholder="Rename folder">
@@ -41,7 +22,7 @@
     <div class="folder-grid">
       {% for f in files %}
       <div class="file-item">
-        <img src="/images/{{ folder }}/{{ f }}" class="file-thumb">
+        <img src="/thumb/{{ folder }}/{{ f }}?size=120" class="file-thumb" loading="lazy">
         <div class="filename" style="word-break:break-all;">{{ f }}</div>
         <form method="post" action="{{ url_for('main.rename_image') }}" class="d-inline">
           <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
@@ -54,9 +35,21 @@
         </form>
       </div>
       {% endfor %}
+      <div class="file-item">
+        <form method="POST" enctype="multipart/form-data" action="{{ url_for('main.upload_media') }}">
+          <input type="hidden" name="subfolder" value="{{ folder }}">
+          <label class="upload-thumb">
+            +
+            <input type="file" name="mediafiles" accept=".gif,.png,.jpg,.jpeg" multiple style="display:none" onchange="this.form.submit()">
+          </label>
+        </form>
+      </div>
     </div>
-  </div>
+  </details>
   {% endfor %}
+  <form method="post" action="{{ url_for('main.create_folder') }}" class="d-flex" style="gap:10px; margin-top:10px;">
+    <input type="text" name="folder_name" placeholder="New Folder Name">
+    <button type="submit">Create Folder</button>
+  </form>
 </div>
-
 {% endblock %}
