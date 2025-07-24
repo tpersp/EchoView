@@ -24,7 +24,7 @@
   </form>
 </div>
 
-<div class="page-section" style="max-width:1200px; margin-top:20px;">
+<div class="page-section" style="max-width:1200px; margin-top:20px;" id="file-manager">
   <h2>Manage Files</h2>
   {% for folder, files in folder_files.items() %}
   <div class="card" style="margin-bottom:10px;">
@@ -38,10 +38,11 @@
       <input type="hidden" name="folder" value="{{ folder }}">
       <button type="submit">Delete Folder</button>
     </form>
-    <ul>
+    <div class="folder-grid">
       {% for f in files %}
-      <li>
-        {{ f }}
+      <div class="file-item">
+        <img src="/images/{{ folder }}/{{ f }}" class="file-thumb">
+        <div class="filename" style="word-break:break-all;">{{ f }}</div>
         <form method="post" action="{{ url_for('main.rename_image') }}" class="d-inline">
           <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
           <input type="text" name="new_name" placeholder="rename">
@@ -51,9 +52,9 @@
           <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
           <button type="submit">Delete</button>
         </form>
-      </li>
+      </div>
       {% endfor %}
-    </ul>
+    </div>
   </div>
   {% endfor %}
 </div>
