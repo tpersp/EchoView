@@ -27,7 +27,7 @@ load_env()
 # Application Version & Paths
 # ------------------------------------------------------------
 
-APP_VERSION = "2.4.6" # Added Spotify progress bar.
+APP_VERSION = "1.0.8" # 
 
 VIEWER_HOME = os.environ.get("VIEWER_HOME", "/home/pi/EchoView")
 IMAGE_DIR   = os.environ.get("IMAGE_DIR", "/mnt/EchoViews")
