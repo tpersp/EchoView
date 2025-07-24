@@ -188,7 +188,14 @@ def upload_media():
     theme = cfg.get("theme", "dark")
     subfolders = get_subfolders()
     if request.method == "GET":
-        return render_template("upload_media.html", theme=theme, subfolders=subfolders)
+        folder_files = {}
+        for sf in subfolders:
+            try:
+                folder_path = os.path.join(IMAGE_DIR, sf)
+                folder_files[sf] = [f for f in os.listdir(folder_path) if f.lower().endswith((".jpg",".jpeg",".png",".gif"))]
+            except Exception:
+                folder_files[sf] = []
+        return render_template("upload_media.html", theme=theme, subfolders=subfolders, folder_files=folder_files)
 
     files = request.files.getlist("mediafiles")
     if not files:
@@ -239,6 +246,50 @@ def power_off():
         return "Device is powering off...", 200
     except subprocess.CalledProcessError as e:
         return f"Failed to power off: {e}", 500
+
+@main_bp.route("/delete_image", methods=["POST"])
+def delete_image():
+    rel_path = request.form.get("path", "")
+    full = os.path.join(IMAGE_DIR, rel_path)
+    if os.path.exists(full):
+        os.remove(full)
+    return redirect(url_for("main.upload_media"))
+
+@main_bp.route("/rename_image", methods=["POST"])
+def rename_image():
+    rel_path = request.form.get("path", "")
+    new_name = request.form.get("new_name", "")
+    if not rel_path or not new_name:
+        return redirect(url_for("main.upload_media"))
+    full = os.path.join(IMAGE_DIR, rel_path)
+    new_full = os.path.join(os.path.dirname(full), new_name)
+    if os.path.exists(full):
+        os.rename(full, new_full)
+    return redirect(url_for("main.upload_media"))
+
+@main_bp.route("/delete_folder", methods=["POST"])
+def delete_folder():
+    folder = request.form.get("folder", "")
+    full = os.path.join(IMAGE_DIR, folder)
+    if os.path.isdir(full):
+        try:
+            for f in os.listdir(full):
+                os.remove(os.path.join(full, f))
+            os.rmdir(full)
+        except Exception:
+            pass
+    return redirect(url_for("main.upload_media"))
+
+@main_bp.route("/rename_folder", methods=["POST"])
+def rename_folder():
+    folder = request.form.get("folder", "")
+    new_name = request.form.get("new_name", "")
+    if folder and new_name:
+        src = os.path.join(IMAGE_DIR, folder)
+        dst = os.path.join(IMAGE_DIR, new_name)
+        if os.path.isdir(src):
+            os.rename(src, dst)
+    return redirect(url_for("main.upload_media"))
 
 @main_bp.route("/settings", methods=["GET", "POST"])
 def settings():
@@ -320,10 +371,18 @@ def configure_spotify():
         save_config(cfg)
         return redirect(url_for("main.configure_spotify"))
     else:
+        tok_cached = os.path.exists(SPOTIFY_CACHE_PATH)
+        creds_set = bool(
+            cfg.get("spotify", {}).get("client_id")
+            and cfg.get("spotify", {}).get("client_secret")
+            and cfg.get("spotify", {}).get("redirect_uri")
+        )
         return render_template(
             "configure_spotify.html",
             spotify=cfg["spotify"],
-            theme=cfg.get("theme", "dark")
+            theme=cfg.get("theme", "dark"),
+            token_cached=tok_cached,
+            creds_set=creds_set,
         )
 
 @main_bp.route("/spotify_auth")
@@ -418,6 +477,13 @@ def overlay_config():
             }
             if "displays" in cfg and monitor in cfg["displays"]:
                 cfg["displays"][monitor]["overlay"] = new_overlay
+        if "overlay" not in cfg:
+            cfg["overlay"] = {}
+        try:
+            cfg["overlay"]["offset_x"] = int(request.form.get("offset_x", "0"))
+            cfg["overlay"]["offset_y"] = int(request.form.get("offset_y", "0"))
+        except Exception:
+            pass
         save_config(cfg)
         try:
             subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
@@ -425,10 +491,39 @@ def overlay_config():
             log_message(f"Failed to restart echoview.service: {e}")
         return redirect(url_for("main.overlay_config"))
     else:
+        monitors_cfg = cfg.get("displays", {})
+        overlay_cfg = cfg.get("overlay", {})
+        monitors_dict = get_local_monitors_from_config(cfg)
+        prev_w, prev_h, preview_overlay = compute_overlay_preview(overlay_cfg, monitors_dict)
+
+        sel = overlay_cfg.get("monitor_selection", "All")
+        total_w = 0
+        if sel == "All":
+            for m in monitors_dict.values():
+                try:
+                    w = int(m["resolution"].split("x")[0])
+                    total_w = max(total_w, w)
+                except Exception:
+                    pass
+        else:
+            if sel in monitors_dict:
+                try:
+                    total_w = int(monitors_dict[sel]["resolution"].split("x")[0])
+                except Exception:
+                    total_w = 0
+        scale_factor = float(prev_w) / float(total_w) if total_w else 1.0
+        offset_x = int(overlay_cfg.get("offset_x", 0) * scale_factor)
+        offset_y = int(overlay_cfg.get("offset_y", 0) * scale_factor)
         return render_template(
             "overlay.html",
             theme=cfg.get("theme", "dark"),
-            monitors=cfg.get("displays", {})
+            monitors=monitors_cfg,
+            preview_w=prev_w,
+            preview_h=prev_h,
+            preview_overlay=preview_overlay,
+            offset_x=offset_x,
+            offset_y=offset_y,
+            scale_factor=scale_factor,
         )
 
 @main_bp.route("/", methods=["GET", "POST"])
@@ -580,11 +675,11 @@ def index():
         and sp_cfg.get("redirect_uri")
     ):
         if os.path.exists(SPOTIFY_CACHE_PATH):
-            spotify_status = "✅"
+            spotify_status = "Authorized"
         else:
-            spotify_status = "⚠️"
+            spotify_status = "Credentials set - authorize"
     else:
-        spotify_status = "❌"
+        spotify_status = "Not configured"
 
 
     final_monitors = {}
