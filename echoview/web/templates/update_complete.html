@@ -8,8 +8,8 @@
 </head>
 <body>
     <h1>Update Complete</h1>
-    <p>Your application has been updated from GitHub. You can now restart the service.</p>
-    <!-- Option A: Automatic redirect after 5 seconds -->
+    <p>Your application has been updated from GitHub. Services will restart shortly.</p>
+    <!-- Automatic redirect after 5 seconds -->
     <script>
         setTimeout(function() {
             window.location.href = "{{ url_for('main.restart_services') }}";

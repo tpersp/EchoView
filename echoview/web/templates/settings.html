@@ -68,11 +68,16 @@
 
   <!-- Update from GitHub, logs, reset config, etc. as a final card -->
   <div class="card" style="margin-top:20px;">
+    <p><strong>Update from GitHub</strong></p>
+    <p>Branch: <em>{{ update_branch }}</em></p>
     <form method="POST" action="{{ url_for('main.update_app') }}">
-      <p><strong>Update from GitHub</strong></p>
-      <p>Branch: <em>{{ update_branch }}</em></p>
-      <button type="submit">Update Now</button>
+      <button type="submit">Update</button>
     </form>
+    <p style="font-size:smaller; margin-bottom:10px;">Pull latest code and restart services.</p>
+    <form method="POST" action="{{ url_for('main.full_update') }}">
+      <button type="submit">Full Update &amp; Reboot</button>
+    </form>
+    <p style="font-size:smaller;">Reset to branch, run setup if needed and reboot the device.</p>
     <hr>
     <p style="margin-top:10px;">
       <a href="{{ url_for('main.download_log') }}"><button>Download Log</button></a>
