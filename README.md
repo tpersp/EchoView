@@ -37,7 +37,7 @@ sudo ./setup.sh
 During the setup:
 
 - **Apt packages** are installed (LightDM, Xorg, Python3, etc.)
-- **pip packages** from `dependencies.txt` are installed
+- **pip packages** from `dependencies.txt` (or `requirements.txt`) are installed
 - **Screen blanking** is disabled
 - You’ll be prompted for the user that will auto-login into X, the path for `VIEWER_HOME` and `IMAGE_DIR`.
 - **Optionally** mount a CIFS share at `IMAGE_DIR`, or skip to use a local uploads folder.
@@ -103,6 +103,7 @@ EchoView/
 │       └── __init__.py
 ├── setup.sh               # Automated setup script
 ├── dependencies.txt       # Required pip packages
+├── requirements.txt       # Alias to dependencies.txt
 ├── static/
 │   ├── style.css
 │   ├── favicon.png
