@@ -37,6 +37,8 @@ sudo ./setup.sh
 During the setup:
 
 - **Apt packages** are installed (LightDM, Xorg, Python3, etc.)
+- **WebEngine libs** like `libwebp7`, `libtiff6`, `libxslt1.1`, and `libminizip1t64` are installed,
+  with compatibility symlinks created for `libwebp.so.6` and `libtiff.so.5` if needed.
 - **pip packages** from `dependencies.txt` (or `requirements.txt`) are installed
 - **Screen blanking** is disabled
 - You’ll be prompted for the user that will auto-login into X, the path for `VIEWER_HOME` and `IMAGE_DIR`.
@@ -144,6 +146,8 @@ sudo journalctl -u controller.service
 - **Wrong screen**? Confirm you have multiple monitors recognized by X. EchoView uses PySide6’s screen geometry, so make sure your environment is not on Wayland.
 - **Spotify issues**? Check the file specified by `SPOTIFY_CACHE_PATH` for the saved token. Re-authorize if needed.
 - **Overlay not transparent?** You need a compositor (like **picom**) running for real transparency.
+- **Web viewer blank?** Ensure the system libraries `libxslt1.1` and `libminizip1t64`
+  are installed and that symlinks exist for `libwebp.so.6` and `libtiff.so.5`.
 - **Check logs**: Look at `echoview.log` (in your `VIEWER_HOME`) or `journalctl -u echoview.service`.
 
 ## Contributing

@@ -132,12 +132,32 @@ apt-get install -y \
   libxtst6 \
   libxkbcommon0 \
   libxkbfile1 \
-  libasound2
+  libasound2 \
+  libxslt1.1 \
+  libminizip1t64 \
+  libwebp7 \
+  libtiff6
 
 if [ $? -ne 0 ]; then
   echo "Error installing packages via apt. Exiting."
   exit 1
 fi
+
+# -------------------------------------------------------
+# Ensure PySide6 WebEngine libraries exist
+# -------------------------------------------------------
+# Create compatibility symlinks if older versions are missing
+for LIB in libwebp.so.6 libtiff.so.5; do
+  if ! find /usr/lib -name "$LIB" | grep -q .; then
+    TARGET=$(find /usr/lib -name "${LIB%.so.*}.so.*" | head -n1)
+    if [ -n "$TARGET" ]; then
+      ln -s "$TARGET" "$(dirname "$TARGET")/$LIB"
+    fi
+  fi
+done
+
+# Ensure required runtime libs are installed
+ldconfig
 
 # Create /var/lib/lightdm/data so LightDM can store user-data:
 mkdir -p /var/lib/lightdm/data
