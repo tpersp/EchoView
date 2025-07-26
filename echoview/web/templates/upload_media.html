@@ -42,6 +42,18 @@
           <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
           <button type="submit">Delete</button>
         </form>
+        <a href="{{ url_for('main.download_file', filename=folder ~ '/' ~ f) }}">Download</a>
+        <form method="post" action="{{ url_for('main.move_image') }}" class="d-inline">
+          <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
+          <select name="dest">
+            {% for dest in subfolders %}
+              {% if dest != folder %}
+                <option value="{{ dest }}">{{ dest }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+          <button type="submit">Move</button>
+        </form>
       </div>
       {% endfor %}
       <div class="file-item">

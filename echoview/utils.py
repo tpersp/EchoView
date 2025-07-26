@@ -129,9 +129,15 @@ def get_pi_model():
     return "Unknown Model"
 
 def get_subfolders():
+    """Return a sorted list of subfolders inside IMAGE_DIR."""
     try:
-        return [d for d in os.listdir(IMAGE_DIR) if os.path.isdir(os.path.join(IMAGE_DIR, d))]
-    except:
+        folders = [
+            d for d in os.listdir(IMAGE_DIR)
+            if os.path.isdir(os.path.join(IMAGE_DIR, d))
+        ]
+        folders.sort(key=lambda x: x.lower())
+        return folders
+    except Exception:
         return []
 
 def count_files_in_folder(folder_path):

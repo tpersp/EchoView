@@ -208,6 +208,25 @@ def download_log():
         return send_file(LOG_PATH, as_attachment=True)
     return "No log file found", 404
 
+@main_bp.route("/download/<path:filename>")
+def download_file(filename):
+    """Download a media file."""
+    full_path = os.path.join(IMAGE_DIR, filename)
+    if os.path.exists(full_path):
+        return send_file(full_path, as_attachment=True)
+    return "", 404
+
+@main_bp.route("/move_image", methods=["POST"])
+def move_image():
+    rel_path = request.form.get("path", "")
+    dest = request.form.get("dest", "")
+    src = os.path.join(IMAGE_DIR, rel_path)
+    dest_dir = os.path.join(IMAGE_DIR, dest)
+    if os.path.isfile(src) and os.path.isdir(dest_dir):
+        dst = os.path.join(dest_dir, os.path.basename(src))
+        os.rename(src, dst)
+    return redirect(url_for("main.upload_media"))
+
 @main_bp.route("/upload_media", methods=["GET", "POST"])
 def upload_media():
     cfg = load_config()
@@ -215,7 +234,8 @@ def upload_media():
     if request.method == "GET":
         sort_opt = request.args.get("sort", "name_asc")
         folder_files = {}
-        for sf in get_subfolders():
+        subfolders = get_subfolders()
+        for sf in subfolders:
             try:
                 folder_path = os.path.join(IMAGE_DIR, sf)
                 files = [
@@ -237,6 +257,7 @@ def upload_media():
             theme=theme,
             folder_files=folder_files,
             sort_option=sort_opt,
+            subfolders=subfolders,
         )
 
     files = request.files.getlist("mediafiles")

@@ -83,6 +83,7 @@ You can override the path by adding `SPOTIFY_CACHE_PATH` to your `.env` file.
 ### Media Upload
 
 Use the **Upload Media** page to add images/GIFs. You can place them in existing subfolders or create a new one. If you have a CIFS share, it will appear under your `IMAGE_DIR`.
+The file manager also lets you download images and move them between folders. Folders are always shown alphabetically for easier navigation.
 
 
 ## Directory Structure
