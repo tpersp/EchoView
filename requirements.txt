@@ -1,0 +1,2 @@
+# See dependencies.txt for the authoritative list
+-r dependencies.txt

@@ -34,6 +34,7 @@ def init_config():
                     "shuffle_mode": False,
                     "mixed_folders": [],
                     "rotate": 0,
+                    "web_url": "",
                     "spotify_info_position": "bottom-center",
                     "spotify_show_progress": False,
                     "spotify_progress_position": "bottom-center",   # New: progress bar location setting

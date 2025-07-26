@@ -4,13 +4,14 @@ EchoView is a modern, easy-to-configure slideshow + overlay viewer written in **
 
 ## Key Features
 
-- **Multiple Monitors**: Launches a PySide6 window per detected monitor, each with its own display mode (Random, Mixed, Spotify, etc.).
+- **Multiple Monitors**: Launches a PySide6 window per detected monitor, each with its own display mode (Random, Mixed, Spotify, Web Page, etc.).
 - **Web Controller**: A Flask web interface (on port **8080**) lets you manage sub-devices, change the slideshow folder, set intervals, shuffle, or pick a single image.
 - **Systemd Integration**: The `setup.sh` script creates two systemd services:
   - `echoview.service` - runs the PySide6 slideshow windows
   - `controller.service` - runs the Flask app
 - **Overlay**: Optionally display time or custom text overlay in a semi-transparent box.
 - **Spotify Integration**: Show currently playing track’s album art on a display.
+- **Web Page Mode**: Display any live web page by entering its URL.
 
 ## Installation
 
@@ -36,7 +37,7 @@ sudo ./setup.sh
 During the setup:
 
 - **Apt packages** are installed (LightDM, Xorg, Python3, etc.)
-- **pip packages** from `dependencies.txt` are installed
+- **pip packages** from `dependencies.txt` (or `requirements.txt`) are installed
 - **Screen blanking** is disabled
 - You’ll be prompted for the user that will auto-login into X, the path for `VIEWER_HOME` and `IMAGE_DIR`.
 - **Optionally** mount a CIFS share at `IMAGE_DIR`, or skip to use a local uploads folder.
@@ -102,6 +103,7 @@ EchoView/
 │       └── __init__.py
 ├── setup.sh               # Automated setup script
 ├── dependencies.txt       # Required pip packages
+├── requirements.txt       # Alias to dependencies.txt
 ├── static/
 │   ├── style.css
 │   ├── favicon.png

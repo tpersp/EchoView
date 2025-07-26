@@ -27,7 +27,7 @@ load_env()
 # Application Version & Paths
 # ------------------------------------------------------------
 
-APP_VERSION = "1.1.0" # Revert "Add webpage display mode"
+APP_VERSION = "1.2.0"  # Add webpage display mode
 
 VIEWER_HOME = os.environ.get("VIEWER_HOME", "/home/pi/EchoView")
 IMAGE_DIR   = os.environ.get("IMAGE_DIR", "/mnt/EchoViews")

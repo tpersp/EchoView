@@ -122,7 +122,17 @@ apt-get install -y \
   libxcb-xinerama0 \
   libxkbcommon-x11-0\
   libxcb-icccm4\
-  libxcb-keysyms1
+  libxcb-keysyms1 \
+  libgl1 \
+  libegl1 \
+  libxi6 \
+  libxcomposite1 \
+  libxdamage1 \
+  libxrandr2 \
+  libxtst6 \
+  libxkbcommon0 \
+  libxkbfile1 \
+  libasound2
 
 if [ $? -ne 0 ]; then
   echo "Error installing packages via apt. Exiting."

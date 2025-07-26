@@ -33,6 +33,7 @@
             <option value="specific_image" {% if dcfg.mode=="specific_image" %}selected{% endif %}>Specific Image/GIF</option>
             <option value="mixed"          {% if dcfg.mode=="mixed" %}selected{% endif %}>Mixed (Multiple Folders)</option>
             <option value="spotify"        {% if dcfg.mode=="spotify" %}selected{% endif %}>Spotify Now Playing</option>
+            <option value="web_page"       {% if dcfg.mode=="web_page" %}selected{% endif %}>Web Page</option>
           </select>
           <br><br>
           <!-- Fallback Mode (only shown if Spotify mode is selected) -->
@@ -192,6 +193,11 @@
             {% endif %}
           {% endif %}
           <br>
+          {% endif %}
+          {% if dcfg.mode == "web_page" %}
+          <label>Web URL:</label><br>
+          <input type="text" name="{{ dname }}_web_url" value="{{ dcfg.web_url|default('') }}" style="width:90%;">
+          <br><br>
           {% endif %}
         </div>
       </div>
