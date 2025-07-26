@@ -243,7 +243,7 @@ def upload_media():
         f.save(final_path)
         log_message(f"Uploaded file: {final_path}")
 
-    return redirect(url_for("main.index"))
+    return redirect(url_for("main.upload_media"))
 
 @main_bp.route("/restart_viewer", methods=["POST"])
 def restart_viewer():
