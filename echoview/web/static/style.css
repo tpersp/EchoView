@@ -107,6 +107,11 @@ label {
   margin-bottom: 15px;
 }
 
+/* Ensure all headings use the theme's text color */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--text-normal);
+}
+
 /* Info cards, used in a grid/tile layout */
 .cards-container {
   display: grid;
@@ -233,6 +238,9 @@ table td button {
   --overlay-preview-bg: rgba(0,0,0,0.2);
   background: #121212;
   color: var(--text-normal);
+  /* ensure Bootstrap components inherit our theme colors */
+  --bs-body-color: var(--text-normal);
+  --bs-heading-color: var(--text-normal);
 
   /* Additional dropdown variables for dark theme */
   --dropdown-bg: #333;
@@ -260,6 +268,9 @@ table td button {
   --overlay-preview-bg: rgba(0,0,0,0.05);
   background: #ffffff;
   color: #222;
+  /* ensure Bootstrap components inherit our theme colors */
+  --bs-body-color: var(--text-normal);
+  --bs-heading-color: var(--text-normal);
 
   /* Additional dropdown variables for light theme */
   --dropdown-bg: #eee;
