@@ -21,6 +21,7 @@ from echoview.utils import (
     load_config, save_config, init_config, log_message,
     get_system_stats, get_subfolders, count_files_in_folder,
     get_hostname, get_ip_address, get_pi_model,
+    get_storage_stats, format_bytes,
     CONFIG_PATH
 )
 
@@ -151,11 +152,16 @@ main_bp = Blueprint("main", __name__, static_folder="static")
 @main_bp.route("/stats")
 def stats_json():
     cpu, mem_mb, load1, temp = get_system_stats()
+    used_bytes, total_bytes = get_storage_stats()
+    used_human = format_bytes(used_bytes)
+    total_human = format_bytes(total_bytes)
     return jsonify({
         "cpu_percent": cpu,
         "mem_used_mb": round(mem_mb, 1),
         "load_1min": round(load1, 2),
-        "temp": temp
+        "temp": temp,
+        "disk_used": used_human,
+        "disk_total": total_human
     })
 
 @main_bp.route("/list_monitors")
@@ -701,6 +707,8 @@ def index():
         display_images[dname] = img_list
 
     cpu, mem_mb, load1, temp = get_system_stats()
+    used_bytes, total_bytes = get_storage_stats()
+    disk_line = f"{format_bytes(used_bytes)}/{format_bytes(total_bytes)}"
     host = get_hostname()
     ipaddr = get_ip_address()
     model = get_pi_model()
@@ -742,6 +750,7 @@ def index():
         mem_mb=round(mem_mb, 1),
         load1=round(load1, 2),
         temp=temp,
+        disk_usage=disk_line,
         host=host,
         ipaddr=ipaddr,
         model=model,
@@ -911,4 +920,13 @@ def restart_services():
     except subprocess.CalledProcessError as e:
         log_message(f"Failed to restart services: {e}")
         return "Failed to restart services. Check logs.", 500
-    return "Services are restarting now..."
+
+    return (
+        "<html><head><meta charset='utf-8'>"
+        "<title>Restarting</title>"
+        "<script>setTimeout(function(){window.location.href='/'}, 10000);" 
+        "</script></head><body>"
+        "<h2>Services restarting...</h2>"
+        "<p>You will be redirected shortly.</p>"
+        "</body></html>"
+    )

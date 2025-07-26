@@ -7,6 +7,7 @@ import subprocess
 import requests
 import random
 import psutil
+import shutil
 from datetime import datetime
 
 from echoview.config import (
@@ -103,6 +104,24 @@ def get_system_stats():
     except:
         pass
     return (cpu, mem_used_mb, load1, temp)
+
+def get_storage_stats(path=IMAGE_DIR):
+    """Return used and total bytes for the given path."""
+    try:
+        usage = shutil.disk_usage(path)
+        return usage.used, usage.total
+    except Exception:
+        return 0, 0
+
+def format_bytes(num_bytes):
+    """Return human readable string like 1.2GB given bytes."""
+    units = ["B", "KB", "MB", "GB", "TB"]
+    size = float(num_bytes)
+    for unit in units:
+        if size < 1024.0:
+            return f"{size:.1f}{unit}"
+        size /= 1024.0
+    return f"{size:.1f}PB"
 
 def get_hostname():
     try:

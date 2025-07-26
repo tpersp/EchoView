@@ -14,10 +14,12 @@ function fetchStats() {
       const memEl = document.getElementById("stat_mem");
       const loadEl = document.getElementById("stat_load");
       const tempEl = document.getElementById("stat_temp");
+      const diskEl = document.getElementById("stat_disk");
       if (cpuEl)  cpuEl.textContent = data.cpu_percent + "%";
       if (memEl)  memEl.textContent = data.mem_used_mb + "MB";
       if (loadEl) loadEl.textContent = data.load_1min;
       if (tempEl) tempEl.textContent = data.temp;
+      if (diskEl) diskEl.textContent = data.disk_used + "/" + data.disk_total;
     })
     .catch(e => console.log("Stats fetch error:", e));
 }
