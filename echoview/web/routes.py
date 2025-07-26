@@ -213,14 +213,31 @@ def upload_media():
     cfg = load_config()
     theme = cfg.get("theme", "dark")
     if request.method == "GET":
+        sort_opt = request.args.get("sort", "name_asc")
         folder_files = {}
         for sf in get_subfolders():
             try:
                 folder_path = os.path.join(IMAGE_DIR, sf)
-                folder_files[sf] = [f for f in os.listdir(folder_path) if f.lower().endswith((".jpg",".jpeg",".png",".gif"))]
+                files = [
+                    f for f in os.listdir(folder_path)
+                    if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))
+                ]
+                if sort_opt.startswith("name"):
+                    files.sort(reverse=(sort_opt == "name_desc"))
+                else:
+                    files.sort(
+                        key=lambda x: os.path.getmtime(os.path.join(folder_path, x)),
+                        reverse=(sort_opt == "date_desc")
+                    )
+                folder_files[sf] = files
             except Exception:
                 folder_files[sf] = []
-        return render_template("upload_media.html", theme=theme, folder_files=folder_files)
+        return render_template(
+            "upload_media.html",
+            theme=theme,
+            folder_files=folder_files,
+            sort_option=sort_opt,
+        )
 
     files = request.files.getlist("mediafiles")
     if not files:

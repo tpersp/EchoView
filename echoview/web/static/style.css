@@ -336,6 +336,10 @@ table td button {
   font-weight: bold;
   cursor: pointer;
   margin-bottom: 10px;
+  color: var(--text-normal);
+}
+#file-manager .filename {
+  color: var(--text-normal);
 }
 #file-manager .upload-thumb {
   width: 100%;
