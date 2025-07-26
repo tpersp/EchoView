@@ -756,6 +756,61 @@ def index():
 
 @main_bp.route("/update_app", methods=["POST"])
 def update_app():
+    """Perform a soft update: git pull and restart services."""
+    cfg = load_config()
+    log_message(f"Starting soft update to origin/{UPDATE_BRANCH}")
+
+    old_hash = ""
+    try:
+        old_hash = subprocess.check_output([
+            "git",
+            "rev-parse",
+            "HEAD:setup.sh",
+        ], cwd=VIEWER_HOME).decode().strip()
+    except Exception as e:
+        log_message(f"Could not get old setup.sh hash: {e}")
+
+    try:
+        subprocess.check_call(["git", "fetch"], cwd=VIEWER_HOME)
+        subprocess.check_call(["git", "checkout", UPDATE_BRANCH], cwd=VIEWER_HOME)
+        subprocess.check_call(
+            ["git", "reset", "--hard", f"origin/{UPDATE_BRANCH}"], cwd=VIEWER_HOME
+        )
+    except subprocess.CalledProcessError as e:
+        log_message(f"Git update failed: {e}")
+        return "Git update failed. Check logs.", 500
+
+    new_hash = ""
+    try:
+        new_hash = subprocess.check_output([
+            "git",
+            "rev-parse",
+            "HEAD:setup.sh",
+        ], cwd=VIEWER_HOME).decode().strip()
+    except Exception as e:
+        log_message(f"Could not get new setup.sh hash: {e}")
+
+    if old_hash and new_hash and (old_hash != new_hash):
+        log_message("setup.sh changed. Re-running it in --auto-update mode...")
+        try:
+            subprocess.check_call(
+                ["sudo", "bash", "setup.sh", "--auto-update"], cwd=VIEWER_HOME
+            )
+        except subprocess.CalledProcessError as e:
+            log_message(f"Re-running setup.sh failed: {e}")
+
+    log_message("Soft update completed successfully.")
+
+    # Restart services without rebooting the whole device
+    subprocess.Popen(["sudo", "systemctl", "restart", "echoview.service"])
+    subprocess.Popen(["sudo", "systemctl", "restart", "controller.service"])
+
+    return render_template("update_complete.html")
+
+
+@main_bp.route("/full_update", methods=["POST"])
+def full_update():
+    """Perform a full update and reboot the device."""
     cfg = load_config()
     log_message(f"Starting update: forced reset to origin/{UPDATE_BRANCH}")
 
