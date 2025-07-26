@@ -18,12 +18,13 @@ import subprocess
 from datetime import datetime
 from collections import OrderedDict
 
-from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF
+from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl
 from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QProgressBar,
     QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect, QSizePolicy
 )
+from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from spotipy.oauth2 import SpotifyOAuth
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
@@ -149,6 +150,10 @@ class DisplayWindow(QMainWindow):
         self.spotify_progress_timer = QTimer(self)
         self.spotify_progress_timer.timeout.connect(self.update_spotify_progress)
 
+        # Web page view for web_page mode
+        self.web_view = QWebEngineView(self.main_widget)
+        self.web_view.hide()
+
         # Timers
         self.slideshow_timer = QTimer(self)
         self.slideshow_timer.timeout.connect(self.next_image)
@@ -176,6 +181,9 @@ class DisplayWindow(QMainWindow):
 
         self.bg_label.setGeometry(rect)
         self.foreground_label.setGeometry(rect)
+        if self.web_view.isVisible():
+            self.web_view.setGeometry(rect)
+            self.web_view.lower()
         self.bg_label.lower()
 
         # Position Spotify info label – its text box spans nearly the full screen width.
@@ -346,8 +354,23 @@ class DisplayWindow(QMainWindow):
             else:
                 self.spotify_progress_bar.hide()
                 self.spotify_progress_timer.stop()
-        self.slideshow_timer.setInterval(interval_s * 1000)
-        self.slideshow_timer.start()
+            self.web_view.hide()
+            self.slideshow_timer.setInterval(interval_s * 1000)
+            self.slideshow_timer.start()
+        elif self.current_mode == "web_page":
+            url = self.disp_cfg.get("web_url", "")
+            if url:
+                self.web_view.load(QUrl(url))
+            self.web_view.show()
+            self.spotify_progress_bar.hide()
+            self.spotify_progress_timer.stop()
+            self.slideshow_timer.stop()
+        else:
+            self.spotify_progress_bar.hide()
+            self.spotify_progress_timer.stop()
+            self.web_view.hide()
+            self.slideshow_timer.setInterval(interval_s * 1000)
+            self.slideshow_timer.start()
 
         self.image_list = []
         self.index = 0
@@ -422,6 +445,9 @@ class DisplayWindow(QMainWindow):
 
     def next_image(self, force=False):
         if not self.running:
+            return
+
+        if self.current_mode == "web_page":
             return
 
         if self.current_mode == "spotify":
