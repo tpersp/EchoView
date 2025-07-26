@@ -1,13 +1,11 @@
-import sys
-import os
+import sys, os, types
 import types
-import time
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "echoview"))
 
-# Provide dummy PySide6 modules so echoview can be imported without the real Qt deps
+# Dummy Qt modules
 qtcore = types.ModuleType("PySide6.QtCore")
 class DummyQt:
     AlignCenter = 0
@@ -25,13 +23,7 @@ class DummyQt:
     white = 0
     transparent = 0
 qtcore.Qt = DummyQt
-class DummyTimer:
-    def __init__(self, *a, **k):
-        pass
-    @staticmethod
-    def singleShot(ms, func):
-        func()
-qtcore.QTimer = DummyTimer
+qtcore.QTimer = type("QTimer", (), {"__init__":lambda self,*a,**k:None,"timeout":lambda self:None,"connect":lambda self,f:None,"start":lambda self,*a,**k:None,"stop":lambda self:None})
 qtcore.Slot = lambda *a, **k: (lambda f: f)
 qtcore.QSize = object
 qtcore.QRect = object
@@ -43,21 +35,11 @@ for name in ["QPixmap", "QMovie", "QPainter", "QImage", "QImageReader", "QTransf
     setattr(qtgui, name, type(name, (), {}))
 
 qtwidgets = types.ModuleType("PySide6.QtWidgets")
-for name in [
-    "QApplication",
-    "QMainWindow",
-    "QWidget",
-    "QLabel",
-    "QProgressBar",
-    "QGraphicsScene",
-    "QGraphicsPixmapItem",
-    "QGraphicsBlurEffect",
-    "QSizePolicy",
-]:
+for name in ["QApplication","QMainWindow","QWidget","QLabel","QProgressBar","QGraphicsScene","QGraphicsPixmapItem","QGraphicsBlurEffect","QSizePolicy"]:
     setattr(qtwidgets, name, type(name, (), {}))
 
 qweb = types.ModuleType("PySide6.QtWebEngineWidgets")
-class DummyWebView:
+class DummyWeb:
     def __init__(self, *a, **k):
         self.loaded = None
         self.shown = False
@@ -70,45 +52,33 @@ class DummyWebView:
         self.hidden = True
     def setGeometry(self, *a):
         pass
-qweb.QWebEngineView = DummyWebView
-
-spotipy = types.ModuleType("spotipy")
-spotipy.Spotify = type("Spotify", (), {})
-oauth2 = types.ModuleType("spotipy.oauth2")
-oauth2.SpotifyOAuth = type("SpotifyOAuth", (), {})
-spotipy.oauth2 = oauth2
+qweb.QWebEngineView = DummyWeb
 
 sys.modules.setdefault("PySide6", types.ModuleType("PySide6"))
 sys.modules.setdefault("PySide6.QtCore", qtcore)
 sys.modules.setdefault("PySide6.QtGui", qtgui)
 sys.modules.setdefault("PySide6.QtWidgets", qtwidgets)
 sys.modules.setdefault("PySide6.QtWebEngineWidgets", qweb)
-sys.modules.setdefault("spotipy", spotipy)
-sys.modules.setdefault("spotipy.oauth2", oauth2)
 
 import echoview
-
 DisplayWindow = echoview.DisplayWindow
 
 
-def test_spotify_fetch_thread_single():
+def test_webpage_mode_loads_url():
     dw = DisplayWindow.__new__(DisplayWindow)
-    dw.spotify_fetch_thread = None
-    dw.spotify_fetch_id = 0
-
-    def fake_fetch():
-        time.sleep(0.1)
-        return "dummy"
-
-    dw.fetch_spotify_album_art = fake_fetch
-    dw.handle_spotify_result = lambda fid, r: None
-
-    dw.start_spotify_fetch()
-    first_thread = dw.spotify_fetch_thread
-    assert first_thread is not None
-    time.sleep(0.02)
-    dw.start_spotify_fetch()
-    second_thread = dw.spotify_fetch_thread
-    assert first_thread is second_thread
-    first_thread.join(1)
-
+    dw.running = True
+    dw.main_widget = type("MW", (), {"rect": lambda self: type("R", (), {"width": lambda self:0,"height":lambda self:0})()})()
+    dummy_label = type("Lbl", (), {"hide": lambda self:None})()
+    dw.bg_label = dummy_label
+    dw.foreground_label = dummy_label
+    dw.spotify_info_label = dummy_label
+    dw.spotify_progress_bar = dummy_label
+    dw.disp_cfg = {"web_url": "http://example.com"}
+    dw.current_mode = "webpage"
+    dw.web_view = None
+    dw.image_list = []
+    dw.clear_foreground_label = lambda msg: None
+    dw.setup_layout = lambda: None
+    dw.next_image(force=True)
+    assert dw.web_view.loaded == "http://example.com"
+    assert dw.web_view.shown
