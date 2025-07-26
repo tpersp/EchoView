@@ -140,6 +140,18 @@ sudo journalctl -u echoview.service
 sudo journalctl -u controller.service
 ```
 
+## Updating
+
+To update EchoView while preserving your existing configuration, run:
+
+```bash
+sudo ./setup.sh --auto-update
+```
+
+This mode reinstalls dependencies and refreshes the systemd service files.
+If a `.env` file already exists in your `VIEWER_HOME`, its `VIEWER_HOME` and
+`IMAGE_DIR` values are reused and not overwritten.
+
 ## Troubleshooting
 
 - **No images?** Ensure images exist in the `IMAGE_DIR` (or subfolders). By default, check `/mnt/EchoViews` or wherever you mounted.

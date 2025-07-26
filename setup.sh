@@ -193,8 +193,9 @@ else
 fi
 
 # -------------------------------------------------------
-# 3) Disable screen blanking and hide mouse cursor
+# 3) Disable screen blanking and configure Wi-Fi power save (install only)
 # -------------------------------------------------------
+if [[ "$AUTO_UPDATE" == "false" ]]; then
 echo
 echo "== Step 3: Disabling screen blanking via raspi-config =="
 if command -v raspi-config &>/dev/null; then
@@ -290,6 +291,8 @@ systemctl daemon-reload
 systemctl enable wifi-powersave-off.service
 systemctl start wifi-powersave-off.service
 
+fi
+
 # -------------------------------------------------------
 # 4) Prompt user for config (skip if AUTO_UPDATE)
 # -------------------------------------------------------
@@ -333,7 +336,7 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
   IMAGE_DIR=${input_dir:-/mnt/EchoViews}
 else
   echo
-  echo "== Auto-Update Mode: skipping interactive user/path prompts. Using defaults =="
+  echo "== Auto-Update Mode: skipping interactive user/path prompts. =="
   VIEWER_USER="pi"
   USER_ID="$(id -u "$VIEWER_USER")"
   if [ -z "$USER_ID" ]; then
@@ -341,7 +344,15 @@ else
     exit 1
   fi
   VIEWER_HOME="/home/$VIEWER_USER/EchoView"
-  IMAGE_DIR="/mnt/EchoViews"
+  ENV_FILE="$VIEWER_HOME/.env"
+  if [ -f "$ENV_FILE" ]; then
+    echo "Using existing $ENV_FILE"
+    set -a
+    source "$ENV_FILE"
+    set +a
+  else
+    IMAGE_DIR="/mnt/EchoViews"
+  fi
 fi
 
 echo
@@ -353,12 +364,14 @@ chown "$VIEWER_USER:$VIEWER_USER" "$VIEWER_HOME"
 # 5) Create .env
 # -------------------------------------------------------
 ENV_FILE="$VIEWER_HOME/.env"
-echo "Creating $ENV_FILE with VIEWER_HOME + IMAGE_DIR..."
-cat <<EOF > "$ENV_FILE"
+if [[ "$AUTO_UPDATE" == "false" || ! -f "$ENV_FILE" ]]; then
+  echo "Creating $ENV_FILE with VIEWER_HOME + IMAGE_DIR..."
+  cat <<EOF > "$ENV_FILE"
 VIEWER_HOME=$VIEWER_HOME
 IMAGE_DIR=$IMAGE_DIR
 EOF
-chown "$VIEWER_USER:$VIEWER_USER" "$ENV_FILE"
+  chown "$VIEWER_USER:$VIEWER_USER" "$ENV_FILE"
+fi
 
 echo
 echo "Contents of $ENV_FILE:"
@@ -494,6 +507,7 @@ systemctl start controller.service
 # -------------------------------------------------------
 # 8) Configure Openbox autologin & picom in openbox autostart
 # -------------------------------------------------------
+if [[ "$AUTO_UPDATE" == "false" ]]; then
 echo
 echo "== Step 8: Configure Openbox autologin, picom, and autostart =="
 
@@ -550,6 +564,7 @@ EOF
 chown -R "$VIEWER_USER:$VIEWER_USER" "$PICOM_CONF_DIR"
 
 echo "Done configuring Openbox autologin, Picom configuration, and autostart."
+fi
 
 # -------------------------------------------------------
 # 8b) Ask to enable network watchdog reboot cronjob
