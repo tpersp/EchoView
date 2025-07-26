@@ -652,6 +652,7 @@ def index():
                 dcfg["shuffle_mode"] = (shuffle_val == "yes")
                 dcfg["specific_image"] = new_spec
                 dcfg["rotate"] = new_rotate
+                dcfg["web_url"] = request.form.get(pre + "web_url", dcfg.get("web_url", ""))
 
                 # If Spotify, store extras
                 if new_mode == "spotify":
