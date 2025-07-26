@@ -36,7 +36,6 @@ qtcore.Slot = lambda *a, **k: (lambda f: f)
 qtcore.QSize = object
 qtcore.QRect = object
 qtcore.QRectF = object
-qtcore.QUrl = lambda url: url
 
 qtgui = types.ModuleType("PySide6.QtGui")
 for name in ["QPixmap", "QMovie", "QPainter", "QImage", "QImageReader", "QTransform", "QFont"]:
@@ -56,22 +55,6 @@ for name in [
 ]:
     setattr(qtwidgets, name, type(name, (), {}))
 
-qweb = types.ModuleType("PySide6.QtWebEngineWidgets")
-class DummyWebView:
-    def __init__(self, *a, **k):
-        self.loaded = None
-        self.shown = False
-        self.hidden = False
-    def load(self, url):
-        self.loaded = url
-    def show(self):
-        self.shown = True
-    def hide(self):
-        self.hidden = True
-    def setGeometry(self, *a):
-        pass
-qweb.QWebEngineView = DummyWebView
-
 spotipy = types.ModuleType("spotipy")
 spotipy.Spotify = type("Spotify", (), {})
 oauth2 = types.ModuleType("spotipy.oauth2")
@@ -82,7 +65,6 @@ sys.modules.setdefault("PySide6", types.ModuleType("PySide6"))
 sys.modules.setdefault("PySide6.QtCore", qtcore)
 sys.modules.setdefault("PySide6.QtGui", qtgui)
 sys.modules.setdefault("PySide6.QtWidgets", qtwidgets)
-sys.modules.setdefault("PySide6.QtWebEngineWidgets", qweb)
 sys.modules.setdefault("spotipy", spotipy)
 sys.modules.setdefault("spotipy.oauth2", oauth2)
 

@@ -633,7 +633,6 @@ def index():
                 new_cat = request.form.get(pre + "image_category", dcfg["image_category"])
                 shuffle_val = request.form.get(pre + "shuffle_mode", "no")
                 new_spec = request.form.get(pre + "specific_image", dcfg["specific_image"])
-                new_url = request.form.get(pre + "web_url", dcfg.get("web_url", ""))
                 rotate_str = request.form.get(pre + "rotate", "0")
                 mixed_str = request.form.get(pre + "mixed_order", "")
                 mixed_list = [x for x in mixed_str.split(",") if x]
@@ -653,7 +652,6 @@ def index():
                 dcfg["shuffle_mode"] = (shuffle_val == "yes")
                 dcfg["specific_image"] = new_spec
                 dcfg["rotate"] = new_rotate
-                dcfg["web_url"] = new_url
 
                 # If Spotify, store extras
                 if new_mode == "spotify":

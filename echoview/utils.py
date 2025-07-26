@@ -32,10 +32,9 @@ def init_config():
                     "image_category": "",
                     "specific_image": "",
                     "shuffle_mode": False,
-                "mixed_folders": [],
-                "rotate": 0,
-                "web_url": "",
-                "spotify_info_position": "bottom-center",
+                    "mixed_folders": [],
+                    "rotate": 0,
+                    "spotify_info_position": "bottom-center",
                     "spotify_show_progress": False,
                     "spotify_progress_position": "bottom-center",   # New: progress bar location setting
                     "spotify_progress_theme": "dark",         # New: progress bar theme option
