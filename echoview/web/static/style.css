@@ -82,6 +82,11 @@ form input, form select, form button {
   background: var(--input-bg);
   color: var(--text-normal);
 }
+/* Ensure dropdown options are readable in dark mode */
+select option {
+  background: var(--input-bg);
+  color: var(--text-normal);
+}
 label {
   color: var(--text-normal);
 }
@@ -185,7 +190,7 @@ table td button {
   text-align: center;
   border: 2px dashed rgba(255, 255, 0, 0.4);
   background: rgba(255,255,0,0.1);
-  color: #888;
+  color: var(--text-normal);
   margin: 10px auto;
   padding: 10px;
   max-width: 600px;
@@ -214,7 +219,7 @@ table td button {
   --nav-active: #444;
   --nav-active-fg: #FFF;
 
-  --text-normal: #F5F5F5;
+  --text-normal: #FFFFFF;
   --input-border: #555;
   --input-bg: #3A3A3A;
   --section-bg: rgba(255,255,255,0.06);
