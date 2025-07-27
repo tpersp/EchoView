@@ -134,7 +134,7 @@ apt-get install -y \
   libxkbfile1 \
   libasound2 \
   libxslt1.1 \
-  libminizip1t64 \
+  libminizip1 \
   libwebp7 \
   libtiff6
 
