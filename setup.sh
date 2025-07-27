@@ -136,7 +136,8 @@ apt-get install -y \
   libxslt1.1 \
   libminizip1 \
   libwebp7 \
-  libtiff6
+  libtiff6 \
+  libevent-2.1-7
 
 if [ $? -ne 0 ]; then
   echo "Error installing packages via apt. Exiting."
@@ -155,6 +156,13 @@ for LIB in libwebp.so.6 libtiff.so.5; do
     fi
   fi
 done
+
+# -------------------------------------------------------
+# Symlink libminizip.so.1 for PySide6 WebEngine
+# -------------------------------------------------------
+if [ -f /usr/lib/aarch64-linux-gnu/libminizip.so.1 ] && [ ! -f /usr/lib/libminizip.so.1 ]; then
+  ln -s /usr/lib/aarch64-linux-gnu/libminizip.so.1 /usr/lib/libminizip.so.1
+fi
 
 # Ensure required runtime libs are installed
 ldconfig
