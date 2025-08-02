@@ -626,6 +626,7 @@ class DisplayWindow(QMainWindow):
             else:
                 self.clear_foreground_label("Video unsupported")
                 return
+
         if data["type"] == "gif" and not is_spotify:
             if self.fg_scale_percent == 100:
                 self.current_movie = QMovie(data["path"])
@@ -668,6 +669,7 @@ class DisplayWindow(QMainWindow):
     def on_video_status_changed(self, status):
         if not self.play_videos_to_end:
             return
+
         if status == QMediaPlayer.EndOfMedia:
             self.video_widget.hide()
             self.bg_label.show()
