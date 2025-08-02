@@ -29,9 +29,9 @@
           <!-- Mode -->
           <label>Mode:</label><br>
           <select name="{{ dname }}_mode">
-            <option value="random_image"   {% if dcfg.mode=="random_image" %}selected{% endif %}>Random Image/GIF</option>
-            <option value="specific_image" {% if dcfg.mode=="specific_image" %}selected{% endif %}>Specific Image/GIF</option>
-            <option value="mixed"          {% if dcfg.mode=="mixed" %}selected{% endif %}>Mixed (Multiple Folders)</option>
+            <option value="random_image"   {% if dcfg.mode=="random_image" %}selected{% endif %}>Random Media</option>
+            <option value="specific_image" {% if dcfg.mode=="specific_image" %}selected{% endif %}>Specific Media</option>
+            <option value="mixed"          {% if dcfg.mode=="mixed" %}selected{% endif %}>Mixed Media (Multiple Folders)</option>
             <option value="spotify"        {% if dcfg.mode=="spotify" %}selected{% endif %}>Spotify Now Playing</option>
             <option value="web_page"       {% if dcfg.mode=="web_page" %}selected{% endif %}>Web Page</option>
           </select>
@@ -40,9 +40,9 @@
           {% if dcfg.mode == "spotify" %}
           <label>Fallback Mode:</label><br>
           <select name="{{ dname }}_fallback_mode">
-            <option value="random_image"   {% if dcfg.fallback_mode=="random_image" %}selected{% endif %}>Random Image/GIF</option>
-            <option value="specific_image" {% if dcfg.fallback_mode=="specific_image" %}selected{% endif %}>Specific Image/GIF</option>
-            <option value="mixed"          {% if dcfg.fallback_mode=="mixed" %}selected{% endif %}>Mixed (Multiple Folders)</option>
+            <option value="random_image"   {% if dcfg.fallback_mode=="random_image" %}selected{% endif %}>Random Media</option>
+            <option value="specific_image" {% if dcfg.fallback_mode=="specific_image" %}selected{% endif %}>Specific Media</option>
+            <option value="mixed"          {% if dcfg.fallback_mode=="mixed" %}selected{% endif %}>Mixed Media (Multiple Folders)</option>
             <option value="none"           {% if dcfg.fallback_mode=="none" %}selected{% endif %}>None</option>
           </select>
           <br><br>
@@ -166,9 +166,9 @@
           </script>
           <br>
           {% endif %}
-          <!-- Specific Image selection -->
+          <!-- Specific Media selection -->
           {% if dcfg.mode == "specific_image" %}
-          <label>Select Image/GIF:</label><br>
+          <label>Select Media:</label><br>
           {% set fileList = display_images[dname] %}
           {% if fileList and fileList|length > 100 %}
             <div id="{{ dname }}_lazyContainer" data-files='{{ fileList|tojson }}'>
@@ -179,8 +179,13 @@
             <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:10px;">
               {% for imgpath in fileList %}
                 {% set bn = imgpath.split('/')[-1] %}
+                {% set ext = bn.split('.')[-1].lower() %}
                 <label style="text-align:center; cursor:pointer;">
-                  <img src="/thumb/{{ imgpath }}?size=60" loading="lazy" style="width:60px; height:60px; object-fit:cover; border:2px solid #555; border-radius:4px;">
+                  {% if ext in ['mp4','mov','avi','mkv','webm'] %}
+                    <video src="/images/{{ imgpath }}" style="width:60px; height:60px; object-fit:cover; border:2px solid #555; border-radius:4px;" muted loop></video>
+                  {% else %}
+                    <img src="/thumb/{{ imgpath }}?size=60" loading="lazy" style="width:60px; height:60px; object-fit:cover; border:2px solid #555; border-radius:4px;">
+                  {% endif %}
                   <br>
                   <input type="radio" name="{{ dname }}_specific_image" value="{{ bn }}"
                          {% if bn == dcfg.specific_image %}checked{% endif %}>
@@ -189,7 +194,7 @@
               {% endfor %}
             </div>
             {% else %}
-              <p>No images found or category is empty. <a href="{{ url_for('main.upload_media') }}">Upload some?</a></p>
+              <p>No media found or category is empty. <a href="{{ url_for('main.upload_media') }}">Upload some?</a></p>
             {% endif %}
           {% endif %}
           <br>
