@@ -242,3 +242,14 @@ function onMonitorChange() {
   const selForm = document.getElementById("monitorSelectForm");
   if (selForm) selForm.submit();
 }
+
+// Mobile sidebar toggle
+window.addEventListener('DOMContentLoaded', () => {
+  const navToggle = document.getElementById('nav-toggle');
+  const sidebar = document.querySelector('.sidebar');
+  if (navToggle && sidebar) {
+    navToggle.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+    });
+  }
+});

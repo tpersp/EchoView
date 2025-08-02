@@ -338,6 +338,97 @@ table td button {
   text-align: center;
 }
 
+/* --------------------------------------------------------------
+   Sidebar and responsive layout
+   -------------------------------------------------------------- */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 220px;
+  background: var(--nav-bg);
+  color: var(--nav-fg);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s ease;
+  z-index: 1000;
+}
+.sidebar a.nav-link {
+  color: var(--nav-fg);
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+.sidebar a.nav-link:hover {
+  background: var(--nav-hover);
+}
+.sidebar a.nav-link.active {
+  background: var(--nav-active);
+  color: var(--nav-active-fg);
+}
+.sidebar .dropdown-item {
+  background: transparent;
+  border: none;
+  padding: 0.5rem 0;
+  text-align: left;
+  color: inherit;
+}
+
+.top-bar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  background: var(--nav-bg);
+  color: var(--nav-fg);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 900;
+}
+.top-bar #nav-toggle {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.25rem;
+}
+
+main.content {
+  margin-left: 0;
+  margin-top: 0;
+  padding: 1rem;
+  display: block;
+}
+
+/* Mobile behaviour: hide sidebar off-canvas */
+@media (max-width: 767.98px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  main.content {
+    padding-top: 56px;
+  }
+}
+
+/* Desktop: sidebar visible */
+@media (min-width: 768px) {
+  main.content {
+    margin-left: 220px;
+  }
+  .top-bar {
+    display: none;
+  }
+}
+
 #file-manager .file-thumb {
   width: 100%;
   height: 120px;
