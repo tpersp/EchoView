@@ -246,7 +246,10 @@ def upload_media():
                 folder_path = os.path.join(IMAGE_DIR, sf)
                 files = [
                     f for f in os.listdir(folder_path)
-                    if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))
+                    if f.lower().endswith((
+                        ".jpg", ".jpeg", ".png", ".gif",
+                        ".mp4", ".mov", ".avi", ".mkv", ".webm"
+                    ))
                 ]
                 if sort_opt.startswith("name"):
                     files.sort(reverse=(sort_opt == "name_desc"))
@@ -280,7 +283,10 @@ def upload_media():
         if not f.filename:
             continue
         lf = f.filename.lower()
-        if not lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
+        if not lf.endswith((
+            ".jpg", ".jpeg", ".png", ".gif",
+            ".mp4", ".mov", ".avi", ".mkv", ".webm"
+        )):
             log_message(f"Unsupported file type: {f.filename}")
             continue
         final_path = os.path.join(target_dir, f.filename)
@@ -645,6 +651,7 @@ def index():
                 rotate_str = request.form.get(pre + "rotate", "0")
                 mixed_str = request.form.get(pre + "mixed_order", "")
                 mixed_list = [x for x in mixed_str.split(",") if x]
+                play_end_val = request.form.get(pre + "play_videos_to_end")
 
                 try:
                     new_interval = int(new_interval_s)
@@ -662,6 +669,7 @@ def index():
                 dcfg["specific_image"] = new_spec
                 dcfg["rotate"] = new_rotate
                 dcfg["web_url"] = request.form.get(pre + "web_url", dcfg.get("web_url", ""))
+                dcfg["play_videos_to_end"] = True if play_end_val else False
 
                 # If Spotify, store extras
                 if new_mode == "spotify":
@@ -710,7 +718,10 @@ def index():
         if os.path.isdir(base_dir):
             for fname in os.listdir(base_dir):
                 lf = fname.lower()
-                if lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
+                if lf.endswith((
+                    ".jpg", ".jpeg", ".png", ".gif",
+                    ".mp4", ".mov", ".avi", ".mkv", ".webm"
+                )):
                     rel_path = fname
                     img_list.append(os.path.join(cat, rel_path) if cat else rel_path)
         img_list.sort()
