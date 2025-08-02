@@ -113,13 +113,6 @@
           <label>Rotate (degrees):</label><br>
           <input type="number" name="{{ dname }}_rotate" value="{{ dcfg.rotate|default(0) }}">
           <br><br>
-          {% if dcfg.mode in ["random_image","mixed","specific_image"] %}
-          <label style="display:inline-block;">
-            <input type="checkbox" name="{{ dname }}_play_videos_to_end" value="1" {% if dcfg.play_videos_to_end %}checked{% endif %}>
-            Play videos to end?
-          </label>
-          <br><br>
-          {% endif %}
           <!-- Shuffle (only for random/mixed) -->
           {% if dcfg.mode in ["random_image","mixed"] %}
           <label>Shuffle?</label><br>
