@@ -35,7 +35,6 @@ def init_config():
                     "mixed_folders": [],
                     "rotate": 0,
                     "web_url": "",
-                    "play_videos_to_end": False,
                     "spotify_info_position": "bottom-center",
                     "spotify_show_progress": False,
                     "spotify_progress_position": "bottom-center",   # New: progress bar location setting

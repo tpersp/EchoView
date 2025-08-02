@@ -25,15 +25,8 @@ from PySide6.QtWidgets import (
     QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect, QSizePolicy
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
-try:
-    from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
-    from PySide6.QtMultimediaWidgets import QVideoWidget
-    VIDEO_SUPPORT = True
-except Exception:
-    QMediaPlayer = None
-    QAudioOutput = None
-    QVideoWidget = None
-    VIDEO_SUPPORT = False
+from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PySide6.QtMultimediaWidgets import QVideoWidget
 
 from spotipy.oauth2 import SpotifyOAuth
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
@@ -138,19 +131,14 @@ class DisplayWindow(QMainWindow):
         self.foreground_label.setStyleSheet("background-color: transparent;")
 
         # Video widget for mp4 and other videos (muted)
-        if VIDEO_SUPPORT:
-            self.video_widget = QVideoWidget(self.main_widget)
-            self.video_widget.hide()
-            self.audio_output = QAudioOutput()
-            self.audio_output.setVolume(0)
-            self.media_player = QMediaPlayer()
-            self.media_player.setVideoOutput(self.video_widget)
-            self.media_player.setAudioOutput(self.audio_output)
-            self.media_player.mediaStatusChanged.connect(self.on_video_status_changed)
-        else:
-            self.video_widget = None
-            self.audio_output = None
-            self.media_player = None
+        self.video_widget = QVideoWidget(self.main_widget)
+        self.video_widget.hide()
+        self.audio_output = QAudioOutput()
+        self.audio_output.setVolume(0)
+        self.media_player = QMediaPlayer()
+        self.media_player.setVideoOutput(self.video_widget)
+        self.media_player.setAudioOutput(self.audio_output)
+        self.media_player.mediaStatusChanged.connect(self.on_video_status_changed)
 
         # Overlay label for clock
         self.clock_label = NegativeTextLabel(self.main_widget)
@@ -346,7 +334,6 @@ class DisplayWindow(QMainWindow):
 
         interval_s = self.disp_cfg.get("image_interval", 60)
         self.current_mode = self.disp_cfg.get("mode", "random_image")
-        self.play_videos_to_end = self.disp_cfg.get("play_videos_to_end", False)
         if self.current_mode == "spotify":
             interval_s = 5
             if self.disp_cfg.get("spotify_show_progress", False):
@@ -610,23 +597,17 @@ class DisplayWindow(QMainWindow):
 
         data = self.get_cached_media(fullpath)
         if data["type"] == "video" and not is_spotify:
-            if VIDEO_SUPPORT and self.media_player and self.video_widget:
-                self.foreground_label.clear()
-                self.bg_label.clear()
-                self.bg_label.hide()
-                self.foreground_label.hide()
-                self.video_widget.show()
-                self.media_player.setSource(QUrl.fromLocalFile(fullpath))
-                self.media_player.setLoops(1)
-                self.media_player.play()
-                self.spotify_info_label.raise_()
-                if self.play_videos_to_end:
-                    self.slideshow_timer.stop()
-                return
-            else:
-                self.clear_foreground_label("Video unsupported")
-                return
-
+            self.foreground_label.clear()
+            self.bg_label.clear()
+            self.bg_label.hide()
+            self.foreground_label.hide()
+            self.video_widget.show()
+            self.media_player.setSource(QUrl.fromLocalFile(fullpath))
+            self.media_player.setLoops(1)
+            self.media_player.play()
+            self.spotify_info_label.raise_()
+            self.slideshow_timer.stop()
+            return
         if data["type"] == "gif" and not is_spotify:
             if self.fg_scale_percent == 100:
                 self.current_movie = QMovie(data["path"])
@@ -667,9 +648,6 @@ class DisplayWindow(QMainWindow):
         self.spotify_info_label.raise_()
 
     def on_video_status_changed(self, status):
-        if not self.play_videos_to_end:
-            return
-
         if status == QMediaPlayer.EndOfMedia:
             self.video_widget.hide()
             self.bg_label.show()
