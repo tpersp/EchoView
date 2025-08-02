@@ -410,6 +410,15 @@ def settings():
             version=APP_VERSION
         )
 
+@main_bp.route('/toggle_theme', methods=['POST'])
+def toggle_theme():
+    """Quickly switch between dark and light themes and redirect back."""
+    cfg = load_config()
+    current = cfg.get('theme', 'dark')
+    cfg['theme'] = 'light' if current == 'dark' else 'dark'
+    save_config(cfg)
+    return redirect(request.form.get('return_to') or url_for('main.index'))
+
 @main_bp.route("/clear_config", methods=["POST"])
 def clear_config():
     """
