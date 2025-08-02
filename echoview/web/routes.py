@@ -246,7 +246,10 @@ def upload_media():
                 folder_path = os.path.join(IMAGE_DIR, sf)
                 files = [
                     f for f in os.listdir(folder_path)
-                    if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))
+                    if f.lower().endswith((
+                        ".jpg", ".jpeg", ".png", ".gif",
+                        ".mp4", ".mov", ".avi", ".mkv", ".webm"
+                    ))
                 ]
                 if sort_opt.startswith("name"):
                     files.sort(reverse=(sort_opt == "name_desc"))
@@ -280,7 +283,10 @@ def upload_media():
         if not f.filename:
             continue
         lf = f.filename.lower()
-        if not lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
+        if not lf.endswith((
+            ".jpg", ".jpeg", ".png", ".gif",
+            ".mp4", ".mov", ".avi", ".mkv", ".webm"
+        )):
             log_message(f"Unsupported file type: {f.filename}")
             continue
         final_path = os.path.join(target_dir, f.filename)
@@ -710,7 +716,10 @@ def index():
         if os.path.isdir(base_dir):
             for fname in os.listdir(base_dir):
                 lf = fname.lower()
-                if lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
+                if lf.endswith((
+                    ".jpg", ".jpeg", ".png", ".gif",
+                    ".mp4", ".mov", ".avi", ".mkv", ".webm"
+                )):
                     rel_path = fname
                     img_list.append(os.path.join(cat, rel_path) if cat else rel_path)
         img_list.sort()
