@@ -651,6 +651,7 @@ def index():
                 rotate_str = request.form.get(pre + "rotate", "0")
                 mixed_str = request.form.get(pre + "mixed_order", "")
                 mixed_list = [x for x in mixed_str.split(",") if x]
+                play_end_val = request.form.get(pre + "play_videos_to_end")
 
                 try:
                     new_interval = int(new_interval_s)
@@ -668,6 +669,7 @@ def index():
                 dcfg["specific_image"] = new_spec
                 dcfg["rotate"] = new_rotate
                 dcfg["web_url"] = request.form.get(pre + "web_url", dcfg.get("web_url", ""))
+                dcfg["play_videos_to_end"] = True if play_end_val else False
 
                 # If Spotify, store extras
                 if new_mode == "spotify":
