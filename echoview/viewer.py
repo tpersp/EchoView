@@ -25,8 +25,6 @@ from PySide6.QtWidgets import (
     QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect, QSizePolicy
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
-from PySide6.QtMultimediaWidgets import QVideoWidget
 
 from spotipy.oauth2 import SpotifyOAuth
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
@@ -130,16 +128,6 @@ class DisplayWindow(QMainWindow):
         self.foreground_label.setAlignment(Qt.AlignCenter)
         self.foreground_label.setStyleSheet("background-color: transparent;")
 
-        # Video widget for mp4 and other videos (muted)
-        self.video_widget = QVideoWidget(self.main_widget)
-        self.video_widget.hide()
-        self.audio_output = QAudioOutput()
-        self.audio_output.setVolume(0)
-        self.media_player = QMediaPlayer()
-        self.media_player.setVideoOutput(self.video_widget)
-        self.media_player.setAudioOutput(self.audio_output)
-        self.media_player.mediaStatusChanged.connect(self.on_video_status_changed)
-
         # Overlay label for clock
         self.clock_label = NegativeTextLabel(self.main_widget)
         self.clock_label.setText("00:00:00")
@@ -193,7 +181,6 @@ class DisplayWindow(QMainWindow):
 
         self.bg_label.setGeometry(rect)
         self.foreground_label.setGeometry(rect)
-        self.video_widget.setGeometry(rect)
         if self.web_view.isVisible():
             self.web_view.setGeometry(rect)
             self.web_view.lower()
@@ -388,16 +375,16 @@ class DisplayWindow(QMainWindow):
         self.image_list = []
         self.index = 0
         if self.current_mode in ("random_image", "mixed", "specific_image"):
-            self.build_local_media_list()
+            self.build_local_image_list()
 
         if self.current_mode == "spotify":
             self.next_image(force=True)
 
-    def build_local_media_list(self):
+    def build_local_image_list(self):
         mode = self.current_mode
         if mode == "random_image":
             cat = self.disp_cfg.get("image_category", "")
-            images = self.gather_media(cat)
+            images = self.gather_images(cat)
             if self.disp_cfg.get("shuffle_mode", False):
                 random.shuffle(images)
             self.image_list = images
@@ -405,7 +392,7 @@ class DisplayWindow(QMainWindow):
             folder_list = self.disp_cfg.get("mixed_folders", [])
             allimg = []
             for folder in folder_list:
-                allimg += self.gather_media(folder)
+                allimg += self.gather_images(folder)
             if self.disp_cfg.get("shuffle_mode", False):
                 random.shuffle(allimg)
             self.image_list = allimg
@@ -419,22 +406,20 @@ class DisplayWindow(QMainWindow):
                 log_message(f"Specific image not found: {path}")
                 self.image_list = []
 
-    def gather_media(self, category):
+    def gather_images(self, category):
         base = os.path.join(IMAGE_DIR, category) if category else IMAGE_DIR
         if not os.path.isdir(base):
             return []
         results = []
         for fname in os.listdir(base):
             lf = fname.lower()
-            if lf.endswith((".jpg", ".jpeg", ".png", ".gif", ".mp4", ".mov", ".avi", ".mkv", ".webm")):
+            if lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
                 results.append(os.path.join(base, fname))
         results.sort()
         return results
 
-    def load_and_cache_media(self, fullpath):
+    def load_and_cache_image(self, fullpath):
         ext = os.path.splitext(fullpath)[1].lower()
-        if ext in (".mp4", ".mov", ".avi", ".mkv", ".webm"):
-            return {"type": "video", "path": fullpath}
         if ext == ".gif":
             tmp_reader = QImageReader(fullpath)
             tmp_reader.setAutoDetectImageFormat(True)
@@ -444,11 +429,11 @@ class DisplayWindow(QMainWindow):
             pixmap = QPixmap(fullpath)
             return {"type": "static", "pixmap": pixmap}
 
-    def get_cached_media(self, fullpath):
+    def get_cached_image(self, fullpath):
         if fullpath in self.image_cache:
             self.image_cache.move_to_end(fullpath)
             return self.image_cache[fullpath]
-        data = self.load_and_cache_media(fullpath)
+        data = self.load_and_cache_image(fullpath)
         self.image_cache[fullpath] = data
         if len(self.image_cache) > self.cache_capacity:
             self.image_cache.popitem(last=False)
@@ -468,7 +453,7 @@ class DisplayWindow(QMainWindow):
         if self.current_mode == "spotify":
             path = self.fetch_spotify_album_art()
             if path:
-                self.show_foreground_media(path, is_spotify=True)
+                self.show_foreground_image(path, is_spotify=True)
                 self.spotify_info_label.show()
                 if self.disp_cfg.get("spotify_show_progress", False):
                     self.spotify_progress_bar.show()
@@ -510,14 +495,14 @@ class DisplayWindow(QMainWindow):
                     image_list_backup = self.image_list
                     mode_backup = self.current_mode
                     self.current_mode = fallback_mode
-                    self.build_local_media_list()
+                    self.build_local_image_list()
                     if not self.image_list:
                         self.clear_foreground_label("No fallback images found")
                     else:
                         self.index = (self.index + 1) % len(self.image_list)
                         new_path = self.image_list[self.index]
                         self.last_displayed_path = new_path
-                        self.show_foreground_media(new_path)
+                        self.show_foreground_image(new_path)
                     self.current_mode = mode_backup
                     self.image_list = image_list_backup
                     self.spotify_info_label.setText("")
@@ -541,7 +526,7 @@ class DisplayWindow(QMainWindow):
         new_path = self.image_list[self.index]
         self.last_displayed_path = new_path
 
-        self.show_foreground_media(new_path)
+        self.show_foreground_image(new_path)
         if self.overlay_config.get("auto_negative_font", False):
             self.clock_label.update()
 
@@ -557,13 +542,6 @@ class DisplayWindow(QMainWindow):
                 pass
             self.current_movie = None
             self.handling_gif_frames = False
-        try:
-            self.media_player.stop()
-        except RuntimeError:
-            pass
-        self.video_widget.hide()
-        self.bg_label.show()
-        self.foreground_label.show()
         self.foreground_label.setMovie(None)
         self.foreground_label.setText(message)
         self.foreground_label.setAlignment(Qt.AlignCenter)
@@ -571,7 +549,7 @@ class DisplayWindow(QMainWindow):
         self.spotify_progress_bar.hide()
         self.spotify_progress_timer.stop()
 
-    def show_foreground_media(self, fullpath, is_spotify=False):
+    def show_foreground_image(self, fullpath, is_spotify=False):
         if not os.path.exists(fullpath):
             self.clear_foreground_label("Missing file")
             return
@@ -587,27 +565,8 @@ class DisplayWindow(QMainWindow):
                 pass
             self.current_movie = None
             self.handling_gif_frames = False
-        try:
-            self.media_player.stop()
-        except RuntimeError:
-            pass
-        self.video_widget.hide()
-        self.bg_label.show()
-        self.foreground_label.show()
 
-        data = self.get_cached_media(fullpath)
-        if data["type"] == "video" and not is_spotify:
-            self.foreground_label.clear()
-            self.bg_label.clear()
-            self.bg_label.hide()
-            self.foreground_label.hide()
-            self.video_widget.show()
-            self.media_player.setSource(QUrl.fromLocalFile(fullpath))
-            self.media_player.setLoops(1)
-            self.media_player.play()
-            self.spotify_info_label.raise_()
-            self.slideshow_timer.stop()
-            return
+        data = self.get_cached_image(fullpath)
         if data["type"] == "gif" and not is_spotify:
             if self.fg_scale_percent == 100:
                 self.current_movie = QMovie(data["path"])
@@ -646,18 +605,6 @@ class DisplayWindow(QMainWindow):
             blurred = self.make_background(self.current_pixmap)
             self.bg_label.setPixmap(blurred if blurred else QPixmap())
         self.spotify_info_label.raise_()
-
-    def on_video_status_changed(self, status):
-        if status == QMediaPlayer.EndOfMedia:
-            self.video_widget.hide()
-            self.bg_label.show()
-            self.foreground_label.show()
-            try:
-                self.media_player.stop()
-            except RuntimeError:
-                pass
-            self.next_image()
-            self.slideshow_timer.start()
 
     def on_gif_frame_changed(self, frame_index):
         if not self.current_movie or not self.handling_gif_frames:

@@ -155,33 +155,21 @@ function loadSpecificThumbnails(dispName) {
     const bn = filePath.split("/").pop();
     const lbl = document.createElement("label");
     lbl.className = "thumb-label";
-    const ext = filePath.split('.').pop().toLowerCase();
-    let thumbEl;
-    if (["mp4","mov","avi","mkv","webm"].includes(ext)) {
-      const vid = document.createElement("video");
-      vid.src = "/images/" + filePath;
-      vid.muted = true;
-      vid.loop = true;
-      vid.autoplay = true;
-      thumbEl = vid;
-    } else {
-      const img = document.createElement("img");
-      img.src = "/thumb/" + filePath + "?size=60";
-      img.loading = "lazy";
-      thumbEl = img;
-    }
-    thumbEl.style.width = "60px";
-    thumbEl.style.height = "60px";
-    thumbEl.style.objectFit = "cover";
-    thumbEl.style.border = "2px solid #555";
-    thumbEl.style.borderRadius = "4px";
-    thumbEl.style.margin = "5px";
+    const img = document.createElement("img");
+    img.src = "/thumb/" + filePath + "?size=60";
+    img.loading = "lazy";
+    img.style.width = "60px";
+    img.style.height = "60px";
+    img.style.objectFit = "cover";
+    img.style.border = "2px solid #555";
+    img.style.borderRadius = "4px";
+    img.style.margin = "5px";
     const radio = document.createElement("input");
     radio.type = "radio";
     radio.name = dispName + "_specific_image";
     radio.value = bn;
 
-    lbl.appendChild(thumbEl);
+    lbl.appendChild(img);
     lbl.appendChild(document.createElement("br"));
     lbl.appendChild(radio);
     lbl.appendChild(document.createTextNode(" " + bn));

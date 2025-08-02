@@ -164,7 +164,7 @@ def count_files_in_folder(folder_path):
     if not os.path.isdir(folder_path):
         return 0
     cnt = 0
-    valid_ext = (".png", ".jpg", ".jpeg", ".gif", ".mp4", ".mov", ".avi", ".mkv", ".webm")
+    valid_ext = (".png", ".jpg", ".jpeg", ".gif")
     for f in os.listdir(folder_path):
         if f.lower().endswith(valid_ext):
             cnt += 1

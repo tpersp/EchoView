@@ -1,10 +1,10 @@
 # EchoView
 
-EchoView is a modern, easy-to-configure slideshow + overlay viewer written in **Python/PySide6** along with a companion **Flask**-based web interface. It seamlessly supports multiple monitors on a Raspberry Pi and can optionally display a live overlay (e.g. clock) on top of your images, GIFs, or videos.
+EchoView is a modern, easy-to-configure slideshow + overlay viewer written in **Python/PySide6** along with a companion **Flask**-based web interface. It seamlessly supports multiple monitors on a Raspberry Pi and can optionally display a live overlay (e.g. clock) on top of your images or GIFs.
 
 ## Key Features
 
-- **Multiple Monitors**: Launches a PySide6 window per detected monitor, each with its own display mode (Random Media, Mixed Media, Spotify, Web Page, etc.).
+- **Multiple Monitors**: Launches a PySide6 window per detected monitor, each with its own display mode (Random, Mixed, Spotify, Web Page, etc.).
 - **Web Controller**: A Flask web interface (on port **8080**) lets you manage sub-devices, change the slideshow folder, set intervals, shuffle, or pick a single image.
 - **Systemd Integration**: The `setup.sh` script creates two systemd services:
   - `echoview.service` - runs the PySide6 slideshow windows
@@ -61,9 +61,9 @@ Browse to `http://<PI-IP>:8080` to access the interface. You’ll see:
 
 - **Main Screen** (`index.html`)
   - Displays system stats (CPU, memory, temp)
-  - Lets you configure each local display’s mode (Random Media, Specific Media, Mixed Media, or Spotify)
-  - For Specific mode, choose exactly one media file. For Mixed, drag-drop multiple folders.
-  - **Manage** how often media files rotate, shuffle, etc.
+  - Lets you configure each local display’s mode (Random, Specific, Mixed, or Spotify)
+  - For Specific mode, choose exactly one image. For Mixed, drag-drop multiple folders.
+  - **Manage** how often images rotate, shuffle, etc.
 
 - **Settings** Page
   - Set the web theme (Dark, Light, or Custom) and optionally upload a background image
@@ -85,8 +85,8 @@ You can override the path by adding `SPOTIFY_CACHE_PATH` to your `.env` file.
 
 ### Media Upload
 
-Use the **Upload Media** page to add images, GIFs, or videos. You can place them in existing subfolders or create a new one. If you have a CIFS share, it will appear under your `IMAGE_DIR`.
-The file manager also lets you download files and move them between folders. Folders are always shown alphabetically for easier navigation.
+Use the **Upload Media** page to add images/GIFs. You can place them in existing subfolders or create a new one. If you have a CIFS share, it will appear under your `IMAGE_DIR`.
+The file manager also lets you download images and move them between folders. Folders are always shown alphabetically for easier navigation.
 
 
 ## Directory Structure
@@ -154,7 +154,7 @@ If a `.env` file already exists in your `VIEWER_HOME`, its `VIEWER_HOME` and
 
 ## Troubleshooting
 
-- **No media?** Ensure files exist in the `IMAGE_DIR` (or subfolders). By default, check `/mnt/EchoViews` or wherever you mounted.
+- **No images?** Ensure images exist in the `IMAGE_DIR` (or subfolders). By default, check `/mnt/EchoViews` or wherever you mounted.
 - **Wrong screen**? Confirm you have multiple monitors recognized by X. EchoView uses PySide6’s screen geometry, so make sure your environment is not on Wayland.
 - **Spotify issues**? Check the file specified by `SPOTIFY_CACHE_PATH` for the saved token. Re-authorize if needed.
 - **Overlay not transparent?** You need a compositor (like **picom**) running for real transparency.
