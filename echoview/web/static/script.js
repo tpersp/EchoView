@@ -253,3 +253,20 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+// Toggle per-file action menus in media manager
+function toggleFileMenu(btn) {
+  const item = btn.closest('.file-item');
+  if (item) {
+    item.classList.toggle('open');
+  }
+}
+
+// Close any open file menus when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.file-item')) {
+    document.querySelectorAll('#file-manager .file-item.open').forEach(el => {
+      el.classList.remove('open');
+    });
+  }
+});
