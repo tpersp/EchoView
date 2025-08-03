@@ -611,12 +611,6 @@ def index():
                 "specific_image": "",
                 "shuffle_mode": False,
                 "mixed_folders": [],
-                "video_folders": [],
-                "shuffle_videos": False,
-                "video_mute": True,
-                "video_volume": 100,
-                "video_play_to_end": True,
-                "video_max_seconds": 120,
                 "rotate": 0,
                 "screen_name": f"{mon_name}: {minfo['current_mode']}",
                 "chosen_mode": minfo["current_mode"],
@@ -651,13 +645,6 @@ def index():
                 rotate_str = request.form.get(pre + "rotate", "0")
                 mixed_str = request.form.get(pre + "mixed_order", "")
                 mixed_list = [x for x in mixed_str.split(",") if x]
-                video_str = request.form.get(pre + "video_order", "")
-                video_list = [x for x in video_str.split(",") if x]
-                shuffle_videos_val = request.form.get(pre + "shuffle_videos", "no")
-                video_mute_val = request.form.get(pre + "video_mute")
-                video_vol_str = request.form.get(pre + "video_volume", str(dcfg.get("video_volume", 100)))
-                video_play_to_end_val = request.form.get(pre + "video_play_to_end")
-                video_max_str = request.form.get(pre + "video_max_seconds", str(dcfg.get("video_max_seconds", 120)))
 
                 try:
                     new_interval = int(new_interval_s)
@@ -701,21 +688,6 @@ def index():
                     dcfg["mixed_folders"] = mixed_list
                 else:
                     dcfg["mixed_folders"] = []
-                if new_mode == "videos":
-                    dcfg["video_folders"] = video_list
-                    dcfg["shuffle_videos"] = (shuffle_videos_val == "yes")
-                    dcfg["video_mute"] = True if video_mute_val else False
-                    try:
-                        dcfg["video_volume"] = int(video_vol_str)
-                    except:
-                        dcfg["video_volume"] = dcfg.get("video_volume", 100)
-                    dcfg["video_play_to_end"] = True if video_play_to_end_val else False
-                    try:
-                        dcfg["video_max_seconds"] = int(video_max_str)
-                    except:
-                        dcfg["video_max_seconds"] = dcfg.get("video_max_seconds", 120)
-                else:
-                    dcfg["video_folders"] = []
 
             save_config(cfg)
             try:

@@ -40,13 +40,6 @@ def init_config():
                     "spotify_progress_position": "bottom-center",   # New: progress bar location setting
                     "spotify_progress_theme": "dark",         # New: progress bar theme option
                     "spotify_progress_update_interval": 200        # New: update interval in ms
-                    ,
-                    "video_folders": [],
-                    "shuffle_videos": False,
-                    "video_mute": True,
-                    "video_volume": 100,
-                    "video_play_to_end": True,
-                    "video_max_seconds": 120
                 }
             },
             "overlay": {
@@ -171,10 +164,7 @@ def count_files_in_folder(folder_path):
     if not os.path.isdir(folder_path):
         return 0
     cnt = 0
-    valid_ext = (
-        ".png", ".jpg", ".jpeg", ".gif",
-        ".mp4", ".mov", ".avi", ".mkv", ".webm"
-    )
+    valid_ext = (".png", ".jpg", ".jpeg", ".gif")
     for f in os.listdir(folder_path):
         if f.lower().endswith(valid_ext):
             cnt += 1
