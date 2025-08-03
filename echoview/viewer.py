@@ -233,7 +233,8 @@ class DisplayWindow(QMainWindow):
         def wait_thread(p):
             p.wait()
             if self.current_video_proc is p:
-                self.stop_current_video(advance=True)
+                # Ensure we return to the Qt thread before advancing
+                QTimer.singleShot(0, lambda: self.stop_current_video(advance=True))
 
         threading.Thread(target=wait_thread, args=(proc,), daemon=True).start()
 
@@ -488,13 +489,11 @@ class DisplayWindow(QMainWindow):
                 log_message(f"Specific image not found: {path}")
                 self.image_list = []
         elif mode == "videos":
-            folder_list = self.disp_cfg.get("video_folders", [])
-            allvid = []
-            for folder in folder_list:
-                allvid += self.gather_videos(folder)
+            cat = self.disp_cfg.get("video_category", "")
+            vids = self.gather_videos(cat)
             if self.disp_cfg.get("shuffle_videos", False):
-                random.shuffle(allvid)
-            self.image_list = allvid
+                random.shuffle(vids)
+            self.image_list = vids
 
     def gather_images(self, category):
         base = os.path.join(IMAGE_DIR, category) if category else IMAGE_DIR

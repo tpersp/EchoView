@@ -617,7 +617,7 @@ def index():
                 "specific_image": "",
                 "shuffle_mode": False,
                 "mixed_folders": [],
-                "video_folders": [],
+                "video_category": "",
                 "shuffle_videos": False,
                 "video_mute": True,
                 "video_volume": 100,
@@ -657,8 +657,7 @@ def index():
                 rotate_str = request.form.get(pre + "rotate", "0")
                 mixed_str = request.form.get(pre + "mixed_order", "")
                 mixed_list = [x for x in mixed_str.split(",") if x]
-                video_str = request.form.get(pre + "video_order", "")
-                video_list = [x for x in video_str.split(",") if x]
+                new_vid_cat = request.form.get(pre + "video_category", dcfg.get("video_category", ""))
                 shuffle_videos_val = request.form.get(pre + "shuffle_videos", "no")
                 video_mute_val = request.form.get(pre + "video_mute")
                 video_vol_str = request.form.get(pre + "video_volume", str(dcfg.get("video_volume", 100)))
@@ -708,7 +707,7 @@ def index():
                 else:
                     dcfg["mixed_folders"] = []
                 if new_mode == "videos":
-                    dcfg["video_folders"] = video_list
+                    dcfg["video_category"] = new_vid_cat
                     dcfg["shuffle_videos"] = (shuffle_videos_val == "yes")
                     dcfg["video_mute"] = True if video_mute_val else False
                     try:
@@ -721,7 +720,7 @@ def index():
                     except:
                         dcfg["video_max_seconds"] = dcfg.get("video_max_seconds", 120)
                 else:
-                    dcfg["video_folders"] = []
+                    dcfg["video_category"] = ""
 
             save_config(cfg)
             try:
