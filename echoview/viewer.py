@@ -233,8 +233,7 @@ class DisplayWindow(QMainWindow):
         def wait_thread(p):
             p.wait()
             if self.current_video_proc is p:
-                self.current_video_proc = None
-                QTimer.singleShot(0, self.next_image)
+                self.stop_current_video(advance=True)
 
         threading.Thread(target=wait_thread, args=(proc,), daemon=True).start()
 
@@ -244,7 +243,7 @@ class DisplayWindow(QMainWindow):
 
         if not self.disp_cfg.get("video_play_to_end", True):
             max_sec = int(self.disp_cfg.get("video_max_seconds", 120))
-            QTimer.singleShot(max_sec * 1000, self.stop_current_video)
+            QTimer.singleShot(max_sec * 1000, lambda: self.stop_current_video(advance=True))
 
     def build_mpv_command(self, fullpath):
         cmd = [
@@ -269,7 +268,7 @@ class DisplayWindow(QMainWindow):
         cmd += ["--", fullpath]
         return cmd
 
-    def stop_current_video(self):
+    def stop_current_video(self, advance=False):
         proc = self.current_video_proc
         if proc and proc.poll() is None:
             try:
@@ -281,6 +280,8 @@ class DisplayWindow(QMainWindow):
                 except Exception:
                     pass
         self.current_video_proc = None
+        if advance:
+            QTimer.singleShot(0, self.next_image)
 
         # Position Spotify progress bar using its own position setting.
         if self.spotify_progress_bar.isVisible():

@@ -142,6 +142,38 @@ function initMixedUI(dispName) {
   sortAvailable();
 }
 
+// ---- Video play-to-end toggle ----
+function initVideoPlayToEndToggle() {
+  const checkboxes = document.querySelectorAll('.video-play-to-end');
+  checkboxes.forEach(cb => {
+    const prefix = cb.id.replace('_video_play_to_end', '');
+    const container = document.getElementById(prefix + '_max_seconds_container');
+    const toggle = () => {
+      if (!container) return;
+      container.style.display = cb.checked ? 'none' : 'block';
+    };
+    cb.addEventListener('change', toggle);
+    toggle();
+  });
+}
+window.addEventListener('DOMContentLoaded', initVideoPlayToEndToggle);
+
+// ---- Video mute toggle ----
+function initVideoMuteToggle() {
+  const checkboxes = document.querySelectorAll('.video-mute');
+  checkboxes.forEach(cb => {
+    const prefix = cb.id.replace('_video_mute', '');
+    const container = document.getElementById(prefix + '_volume_container');
+    const toggle = () => {
+      if (!container) return;
+      container.style.display = cb.checked ? 'none' : 'block';
+    };
+    cb.addEventListener('change', toggle);
+    toggle();
+  });
+}
+window.addEventListener('DOMContentLoaded', initVideoMuteToggle);
+
 // ---- Lazy load thumbnails for specific_image mode ----
 function loadSpecificThumbnails(dispName) {
   const container = document.getElementById(dispName + "_lazyContainer");
