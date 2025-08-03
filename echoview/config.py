@@ -27,7 +27,7 @@ load_env()
 # Application Version & Paths
 # ------------------------------------------------------------
 
-APP_VERSION = "1.4.0"  # Add video format support
+APP_VERSION = "1.5.0"  # Add video mode with mpv playback
 
 VIEWER_HOME = os.environ.get("VIEWER_HOME", "/home/pi/EchoView")
 IMAGE_DIR   = os.environ.get("IMAGE_DIR", "/mnt/EchoViews")
