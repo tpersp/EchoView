@@ -27,7 +27,7 @@ load_env()
 # Application Version & Paths
 # ------------------------------------------------------------
 
-APP_VERSION = "1.4.0"  # Add video format support
+APP_VERSION = "1.3.0"  # Add web page support 
 
 VIEWER_HOME = os.environ.get("VIEWER_HOME", "/home/pi/EchoView")
 IMAGE_DIR   = os.environ.get("IMAGE_DIR", "/mnt/EchoViews")
@@ -50,4 +50,5 @@ SPOTIFY_CACHE_PATH = os.environ.get(
 # Git Update Branch
 # ------------------------------------------------------------
 UPDATE_BRANCH = os.environ.get("UPDATE_BRANCH", "main")
+
 
