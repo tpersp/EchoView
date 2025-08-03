@@ -32,6 +32,7 @@
             <option value="random_image"   {% if dcfg.mode=="random_image" %}selected{% endif %}>Random Image/GIF</option>
             <option value="specific_image" {% if dcfg.mode=="specific_image" %}selected{% endif %}>Specific Image/GIF</option>
             <option value="mixed"          {% if dcfg.mode=="mixed" %}selected{% endif %}>Mixed (Multiple Folders)</option>
+            <option value="videos"         {% if dcfg.mode=="videos" %}selected{% endif %}>Videos</option>
             <option value="spotify"        {% if dcfg.mode=="spotify" %}selected{% endif %}>Spotify Now Playing</option>
             <option value="web_page"       {% if dcfg.mode=="web_page" %}selected{% endif %}>Web Page</option>
           </select>
@@ -165,6 +166,53 @@
             });
           </script>
           <br>
+          {% endif %}
+          {% if dcfg.mode == "videos" %}
+          <label>Video Folders (drag to reorder):</label><br>
+          <input type="text" placeholder="Search..." id="{{ dname }}_vid_search" style="width:90%;"><br>
+          <div style="display:flex; gap:10px; margin-top:10px;">
+            <ul id="{{ dname }}_vid_availList" style="flex:1; list-style:none; border:1px solid var(--border-muted); padding:5px;">
+              {% for sf in subfolders %}
+                {% if sf not in dcfg.video_folders %}
+                  <li draggable="true" data-folder="{{ sf }}" style="margin:4px; border:1px solid #666; border-radius:4px; cursor:move; padding:4px;">
+                    {{ sf }} ({{ folder_counts[sf] }})
+                  </li>
+                {% endif %}
+              {% endfor %}
+            </ul>
+            <ul id="{{ dname }}_vid_selList" style="flex:1; list-style:none; border:1px solid var(--border-muted); padding:5px;">
+              {% for sf in dcfg.video_folders %}
+                  <li draggable="true" data-folder="{{ sf }}" style="margin:4px; border:1px solid #666; border-radius:4px; cursor:move; padding:4px;">
+                    {{ sf }} ({{ folder_counts[sf]|default(0) }})
+                  </li>
+              {% endfor %}
+            </ul>
+          </div>
+          <input type="hidden" name="{{ dname }}_video_order" id="{{ dname }}_vid_mixed_order" value="{{ ','.join(dcfg.video_folders) }}">
+          <script>
+            document.addEventListener("DOMContentLoaded", function(){
+              initMixedUI("{{ dname }}_vid");
+            });
+          </script>
+          <br>
+          <label>Shuffle Videos?</label><br>
+          <select name="{{ dname }}_shuffle_videos">
+            <option value="yes" {% if dcfg.shuffle_videos %}selected{% endif %}>Yes</option>
+            <option value="no" {% if not dcfg.shuffle_videos %}selected{% endif %}>No</option>
+          </select>
+          <br><br>
+          <label>Mute by Default:</label>
+          <input type="checkbox" name="{{ dname }}_video_mute" value="1" {% if dcfg.video_mute is not defined or dcfg.video_mute %}checked{% endif %}>
+          <br><br>
+          <label>Volume:</label>
+          <input type="number" name="{{ dname }}_video_volume" value="{{ dcfg.video_volume|default(100) }}" min="0" max="100" style="width:60px;">
+          <br><br>
+          <label>Play to End:</label>
+          <input type="checkbox" name="{{ dname }}_video_play_to_end" value="1" {% if dcfg.video_play_to_end is not defined or dcfg.video_play_to_end %}checked{% endif %}>
+          <br><br>
+          <label>Max play seconds:</label>
+          <input type="number" name="{{ dname }}_video_max_seconds" value="{{ dcfg.video_max_seconds|default(120) }}" style="width:80px;">
+          <br><br>
           {% endif %}
           <!-- Specific Image selection -->
           {% if dcfg.mode == "specific_image" %}
