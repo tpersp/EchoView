@@ -107,6 +107,14 @@ def test_build_mpv_command_volume(monkeypatch):
     assert "--volume=55" in cmd
 
 
+def test_build_mpv_command_mute(monkeypatch):
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.disp_cfg = {"video_mute": True, "video_volume": 55}
+    cmd = DisplayWindow.build_mpv_command(dw, "/tmp/test.mp4")
+    assert "--mute=yes" in cmd
+    assert "--volume=0" in cmd
+
+
 def test_play_next_video_sequential(monkeypatch):
     dw = DisplayWindow.__new__(DisplayWindow)
     dw.disp_cfg = {"video_play_to_end": True}
@@ -140,3 +148,22 @@ def test_play_next_video_sequential(monkeypatch):
 
     assert played == ["a.mp4"]
     assert dw.index == 1
+
+
+def test_stop_current_video_advances(monkeypatch):
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dummy_proc = types.SimpleNamespace(poll=lambda: 0)
+    dw.current_video_proc = dummy_proc
+    advanced = []
+    dw.next_image = lambda force=False: advanced.append("next")
+    dw.spotify_progress_bar = types.SimpleNamespace(isVisible=lambda: False)
+    dw.disp_cfg = {}
+    dw.spotify_info_label = types.SimpleNamespace(x=lambda: 0, y=lambda: 0, width=lambda: 0, height=lambda: 0)
+    dw.clock_label = types.SimpleNamespace(isVisible=lambda: False)
+    dw.overlay_config = {}
+    dw.current_pixmap = None
+    dw.handling_gif_frames = False
+    dw.current_movie = None
+    dw.bg_label = types.SimpleNamespace(setPixmap=lambda *a, **k: None)
+    DisplayWindow.stop_current_video(dw, advance=True)
+    assert advanced == ["next"]

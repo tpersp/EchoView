@@ -202,17 +202,21 @@
           </select>
           <br><br>
           <label>Mute by Default:</label>
-          <input type="checkbox" name="{{ dname }}_video_mute" value="1" {% if dcfg.video_mute is not defined or dcfg.video_mute %}checked{% endif %}>
+          <input type="checkbox" name="{{ dname }}_video_mute" id="{{ dname }}_video_mute" class="video-mute" value="1" {% if dcfg.video_mute is not defined or dcfg.video_mute %}checked{% endif %}>
           <br><br>
-          <label>Volume:</label>
-          <input type="number" name="{{ dname }}_video_volume" value="{{ dcfg.video_volume|default(100) }}" min="0" max="100" style="width:60px;">
-          <br><br>
+          <div id="{{ dname }}_volume_container">
+            <label>Volume:</label>
+            <input type="number" name="{{ dname }}_video_volume" value="{{ dcfg.video_volume|default(100) }}" min="0" max="100" style="width:60px;">
+            <br><br>
+          </div>
           <label>Play to End:</label>
-          <input type="checkbox" name="{{ dname }}_video_play_to_end" value="1" {% if dcfg.video_play_to_end is not defined or dcfg.video_play_to_end %}checked{% endif %}>
+          <input type="checkbox" name="{{ dname }}_video_play_to_end" id="{{ dname }}_video_play_to_end" class="video-play-to-end" value="1" {% if dcfg.video_play_to_end is not defined or dcfg.video_play_to_end %}checked{% endif %}>
           <br><br>
-          <label>Max play seconds:</label>
-          <input type="number" name="{{ dname }}_video_max_seconds" value="{{ dcfg.video_max_seconds|default(120) }}" style="width:80px;">
-          <br><br>
+          <div id="{{ dname }}_max_seconds_container">
+            <label>Max play seconds:</label>
+            <input type="number" name="{{ dname }}_video_max_seconds" value="{{ dcfg.video_max_seconds|default(120) }}" style="width:80px;">
+          </div>
+          <br>
           {% endif %}
           <!-- Specific Image selection -->
           {% if dcfg.mode == "specific_image" %}
