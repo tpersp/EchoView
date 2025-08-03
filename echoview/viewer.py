@@ -15,6 +15,7 @@ import spotipy
 import tempfile
 import threading
 import subprocess
+import shutil
 from datetime import datetime
 from collections import OrderedDict
 
@@ -97,6 +98,7 @@ class DisplayWindow(QMainWindow):
         self.current_movie = None
         self.handling_gif_frames = False
         self.last_scaled_foreground_image = None
+        self.current_video_proc = None
 
         # Variables for auto-negative sampling (no longer used for difference mode)
         self.current_drawn_image = None
@@ -206,6 +208,79 @@ class DisplayWindow(QMainWindow):
         self.spotify_info_label.move(margin, y)
         self.spotify_info_label.raise_()
 
+    def play_next_video(self):
+        if self.current_video_proc:
+            self.stop_current_video()
+        if not self.image_list:
+            self.clear_foreground_label("No videos found")
+            return
+        self.index += 1
+        if self.index >= len(self.image_list):
+            self.index = 0
+        path = self.image_list[self.index]
+        self.last_displayed_path = path
+        if not shutil.which("mpv"):
+            self.clear_foreground_label("Video unsupported")
+            QTimer.singleShot(2000, self.next_image)
+            return
+        cmd = self.build_mpv_command(path)
+        try:
+            proc = subprocess.Popen(cmd)
+            self.current_video_proc = proc
+        except Exception as e:
+            log_message(f"mpv playback error: {e}")
+            self.clear_foreground_label("mpv playback error")
+            QTimer.singleShot(2000, self.next_image)
+            return
+
+        def wait_thread(p):
+            p.wait()
+            if self.current_video_proc is p:
+                self.current_video_proc = None
+                QTimer.singleShot(0, self.next_image)
+
+        threading.Thread(target=wait_thread, args=(proc,), daemon=True).start()
+
+        if not self.disp_cfg.get("video_play_to_end", True):
+            max_sec = int(self.disp_cfg.get("video_max_seconds", 120))
+            QTimer.singleShot(max_sec * 1000, self.stop_current_video)
+
+    def build_mpv_command(self, fullpath):
+        cmd = [
+            "mpv",
+            "--fs",
+            "--no-osd-bar",
+            "--really-quiet",
+        ]
+        screen_index = 0
+        try:
+            screens = QApplication.screens()
+            if self.assigned_screen in screens:
+                screen_index = screens.index(self.assigned_screen)
+        except Exception:
+            pass
+        cmd.append(f"--fs-screen={screen_index}")
+        if self.disp_cfg.get("video_mute", True):
+            cmd += ["--mute=yes", "--volume=0"]
+        else:
+            vol = int(self.disp_cfg.get("video_volume", 100))
+            cmd += ["--mute=no", f"--volume={vol}"]
+        cmd += ["--", fullpath]
+        return cmd
+
+    def stop_current_video(self):
+        proc = self.current_video_proc
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=3)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        self.current_video_proc = None
+
         # Position Spotify progress bar using its own position setting.
         if self.spotify_progress_bar.isVisible():
             ppos = self.disp_cfg.get("spotify_progress_position", "bottom-center")
@@ -281,6 +356,7 @@ class DisplayWindow(QMainWindow):
 
     @Slot()
     def reload_settings(self):
+        self.stop_current_video()
         self.cfg = load_config()
         if "overlay" in self.disp_cfg:
             over = self.disp_cfg["overlay"]
@@ -365,6 +441,11 @@ class DisplayWindow(QMainWindow):
             self.spotify_progress_bar.hide()
             self.spotify_progress_timer.stop()
             self.slideshow_timer.stop()
+        elif self.current_mode == "videos":
+            self.web_view.hide()
+            self.spotify_progress_bar.hide()
+            self.spotify_progress_timer.stop()
+            self.slideshow_timer.stop()
         else:
             self.spotify_progress_bar.hide()
             self.spotify_progress_timer.stop()
@@ -374,9 +455,8 @@ class DisplayWindow(QMainWindow):
 
         self.image_list = []
         self.index = 0
-        if self.current_mode in ("random_image", "mixed", "specific_image"):
+        if self.current_mode in ("random_image", "mixed", "specific_image", "videos"):
             self.build_local_image_list()
-
         if self.current_mode == "spotify":
             self.next_image(force=True)
 
@@ -405,6 +485,14 @@ class DisplayWindow(QMainWindow):
             else:
                 log_message(f"Specific image not found: {path}")
                 self.image_list = []
+        elif mode == "videos":
+            folder_list = self.disp_cfg.get("video_folders", [])
+            allvid = []
+            for folder in folder_list:
+                allvid += self.gather_videos(folder)
+            if self.disp_cfg.get("shuffle_videos", False):
+                random.shuffle(allvid)
+            self.image_list = allvid
 
     def gather_images(self, category):
         base = os.path.join(IMAGE_DIR, category) if category else IMAGE_DIR
@@ -414,6 +502,18 @@ class DisplayWindow(QMainWindow):
         for fname in os.listdir(base):
             lf = fname.lower()
             if lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
+                results.append(os.path.join(base, fname))
+        results.sort()
+        return results
+
+    def gather_videos(self, category):
+        base = os.path.join(IMAGE_DIR, category) if category else IMAGE_DIR
+        if not os.path.isdir(base):
+            return []
+        results = []
+        for fname in os.listdir(base):
+            lf = fname.lower()
+            if lf.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
                 results.append(os.path.join(base, fname))
         results.sort()
         return results
@@ -448,6 +548,10 @@ class DisplayWindow(QMainWindow):
             return
 
         if self.current_mode == "web_page":
+            return
+
+        if self.current_mode == "videos":
+            self.play_next_video()
             return
 
         if self.current_mode == "spotify":
@@ -531,6 +635,7 @@ class DisplayWindow(QMainWindow):
             self.clock_label.update()
 
     def clear_foreground_label(self, message):
+        self.stop_current_video()
         if self.current_movie:
             try:
                 self.current_movie.stop()

@@ -1,3 +1,4 @@
+# Runtime dependency: mpv (system package, installed via setup.sh)
 Flask==2.2.5
 psutil==5.9.5
 requests==2.31.0

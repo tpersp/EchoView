@@ -109,6 +109,7 @@ apt-get install -y \
   python3-pip \
   cifs-utils \
   ffmpeg \
+  mpv \
   raspi-config \
   openbox \
   picom \
