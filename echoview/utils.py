@@ -41,7 +41,7 @@ def init_config():
                     "spotify_progress_theme": "dark",         # New: progress bar theme option
                     "spotify_progress_update_interval": 200        # New: update interval in ms
                     ,
-                    "video_folders": [],
+                    "video_category": "",
                     "shuffle_videos": False,
                     "video_mute": True,
                     "video_volume": 100,

@@ -90,12 +90,12 @@ def test_build_video_list(tmp_path, monkeypatch):
     (folder2 / "c.webm").write_text("vid")
     monkeypatch.setattr(viewer, "IMAGE_DIR", str(tmp_path))
     dw = DisplayWindow.__new__(DisplayWindow)
-    dw.disp_cfg = {"video_folders": ["Cats", "Dogs"], "shuffle_videos": False}
+    dw.disp_cfg = {"video_category": "Cats", "shuffle_videos": False}
     dw.current_mode = "videos"
     dw.image_list = []
     dw.index = 0
     DisplayWindow.build_local_image_list(dw)
-    expected = [str(folder1 / "a.mp4"), str(folder2 / "c.webm")]
+    expected = [str(folder1 / "a.mp4")]
     assert dw.image_list == expected
 
 
