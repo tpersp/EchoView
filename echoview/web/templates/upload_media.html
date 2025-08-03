@@ -31,7 +31,11 @@
     <div class="folder-grid">
       {% for f in files %}
       <div class="file-item">
+        {% if f.lower().endswith(('.mp4','.mov','.avi','.mkv','.webm')) %}
+        <video src="/images/{{ folder }}/{{ f }}" class="file-thumb" controls></video>
+        {% else %}
         <img src="/thumb/{{ folder }}/{{ f }}?size=120" class="file-thumb" loading="lazy">
+        {% endif %}
         <button type="button" class="file-options-btn" onclick="toggleFileMenu(this)">⋮</button>
         <div class="file-options-menu">
           <form method="post" action="{{ url_for('main.rename_image') }}">
@@ -64,7 +68,7 @@
           <input type="hidden" name="subfolder" value="{{ folder }}">
           <label class="upload-thumb">
             +
-            <input type="file" name="mediafiles" accept=".gif,.png,.jpg,.jpeg" multiple style="display:none" onchange="this.form.submit()">
+            <input type="file" name="mediafiles" accept=".gif,.png,.jpg,.jpeg,.mp4,.mov,.avi,.mkv,.webm" multiple style="display:none" onchange="this.form.submit()">
           </label>
         </form>
       </div>

@@ -105,3 +105,38 @@ def test_build_mpv_command_volume(monkeypatch):
     cmd = DisplayWindow.build_mpv_command(dw, "/tmp/test.mp4")
     assert "--mute=no" in cmd
     assert "--volume=55" in cmd
+
+
+def test_play_next_video_sequential(monkeypatch):
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.disp_cfg = {"video_play_to_end": True}
+    dw.image_list = ["a.mp4", "b.mp4"]
+    dw.index = 0
+    dw.current_video_proc = None
+
+    played = []
+
+    def fake_build(self, path):
+        played.append(path)
+        return ["echo", path]
+
+    monkeypatch.setattr(DisplayWindow, "build_mpv_command", fake_build)
+
+    class DummyProc:
+        def wait(self):
+            pass
+
+        def poll(self):
+            return 0
+
+        def terminate(self):
+            pass
+
+    monkeypatch.setattr(viewer.subprocess, "Popen", lambda cmd: DummyProc())
+    monkeypatch.setattr(viewer.shutil, "which", lambda x: True)
+    monkeypatch.setattr(viewer.threading, "Thread", lambda *a, **k: types.SimpleNamespace(start=lambda: None))
+
+    dw.play_next_video()
+
+    assert played == ["a.mp4"]
+    assert dw.index == 1

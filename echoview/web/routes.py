@@ -25,6 +25,12 @@ from echoview.utils import (
     CONFIG_PATH
 )
 
+# Supported media file extensions for the upload/file-manager features.
+VALID_MEDIA_EXT = (
+    ".jpg", ".jpeg", ".png", ".gif",
+    ".mp4", ".mov", ".avi", ".mkv", ".webm"
+)
+
 def detect_monitors_extended():
     """
     Calls xrandr --props to find connected monitors, their preferred/current resolution,
@@ -246,7 +252,7 @@ def upload_media():
                 folder_path = os.path.join(IMAGE_DIR, sf)
                 files = [
                     f for f in os.listdir(folder_path)
-                    if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))
+                    if f.lower().endswith(VALID_MEDIA_EXT)
                 ]
                 if sort_opt.startswith("name"):
                     files.sort(reverse=(sort_opt == "name_desc"))
@@ -280,7 +286,7 @@ def upload_media():
         if not f.filename:
             continue
         lf = f.filename.lower()
-        if not lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
+        if not lf.endswith(VALID_MEDIA_EXT):
             log_message(f"Unsupported file type: {f.filename}")
             continue
         final_path = os.path.join(target_dir, f.filename)

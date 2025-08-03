@@ -214,9 +214,6 @@ class DisplayWindow(QMainWindow):
         if not self.image_list:
             self.clear_foreground_label("No videos found")
             return
-        self.index += 1
-        if self.index >= len(self.image_list):
-            self.index = 0
         path = self.image_list[self.index]
         self.last_displayed_path = path
         if not shutil.which("mpv"):
@@ -240,6 +237,10 @@ class DisplayWindow(QMainWindow):
                 QTimer.singleShot(0, self.next_image)
 
         threading.Thread(target=wait_thread, args=(proc,), daemon=True).start()
+
+        self.index += 1
+        if self.index >= len(self.image_list):
+            self.index = 0
 
         if not self.disp_cfg.get("video_play_to_end", True):
             max_sec = int(self.disp_cfg.get("video_max_seconds", 120))
