@@ -252,7 +252,7 @@ class DisplayWindow(QMainWindow):
             "--fs",
             "--no-osd-bar",
             "--really-quiet",
-            "--keep-open=no",
+            "--keep-open=no",  # ensures mpv exits when file ends
         ]
         screen_index = 0
         try:
@@ -359,6 +359,7 @@ class DisplayWindow(QMainWindow):
                 pm = QPixmap.fromImage(frm)
                 blurred = self.make_background(pm)
                 self.bg_label.setPixmap(blurred if blurred else QPixmap())
+
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
