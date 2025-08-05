@@ -252,6 +252,7 @@ class DisplayWindow(QMainWindow):
             "--fs",
             "--no-osd-bar",
             "--really-quiet",
+            "--keep-open=no",
         ]
         screen_index = 0
         try:
@@ -269,7 +270,15 @@ class DisplayWindow(QMainWindow):
         cmd += ["--", fullpath]
         return cmd
 
-    def stop_current_video(self, advance=False):
+    def stop_current_video(self, advance: bool = False) -> None:
+        """
+        Stop the currently running mpv process and optionally advance to the next item.
+
+        This terminates the spawned mpv process (if it is still running), clears
+        the `current_video_proc` reference and, when requested via the `advance`
+        flag, schedules the next image or video.  We compute the widget geometry
+        locally to avoid NameError on undefined variables.
+        """
         proc = self.current_video_proc
         if proc and proc.poll() is None:
             try:
@@ -281,38 +290,37 @@ class DisplayWindow(QMainWindow):
                 except Exception:
                     pass
         self.current_video_proc = None
+
         if advance:
             QTimer.singleShot(0, self.next_image)
 
-        # Position Spotify progress bar using its own position setting.
+        # Compute rect and margin locally
+        rect = self.main_widget.rect()
+        margin = 10
+
+        # Reposition the Spotify progress bar, if visible
         if self.spotify_progress_bar.isVisible():
             ppos = self.disp_cfg.get("spotify_progress_position", "bottom-center")
-            pb_height = 10  # Bar thinner now
+            pb_height = 10
+            x = self.spotify_info_label.x()
+            y = self.spotify_info_label.y() + self.spotify_info_label.height() + 5
+            width = self.spotify_info_label.width()
             if ppos == "above_info":
-                x = self.spotify_info_label.x()
                 y = self.spotify_info_label.y() - pb_height - 5
-                width = self.spotify_info_label.width()
             elif ppos == "below_info":
-                x = self.spotify_info_label.x()
                 y = self.spotify_info_label.y() + self.spotify_info_label.height() + 5
-                width = self.spotify_info_label.width()
             elif ppos == "top-center":
+                x, y = margin, margin
                 width = rect.width() - 2 * margin
-                x = margin
-                y = margin
             elif ppos == "bottom-center":
-                width = rect.width() - 2 * margin
                 x = margin
                 y = rect.height() - pb_height - margin
-            else:
-                x = self.spotify_info_label.x()
-                y = self.spotify_info_label.y() + self.spotify_info_label.height() + 5
-                width = self.spotify_info_label.width()
+                width = rect.width() - 2 * margin
             self.spotify_progress_bar.setGeometry(x, y, width, pb_height)
             self.spotify_progress_bar.raise_()
 
-        # Helper function for dynamic overlay labels (clock)
-        def place_overlay_label(lbl, position, container_rect, y_offset=0):
+        # Helper for positioning labels (clock etc.)
+        def place_overlay_label(lbl, position: str, container_rect, y_offset: int = 0) -> int:
             full_width = container_rect.width() - 2 * margin
             lbl.setFixedWidth(full_width)
             lbl.setWordWrap(True)
@@ -324,23 +332,22 @@ class DisplayWindow(QMainWindow):
             else:
                 lbl.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
             lbl.adjustSize()
-            # Force re-wrap by using sizeHint() for height.
-            required_height = lbl.sizeHint().height()
-            lbl.setFixedHeight(required_height)
-            h = required_height
+            h = lbl.sizeHint().height()
+            lbl.setFixedHeight(h)
             if "top" in position:
-                y = margin + y_offset
+                y2 = margin + y_offset
             elif "bottom" in position:
-                y = container_rect.height() - h - margin - y_offset
+                y2 = container_rect.height() - h - margin - y_offset
             else:
-                y = (container_rect.height() - h) // 2
-            lbl.move(margin, y)
-            return (y + h + margin)
+                y2 = (container_rect.height() - h) // 2
+            lbl.move(margin, y2)
+            return y2 + h + margin
 
-        if self.clock_label.isVisible():
-            clock_pos = self.overlay_config.get("clock_position", "bottom-center")
-            place_overlay_label(self.clock_label, clock_pos, rect, 0)
+        if hasattr(self, "overlay_config") and self.clock_label.isVisible():
+            pos = self.overlay_config.get("clock_position", "bottom-center")
+            place_overlay_label(self.clock_label, pos, rect, 0)
 
+        # Refresh the background from the last image/GIF frame
         if self.current_pixmap and not self.handling_gif_frames:
             self.updateForegroundScaled()
             if self.last_displayed_path:

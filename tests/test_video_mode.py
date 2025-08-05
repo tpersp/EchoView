@@ -105,6 +105,7 @@ def test_build_mpv_command_volume(monkeypatch):
     cmd = DisplayWindow.build_mpv_command(dw, "/tmp/test.mp4")
     assert "--mute=no" in cmd
     assert "--volume=55" in cmd
+    assert "--keep-open=no" in cmd
 
 
 def test_build_mpv_command_mute(monkeypatch):
@@ -113,6 +114,7 @@ def test_build_mpv_command_mute(monkeypatch):
     cmd = DisplayWindow.build_mpv_command(dw, "/tmp/test.mp4")
     assert "--mute=yes" in cmd
     assert "--volume=0" in cmd
+    assert "--keep-open=no" in cmd
 
 
 def test_play_next_video_sequential(monkeypatch):
@@ -160,6 +162,8 @@ def test_stop_current_video_advances(monkeypatch):
     dw.disp_cfg = {}
     dw.spotify_info_label = types.SimpleNamespace(x=lambda: 0, y=lambda: 0, width=lambda: 0, height=lambda: 0)
     dw.clock_label = types.SimpleNamespace(isVisible=lambda: False)
+    rect_obj = types.SimpleNamespace(width=lambda: 100, height=lambda: 100)
+    dw.main_widget = types.SimpleNamespace(rect=lambda: rect_obj)
     dw.overlay_config = {}
     dw.current_pixmap = None
     dw.handling_gif_frames = False
