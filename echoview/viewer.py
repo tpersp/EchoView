@@ -230,11 +230,11 @@ class DisplayWindow(QMainWindow):
             QTimer.singleShot(2000, self.next_image)
             return
 
+        # Unconditionally advance when mpv exits
         def wait_thread(p):
             p.wait()
-            if self.current_video_proc is p:
-                # Ensure we return to the Qt thread before advancing
-                QTimer.singleShot(0, lambda: self.stop_current_video(advance=True))
+            # Always schedule stop_current_video on the main (Qt) thread
+            QTimer.singleShot(0, lambda: self.stop_current_video(advance=True))
 
         threading.Thread(target=wait_thread, args=(proc,), daemon=True).start()
 
