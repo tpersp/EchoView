@@ -209,8 +209,18 @@ class DisplayWindow(QMainWindow):
         self.spotify_info_label.raise_()
 
     def play_next_video(self):
+        # Stop any currently running video
         if self.current_video_proc:
             self.stop_current_video()
+
+        # (NEW) Rebuild the list of videos on demand.  This ensures that if the
+        # list was emptied or a new category is selected, we always have the
+        # latest set of video filenames before attempting to play the next one.
+        if not self.image_list:
+            self.build_local_image_list()
+
+        # (NEW) If there are still no videos after rebuilding, show a message
+        # and return instead of advancing to a non-existent video.
         if not self.image_list:
             self.clear_foreground_label("No videos found")
             return
