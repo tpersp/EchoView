@@ -360,7 +360,6 @@ class DisplayWindow(QMainWindow):
                 blurred = self.make_background(pm)
                 self.bg_label.setPixmap(blurred if blurred else QPixmap())
 
-
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.setup_layout()
