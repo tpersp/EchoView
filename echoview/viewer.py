@@ -163,6 +163,15 @@ class DisplayWindow(QMainWindow):
         self.clock_timer.timeout.connect(self.update_clock)
         self.clock_timer.start(1000)
 
+        # Timer to poll mpv process state.  In some environments mpv may not
+        # terminate cleanly on EOF even with --keep-open=no.  This timer
+        # periodically checks whether the spawned mpv process has exited and
+        # advances to the next file when appropriate.  It is started on video
+        # playback and stopped once the process ends.
+        self.mpv_poll_timer = QTimer(self)
+        self.mpv_poll_timer.setInterval(1000)  # check once per second
+        self.mpv_poll_timer.timeout.connect(self._check_mpv_process)
+
         # Load config and start
         self.cfg = load_config()
         self.reload_settings()
@@ -208,6 +217,32 @@ class DisplayWindow(QMainWindow):
         self.spotify_info_label.move(margin, y)
         self.spotify_info_label.raise_()
 
+    def _check_mpv_process(self) -> None:
+        """
+        Poll the mpv process to see if it has exited.  This is used as a
+        fallback mechanism to advance to the next video if mpv does not
+        automatically quit on end-of-file for any reason.  If the process
+        terminates, stop_current_video is invoked with advance=True.  The
+        poll timer is stopped after the process ends to avoid repeated
+        callbacks.
+        """
+        proc = getattr(self, 'current_video_proc', None)
+        if proc is None:
+            # No process; nothing to monitor
+            return
+        try:
+            # poll() returns None while the process is running, otherwise the
+            # process exit code (0 or non-zero).  If it has ended, schedule
+            # advancement on the Qt event loop and stop polling.
+            if proc.poll() is not None:
+                self.mpv_poll_timer.stop()
+                # Use singleShot to defer call to next iteration of event loop
+                QTimer.singleShot(0, lambda: self.stop_current_video(advance=True))
+        except Exception:
+            # On error, stop polling to avoid spamming and attempt cleanup
+            self.mpv_poll_timer.stop()
+            QTimer.singleShot(0, lambda: self.stop_current_video(advance=True))
+
     def play_next_video(self):
         # Stop any currently running video
         if self.current_video_proc:
@@ -252,17 +287,42 @@ class DisplayWindow(QMainWindow):
         if self.index >= len(self.image_list):
             self.index = 0
 
+        # If "video_play_to_end" is false, schedule a timeout to stop playback
+        # after a maximum number of seconds.  Otherwise rely on mpv's natural
+        # termination and our polling timer to detect end-of-file.
         if not self.disp_cfg.get("video_play_to_end", True):
             max_sec = int(self.disp_cfg.get("video_max_seconds", 120))
             QTimer.singleShot(max_sec * 1000, lambda: self.stop_current_video(advance=True))
+        else:
+            # Start polling mpv's process state.  This is a fallback in case
+            # mpv does not emit an EOF exit event; the timer will be stopped
+            # automatically once the process has ended.
+            try:
+                self.mpv_poll_timer.stop()
+                self.mpv_poll_timer.start()
+            except Exception:
+                pass
 
     def build_mpv_command(self, fullpath):
         cmd = [
             "mpv",
+            # Do not load any user/system configuration files.  User configs
+            # might set options like --idle=yes or --keep-open that would
+            # prevent mpv from exiting on EOF and cause the slideshow to
+            # become stuck on a black screen【342559845937801†L2229-L2234】.
+            "--no-config",
             "--fs",
             "--no-osd-bar",
             "--really-quiet",
-            "--keep-open=no",  # ensures mpv exits when file ends
+            # Explicitly disable idle mode so mpv terminates when there is no
+            # file to play.  Without this, certain configurations can cause
+            # mpv to stay open after playback finishes, leading to a black
+            # window【342559845937801†L2229-L2234】.
+            "--idle=no",
+            # Ensure that mpv closes the video window and exits on EOF.  The
+            # "no" value resets keep-open even if a config sets it to yes or
+            # always【342559845937801†L4768-L4800】.
+            "--keep-open=no",
         ]
         screen_index = 0
         try:
@@ -300,6 +360,13 @@ class DisplayWindow(QMainWindow):
                 except Exception:
                     pass
         self.current_video_proc = None
+
+        # Stop polling timer if it is running.  Once the process is terminated
+        # there is no need to continue polling.
+        try:
+            self.mpv_poll_timer.stop()
+        except Exception:
+            pass
 
         if advance:
             QTimer.singleShot(0, self.next_image)
