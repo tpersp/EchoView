@@ -40,6 +40,42 @@ function initCollapsible() {
 }
 window.addEventListener("DOMContentLoaded", initCollapsible);
 
+// ---- Mode section toggling ----
+function showModeSection(dname, mode) {
+  const all = ['random','category','specific_image','mixed','videos','spotify','web_page'];
+  const map = {
+    'random_image': ['random','category'],
+    'specific_image': ['category','specific_image'],
+    'mixed': ['random','mixed'],
+    'videos': ['videos'],
+    'spotify': ['spotify'],
+    'web_page': ['web_page']
+  };
+  const toShow = map[mode] || [];
+  all.forEach(sec => {
+    const el = document.getElementById(`${dname}_${sec}_section`);
+    if (el) el.style.display = toShow.includes(sec) ? 'block' : 'none';
+  });
+  if (mode === 'mixed') {
+    const sec = document.getElementById(`${dname}_mixed_section`);
+    if (sec && !sec.dataset.init) {
+      initMixedUI(dname);
+      sec.dataset.init = '1';
+    }
+  }
+}
+
+function initModeHandlers() {
+  document.querySelectorAll('select[id$="_mode"]').forEach(sel => {
+    const dname = sel.id.replace('_mode','');
+    sel.addEventListener('change', () => {
+      showModeSection(dname, sel.value);
+    });
+    showModeSection(dname, sel.value);
+  });
+}
+document.addEventListener('DOMContentLoaded', initModeHandlers);
+
 // ---- Mixed Folder UI (click to move items) ----
 function initMixedUI(dispName) {
   const searchBox = document.getElementById(dispName + "_search");
