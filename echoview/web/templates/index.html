@@ -22,8 +22,8 @@
     <input type="hidden" name="action" value="update_displays">
     <div class="row g-3">
       {% for dname, dcfg in cfg.displays.items() %}
-      <div class="col-12 col-md-6 col-lg-4">
-        <div class="card h-100 text-center">
+      <div class="col d-flex">
+        <div class="card h-100 flex-fill text-center">
         <h3>{{ dname }} ({{ monitors[dname].resolution }})</h3>
         <!-- Display Settings for this monitor -->
         <div>
@@ -235,9 +235,8 @@
             <label>Web URL:</label><br>
             {#
               Use a datalist to provide quick access to previously saved
-              websites. Users can still enter any URL manually, but any
-              URL entered here will be automatically appended to the
-              configuration’s saved_websites list when the form is saved.
+              websites. Users can still enter any URL manually.  Check the
+              box below to remember the URL for future use.
             #}
             <input type="text"
                    name="{{ dname }}_web_url"
@@ -251,8 +250,11 @@
                 {% endfor %}
               {% endif %}
             </datalist>
+            <label style="display:block; margin-top:8px; color: var(--text-normal);">
+              <input type="checkbox" name="{{ dname }}_save_web" value="1"> Save this URL
+            </label>
             <small style="display:block; margin-top:5px; color: var(--text-normal);">
-              Saved websites appear as suggestions. Enter a URL to add it to the list.
+              Saved websites appear as suggestions for all displays.
             </small>
             <br><br>
           </div>

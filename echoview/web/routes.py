@@ -680,6 +680,11 @@ def index():
                 dcfg["specific_image"] = new_spec
                 dcfg["rotate"] = new_rotate
                 dcfg["web_url"] = request.form.get(pre + "web_url", dcfg.get("web_url", ""))
+                if request.form.get(pre + "save_web"):
+                    cfg.setdefault("saved_websites", [])
+                    url = dcfg["web_url"].strip()
+                    if url and url not in cfg["saved_websites"]:
+                        cfg["saved_websites"].append(url)
 
                 # If Spotify, store extras
                 if new_mode == "spotify":
@@ -721,18 +726,6 @@ def index():
                         dcfg["video_max_seconds"] = dcfg.get("video_max_seconds", 120)
                 else:
                     dcfg["video_category"] = ""
-
-            # After updating all display configs, automatically update
-            # the list of saved websites.  Each non‑empty web_url from
-            # displays is appended to the top‑level saved_websites list
-            # if it is not already present.  This allows the UI to offer
-            # suggestions via the datalist in the Web Page mode.  The
-            # saved_websites list is initialised if it does not exist.
-            cfg.setdefault("saved_websites", [])
-            for dname, dcfg in cfg["displays"].items():
-                web = dcfg.get("web_url", "").strip()
-                if web and web not in cfg["saved_websites"]:
-                    cfg["saved_websites"].append(web)
 
             save_config(cfg)
             try:
