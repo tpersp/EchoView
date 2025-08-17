@@ -409,7 +409,6 @@ class DisplayWindow(QMainWindow):
                 lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             else:
                 lbl.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-            lbl.adjustSize()
             h = lbl.sizeHint().height()
             lbl.setFixedHeight(h)
             if "top" in position:
@@ -419,6 +418,7 @@ class DisplayWindow(QMainWindow):
             else:
                 y2 = (container_rect.height() - h) // 2
             lbl.move(margin, y2)
+            lbl.raise_()
             return y2 + h + margin
 
         if hasattr(self, "overlay_config") and self.clock_label.isVisible():
@@ -547,6 +547,9 @@ class DisplayWindow(QMainWindow):
             self.build_local_image_list()
         if self.current_mode == "spotify":
             self.next_image(force=True)
+
+        # Ensure overlay elements are repositioned based on updated settings
+        self.setup_layout()
 
     def build_local_image_list(self):
         mode = self.current_mode
