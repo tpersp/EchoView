@@ -23,7 +23,7 @@ from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl
 from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QProgressBar,
-    QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect, QSizePolicy
+    QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
@@ -218,6 +218,10 @@ class DisplayWindow(QMainWindow):
         self.spotify_info_label.move(margin, y)
         self.spotify_info_label.raise_()
 
+        if hasattr(self, "overlay_config") and self.clock_label.isVisible():
+            pos = self.overlay_config.get("clock_position", "bottom-center")
+            self._place_overlay_label(self.clock_label, pos, rect, 0)
+
     def _check_mpv_process(self) -> None:
         """
         Poll the mpv process to see if it has exited.  This is used as a
@@ -397,74 +401,9 @@ class DisplayWindow(QMainWindow):
             self.spotify_progress_bar.setGeometry(x, y, width, pb_height)
             self.spotify_progress_bar.raise_()
 
-        # Helper for positioning labels (clock etc.)
-        def place_overlay_label(lbl, position: str, container_rect, y_offset: int = 0) -> int:
-            """
-            Position the overlay label (clock or other overlay) within the given
-            container rectangle based on a simple text position string (e.g.
-            "top-left", "bottom-right", "center").  Previously this method
-            always anchored the label to the left margin and set it to the full
-            container width.  That resulted in the clock always appearing in
-            the top‑left corner regardless of the configured position and
-            sometimes overflowing the screen.  To respect the configured
-            horizontal alignment we now calculate the x coordinate based on
-            left/center/right and keep the label constrained to the
-            container width minus margins.
-
-            Parameters:
-                lbl:        The QLabel to position.
-                position:   A string like "top-left", "bottom-center", etc.
-                container_rect: The QRect of the parent container.
-                y_offset:   Additional vertical offset (useful when stacking
-                            multiple overlay items).
-
-            Returns:
-                The y coordinate for the next item (bottom of the label plus
-                margin) so callers can stack subsequent overlay elements.
-            """
-            # Determine the available width and height accounting for margins
-            full_width = container_rect.width() - 2 * margin
-            # Set a fixed width for the overlay; this prevents the label from
-            # overflowing the screen while still allowing the text to wrap
-            lbl.setFixedWidth(full_width)
-            lbl.setWordWrap(True)
-            # Ensure the label can expand horizontally within its fixed width
-            lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-            # Horizontal alignment determines the label's internal text
-            # alignment (left/right/center) but also influences our x
-            # coordinate below
-            align = Qt.AlignHCenter | Qt.AlignVCenter
-            if "left" in position:
-                align = Qt.AlignLeft | Qt.AlignVCenter
-            elif "right" in position:
-                align = Qt.AlignRight | Qt.AlignVCenter
-            lbl.setAlignment(align)
-            # Height depends on font size and wrapping
-            h = lbl.sizeHint().height()
-            lbl.setFixedHeight(h)
-            # Compute vertical position
-            if "top" in position:
-                y2 = margin + y_offset
-            elif "bottom" in position:
-                y2 = container_rect.height() - h - margin - y_offset
-            else:
-                # Center vertically
-                y2 = (container_rect.height() - h) // 2
-            # Compute horizontal position based on alignment
-            if "left" in position:
-                x2 = margin
-            elif "right" in position:
-                x2 = container_rect.width() - full_width - margin
-            else:
-                # Center horizontally
-                x2 = (container_rect.width() - full_width) // 2
-            lbl.move(int(x2), int(y2))
-            lbl.raise_()
-            return y2 + h + margin
-
         if hasattr(self, "overlay_config") and self.clock_label.isVisible():
             pos = self.overlay_config.get("clock_position", "bottom-center")
-            place_overlay_label(self.clock_label, pos, rect, 0)
+            self._place_overlay_label(self.clock_label, pos, rect, 0)
 
         # Refresh the background from the last image/GIF frame
         if self.current_pixmap and not self.handling_gif_frames:
@@ -478,6 +417,50 @@ class DisplayWindow(QMainWindow):
                 pm = QPixmap.fromImage(frm)
                 blurred = self.make_background(pm)
                 self.bg_label.setPixmap(blurred if blurred else QPixmap())
+
+    def _place_overlay_label(self, lbl, position: str, container_rect, y_offset: int = 0) -> int:
+        """Position an overlay label like the clock within *container_rect*.
+
+        The label is sized to its content but constrained so it never exceeds
+        the container's width minus margins.  Horizontal alignment is determined
+        by the position string ("left", "center", "right") and the label is
+        moved accordingly.  Returns the y coordinate below the label so callers
+        can stack subsequent overlay elements if needed.
+        """
+        margin = 10
+        max_width = container_rect.width() - 2 * margin
+        lbl.setWordWrap(True)
+        content_width = lbl.sizeHint().width()
+        label_width = min(content_width, max_width)
+        lbl.setFixedWidth(label_width)
+
+        align = Qt.AlignHCenter | Qt.AlignVCenter
+        if "left" in position:
+            align = Qt.AlignLeft | Qt.AlignVCenter
+        elif "right" in position:
+            align = Qt.AlignRight | Qt.AlignVCenter
+        lbl.setAlignment(align)
+
+        h = lbl.sizeHint().height()
+        lbl.setFixedHeight(h)
+
+        if "top" in position:
+            y2 = margin + y_offset
+        elif "bottom" in position:
+            y2 = container_rect.height() - h - margin - y_offset
+        else:
+            y2 = (container_rect.height() - h) // 2
+
+        if "left" in position:
+            x2 = margin
+        elif "right" in position:
+            x2 = container_rect.width() - label_width - margin
+        else:
+            x2 = (container_rect.width() - label_width) // 2
+
+        lbl.move(int(x2), int(y2))
+        lbl.raise_()
+        return y2 + h + margin
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
