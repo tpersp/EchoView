@@ -29,7 +29,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from spotipy.oauth2 import SpotifyOAuth
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
-from echoview.utils import load_config, save_config, log_message
+from echoview.utils import load_config, save_config, log_message, get_ip_address
 
 
 # --- Custom label for negative (difference) text drawing ---
@@ -129,6 +129,7 @@ class DisplayWindow(QMainWindow):
         self.foreground_label.setScaledContents(False)
         self.foreground_label.setAlignment(Qt.AlignCenter)
         self.foreground_label.setStyleSheet("background-color: transparent;")
+        self.foreground_label.setWordWrap(True)
 
         # Overlay label for clock
         self.clock_label = NegativeTextLabel(self.main_widget)
@@ -733,8 +734,22 @@ class DisplayWindow(QMainWindow):
             self.current_movie = None
             self.handling_gif_frames = False
         self.foreground_label.setMovie(None)
-        self.foreground_label.setText(message)
+        msg = message
+        lower_msg = message.lower()
+        if "no" in lower_msg and "found" in lower_msg:
+            ip = get_ip_address()
+            port = os.environ.get("WEB_PORT", "8080")
+            msg = f"{message}\nSetup at {ip}:{port}"
+        self.foreground_label.setText(msg)
         self.foreground_label.setAlignment(Qt.AlignCenter)
+        font = self.foreground_label.font()
+        screen = self.assigned_screen if self.assigned_screen else self.screen()
+        if screen:
+            height = screen.size().height()
+        else:
+            height = 800
+        font.setPointSize(max(24, int(height / 20)))
+        self.foreground_label.setFont(font)
         self.foreground_label.setStyleSheet("color: white; background-color: transparent;")
         self.spotify_progress_bar.hide()
         self.spotify_progress_timer.stop()
