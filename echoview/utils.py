@@ -72,6 +72,11 @@ def init_config():
                 "background_scale_percent": 100,
                 "foreground_scale_percent": 100
             },
+            # Persist a list of websites visited in web page mode.  When a
+            # new URL is entered for a display it will be appended here.  The
+            # UI uses a datalist to offer these as suggestions, making it
+            # easier to switch back to previously viewed pages.
+            "saved_websites": [],
             "spotify": {
                 "client_id": "",
                 "client_secret": "",
@@ -181,4 +186,4 @@ def count_files_in_folder(folder_path):
         if f.lower().endswith(valid_ext):
             cnt += 1
     return cnt
-
+

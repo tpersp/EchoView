@@ -399,25 +399,66 @@ class DisplayWindow(QMainWindow):
 
         # Helper for positioning labels (clock etc.)
         def place_overlay_label(lbl, position: str, container_rect, y_offset: int = 0) -> int:
+            """
+            Position the overlay label (clock or other overlay) within the given
+            container rectangle based on a simple text position string (e.g.
+            "top-left", "bottom-right", "center").  Previously this method
+            always anchored the label to the left margin and set it to the full
+            container width.  That resulted in the clock always appearing in
+            the top‑left corner regardless of the configured position and
+            sometimes overflowing the screen.  To respect the configured
+            horizontal alignment we now calculate the x coordinate based on
+            left/center/right and keep the label constrained to the
+            container width minus margins.
+
+            Parameters:
+                lbl:        The QLabel to position.
+                position:   A string like "top-left", "bottom-center", etc.
+                container_rect: The QRect of the parent container.
+                y_offset:   Additional vertical offset (useful when stacking
+                            multiple overlay items).
+
+            Returns:
+                The y coordinate for the next item (bottom of the label plus
+                margin) so callers can stack subsequent overlay elements.
+            """
+            # Determine the available width and height accounting for margins
             full_width = container_rect.width() - 2 * margin
+            # Set a fixed width for the overlay; this prevents the label from
+            # overflowing the screen while still allowing the text to wrap
             lbl.setFixedWidth(full_width)
             lbl.setWordWrap(True)
+            # Ensure the label can expand horizontally within its fixed width
             lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            # Horizontal alignment determines the label's internal text
+            # alignment (left/right/center) but also influences our x
+            # coordinate below
+            align = Qt.AlignHCenter | Qt.AlignVCenter
             if "left" in position:
-                lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                align = Qt.AlignLeft | Qt.AlignVCenter
             elif "right" in position:
-                lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            else:
-                lbl.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+                align = Qt.AlignRight | Qt.AlignVCenter
+            lbl.setAlignment(align)
+            # Height depends on font size and wrapping
             h = lbl.sizeHint().height()
             lbl.setFixedHeight(h)
+            # Compute vertical position
             if "top" in position:
                 y2 = margin + y_offset
             elif "bottom" in position:
                 y2 = container_rect.height() - h - margin - y_offset
             else:
+                # Center vertically
                 y2 = (container_rect.height() - h) // 2
-            lbl.move(margin, y2)
+            # Compute horizontal position based on alignment
+            if "left" in position:
+                x2 = margin
+            elif "right" in position:
+                x2 = container_rect.width() - full_width - margin
+            else:
+                # Center horizontally
+                x2 = (container_rect.width() - full_width) // 2
+            lbl.move(int(x2), int(y2))
             lbl.raise_()
             return y2 + h + margin
 

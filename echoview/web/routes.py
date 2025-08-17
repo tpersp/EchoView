@@ -722,6 +722,18 @@ def index():
                 else:
                     dcfg["video_category"] = ""
 
+            # After updating all display configs, automatically update
+            # the list of saved websites.  Each non‑empty web_url from
+            # displays is appended to the top‑level saved_websites list
+            # if it is not already present.  This allows the UI to offer
+            # suggestions via the datalist in the Web Page mode.  The
+            # saved_websites list is initialised if it does not exist.
+            cfg.setdefault("saved_websites", [])
+            for dname, dcfg in cfg["displays"].items():
+                web = dcfg.get("web_url", "").strip()
+                if web and web not in cfg["saved_websites"]:
+                    cfg["saved_websites"].append(web)
+
             save_config(cfg)
             try:
                 subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
@@ -808,17 +820,23 @@ def index():
 
 @main_bp.route("/update_app", methods=["POST"])
 def update_app():
-    """Perform a soft update: git pull and restart services."""
+    """
+    Perform a soft update by resetting the working tree to the
+    configured branch and optionally re‑running setup.sh if it changed.
+    After the update completes the viewer and controller services are
+    restarted.  Rather than rendering a barebones template this route
+    returns a small themed page similar to the full_update page to
+    provide a more polished experience.  The page automatically
+    redirects back to the home screen after a short delay.
+    """
     cfg = load_config()
     log_message(f"Starting soft update to origin/{UPDATE_BRANCH}")
 
     old_hash = ""
     try:
-        old_hash = subprocess.check_output([
-            "git",
-            "rev-parse",
-            "HEAD:setup.sh",
-        ], cwd=VIEWER_HOME).decode().strip()
+        old_hash = subprocess.check_output(
+            ["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME
+        ).decode().strip()
     except Exception as e:
         log_message(f"Could not get old setup.sh hash: {e}")
 
@@ -834,11 +852,9 @@ def update_app():
 
     new_hash = ""
     try:
-        new_hash = subprocess.check_output([
-            "git",
-            "rev-parse",
-            "HEAD:setup.sh",
-        ], cwd=VIEWER_HOME).decode().strip()
+        new_hash = subprocess.check_output(
+            ["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME
+        ).decode().strip()
     except Exception as e:
         log_message(f"Could not get new setup.sh hash: {e}")
 
@@ -853,11 +869,70 @@ def update_app():
 
     log_message("Soft update completed successfully.")
 
-    # Restart services without rebooting the whole device
+    # Restart services without rebooting the whole device.  The Popen
+    # calls allow this route to return immediately without blocking on
+    # service restarts.
     subprocess.Popen(["sudo", "systemctl", "restart", "echoview.service"])
     subprocess.Popen(["sudo", "systemctl", "restart", "controller.service"])
 
-    return render_template("update_complete.html")
+    # Render a simple themed status page similar to the full update.
+    theme = cfg.get("theme", "dark")
+    if theme == "dark":
+        page_bg = "#121212"
+        text_color = "#ECECEC"
+        button_bg = "#444"
+        button_color = "#FFF"
+        link_hover_bg = "#666"
+    else:
+        page_bg = "#FFFFFF"
+        text_color = "#222"
+        button_bg = "#ddd"
+        button_color = "#111"
+        link_hover_bg = "#bbb"
+
+    return f"""
+    <html>
+      <head>
+        <meta charset=\"utf-8\"/>
+        <title>EchoView Update</title>
+        <style>
+          body {{
+            background-color: {page_bg};
+            color: {text_color};
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+          }}
+          a.button {{
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: {button_bg};
+            color: {button_color};
+            border: none;
+            border-radius: 6px;
+            text-decoration: none;
+            cursor: pointer;
+          }}
+          a.button:hover {{
+            background-color: {link_hover_bg};
+          }}
+        </style>
+      </head>
+      <body>
+        <h2>Soft update complete. Services are restarting…</h2>
+        <p>Please wait a moment. You will be redirected shortly.</p>
+        <p>If you are not redirected automatically, click below
+            <br>
+           <a href=\"/\" class=\"button\">Return to Home Page</a></p>
+        <script>
+          setTimeout(function() {{
+            window.location.href = "/";
+          }}, 10000);
+        </script>
+      </body>
+    </html>
+    """
 
 
 @main_bp.route("/full_update", methods=["POST"])
@@ -956,6 +1031,12 @@ def full_update():
 
 @main_bp.route("/restart_services", methods=["POST", "GET"])
 def restart_services():
+    """
+    Restart the viewer and controller services on demand.  This route
+    returns a themed HTML page similar to the update pages instead of
+    bare HTML.  It also automatically redirects back to the home page
+    after a short delay.
+    """
     try:
         subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
         subprocess.check_call(["sudo", "systemctl", "restart", "controller.service"])
@@ -964,12 +1045,63 @@ def restart_services():
         log_message(f"Failed to restart services: {e}")
         return "Failed to restart services. Check logs.", 500
 
-    return (
-        "<html><head><meta charset='utf-8'>"
-        "<title>Restarting</title>"
-        "<script>setTimeout(function(){window.location.href='/'}, 10000);" 
-        "</script></head><body>"
-        "<h2>Services restarting...</h2>"
-        "<p>You will be redirected shortly.</p>"
-        "</body></html>"
-    )
+    # Determine theme colours for the restart page
+    cfg = load_config()
+    theme = cfg.get("theme", "dark")
+    if theme == "dark":
+        page_bg = "#121212"
+        text_color = "#ECECEC"
+        button_bg = "#444"
+        button_color = "#FFF"
+        link_hover_bg = "#666"
+    else:
+        page_bg = "#FFFFFF"
+        text_color = "#222"
+        button_bg = "#ddd"
+        button_color = "#111"
+        link_hover_bg = "#bbb"
+
+    return f"""
+    <html>
+      <head>
+        <meta charset=\"utf-8\"/>
+        <title>Restarting</title>
+        <style>
+          body {{
+            background-color: {page_bg};
+            color: {text_color};
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+          }}
+          a.button {{
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: {button_bg};
+            color: {button_color};
+            border: none;
+            border-radius: 6px;
+            text-decoration: none;
+            cursor: pointer;
+          }}
+          a.button:hover {{
+            background-color: {link_hover_bg};
+          }}
+        </style>
+      </head>
+      <body>
+        <h2>Services restarting…</h2>
+        <p>You will be redirected shortly.</p>
+        <p>If you are not redirected automatically, click below
+           <br>
+           <a href=\"/\" class=\"button\">Return to Home Page</a>
+        </p>
+        <script>
+          setTimeout(function() {{
+            window.location.href = "/";
+          }}, 10000);
+        </script>
+      </body>
+    </html>
+    """

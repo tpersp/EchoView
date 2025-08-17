@@ -118,6 +118,11 @@ h1, h2, h3, h4, h5, h6 {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 20px;
   margin-top: 20px;
+    /* Ensure all cards in a row have equal height so that empty space is
+       avoided. Without this the cards only expand to the height of their
+       content, which can look uneven especially when several displays have
+       different amounts of configuration options. */
+    grid-auto-rows: 1fr;
 }
 .card {
   background: var(--card-bg);
@@ -125,6 +130,11 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 1px 4px rgba(0,0,0,0.1);
   padding: 16px;
   position: relative;
+    /* Flexbox allows the card contents to stretch to fill the available
+       height. This works in combination with grid-auto-rows above to
+       eliminate uneven column heights. */
+    display: flex;
+    flex-direction: column;
 }
 
 /* Mode sections hidden by default */
@@ -215,6 +225,19 @@ table td button {
   .page-section {
     padding: 15px;
   }
+}
+
+/* Make cards within Bootstrap rows stretch to fill the available
+   vertical space.  Without these styles the per‑display cards in
+   index.html can have uneven heights if their content differs.  Using
+   flexbox here ensures each card grows to match the tallest card in
+   its row and that internal elements can expand naturally. */
+.row.g-3 {
+  align-items: stretch;
+}
+.row.g-3 .card {
+  display: flex;
+  flex-direction: column;
 }
 
 /* ----------------------------------------------

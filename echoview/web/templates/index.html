@@ -233,7 +233,27 @@
           <!-- Web Page Settings -->
           <div id="{{ dname }}_web_page_section" class="mode-section">
             <label>Web URL:</label><br>
-            <input type="text" name="{{ dname }}_web_url" value="{{ dcfg.web_url|default('') }}" style="width:90%;">
+            {#
+              Use a datalist to provide quick access to previously saved
+              websites. Users can still enter any URL manually, but any
+              URL entered here will be automatically appended to the
+              configuration’s saved_websites list when the form is saved.
+            #}
+            <input type="text"
+                   name="{{ dname }}_web_url"
+                   list="{{ dname }}_saved_sites"
+                   value="{{ dcfg.web_url|default('') }}"
+                   style="width:90%;" placeholder="https://example.com">
+            <datalist id="{{ dname }}_saved_sites">
+              {% if cfg.saved_websites is defined %}
+                {% for site in cfg.saved_websites %}
+                  <option value="{{ site }}">{{ site }}</option>
+                {% endfor %}
+              {% endif %}
+            </datalist>
+            <small style="display:block; margin-top:5px; color: var(--text-normal);">
+              Saved websites appear as suggestions. Enter a URL to add it to the list.
+            </small>
             <br><br>
           </div>
 
