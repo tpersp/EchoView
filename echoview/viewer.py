@@ -23,7 +23,7 @@ from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl
 from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QProgressBar,
-    QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect, QSizePolicy
+    QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
@@ -422,24 +422,23 @@ class DisplayWindow(QMainWindow):
                 The y coordinate for the next item (bottom of the label plus
                 margin) so callers can stack subsequent overlay elements.
             """
-            # Determine the available width and height accounting for margins
-            full_width = container_rect.width() - 2 * margin
-            # Set a fixed width for the overlay; this prevents the label from
-            # overflowing the screen while still allowing the text to wrap
-            lbl.setFixedWidth(full_width)
+            # Determine the maximum width available inside the container
+            max_width = container_rect.width() - 2 * margin
             lbl.setWordWrap(True)
-            # Ensure the label can expand horizontally within its fixed width
-            lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            # Size the label based on its content but cap it to the
+            # available width so long strings wrap rather than overflow.
+            content_width = lbl.sizeHint().width()
+            label_width = min(content_width, max_width)
+            lbl.setFixedWidth(label_width)
             # Horizontal alignment determines the label's internal text
             # alignment (left/right/center) but also influences our x
-            # coordinate below
+            # coordinate below.
             align = Qt.AlignHCenter | Qt.AlignVCenter
             if "left" in position:
                 align = Qt.AlignLeft | Qt.AlignVCenter
             elif "right" in position:
                 align = Qt.AlignRight | Qt.AlignVCenter
             lbl.setAlignment(align)
-            # Height depends on font size and wrapping
             h = lbl.sizeHint().height()
             lbl.setFixedHeight(h)
             # Compute vertical position
@@ -454,10 +453,10 @@ class DisplayWindow(QMainWindow):
             if "left" in position:
                 x2 = margin
             elif "right" in position:
-                x2 = container_rect.width() - full_width - margin
+                x2 = container_rect.width() - label_width - margin
             else:
                 # Center horizontally
-                x2 = (container_rect.width() - full_width) // 2
+                x2 = (container_rect.width() - label_width) // 2
             lbl.move(int(x2), int(y2))
             lbl.raise_()
             return y2 + h + margin
