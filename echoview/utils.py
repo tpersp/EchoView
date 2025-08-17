@@ -39,8 +39,8 @@ def init_config():
                     "spotify_show_progress": False,
                     "spotify_progress_position": "bottom-center",   # New: progress bar location setting
                     "spotify_progress_theme": "dark",         # New: progress bar theme option
-                    "spotify_progress_update_interval": 200        # New: update interval in ms
-                    ,
+                    "spotify_progress_update_interval": 200,       # New: update interval in ms
+                    "spotify_font_color": "#FFFFFF",
                     "video_category": "",
                     "shuffle_videos": False,
                     "video_mute": True,

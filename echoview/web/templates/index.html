@@ -68,9 +68,13 @@
                 Live Playback Progress
               </label>
               <label style="display:inline-block;">
-                <input type="checkbox" name="{{ dname }}_spotify_negative_font" value="1" {% if dcfg.spotify_negative_font is not defined or dcfg.spotify_negative_font %}checked{% endif %}>
+                <input type="checkbox" class="spotify-negative-font" id="{{ dname }}_spotify_negative_font" name="{{ dname }}_spotify_negative_font" value="1" {% if dcfg.spotify_negative_font is not defined or dcfg.spotify_negative_font %}checked{% endif %}>
                 Auto Negative Font
               </label>
+              <span id="{{ dname }}_spotify_font_color_container" style="display:inline-block; margin-left:10px;">
+                <label>Font Color:</label>
+                <input type="color" name="{{ dname }}_spotify_font_color" value="{{ dcfg.spotify_font_color|default('#FFFFFF') }}">
+              </span>
             </div>
             <br>
             <label>Spotify Font Size:</label>

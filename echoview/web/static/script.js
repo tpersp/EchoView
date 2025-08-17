@@ -210,6 +210,22 @@ function initVideoMuteToggle() {
 }
 window.addEventListener('DOMContentLoaded', initVideoMuteToggle);
 
+// ---- Spotify font color toggle ----
+function initSpotifyFontColorToggle() {
+  const checkboxes = document.querySelectorAll('.spotify-negative-font');
+  checkboxes.forEach(cb => {
+    const prefix = cb.id.replace('_spotify_negative_font', '');
+    const container = document.getElementById(prefix + '_spotify_font_color_container');
+    const toggle = () => {
+      if (!container) return;
+      container.style.display = cb.checked ? 'none' : 'inline-block';
+    };
+    cb.addEventListener('change', toggle);
+    toggle();
+  });
+}
+window.addEventListener('DOMContentLoaded', initSpotifyFontColorToggle);
+
 // ---- Lazy load thumbnails for specific_image mode ----
 function loadSpecificThumbnails(dispName) {
   const container = document.getElementById(dispName + "_lazyContainer");
