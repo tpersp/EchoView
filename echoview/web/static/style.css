@@ -137,6 +137,15 @@ h1, h2, h3, h4, h5, h6 {
     flex-direction: column;
 }
 
+/* Ensure Bootstrap rows containing cards stretch to equal heights */
+.row.g-3 {
+  align-items: stretch;
+}
+.row.g-3 .card {
+  display: flex;
+  flex-direction: column;
+}
+
 /* Mode sections hidden by default */
 .mode-section {
   display: none;
