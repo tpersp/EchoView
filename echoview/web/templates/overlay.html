@@ -50,6 +50,10 @@
               {% if monitor_cfg.overlay and monitor_cfg.overlay.clock_position == "top-right" %}selected{% endif %}>
               Top Right
             </option>
+            <option value="center"
+              {% if monitor_cfg.overlay and monitor_cfg.overlay.clock_position == "center" %}selected{% endif %}>
+              Center
+            </option>
             <option value="bottom-left"
               {% if monitor_cfg.overlay and monitor_cfg.overlay.clock_position == "bottom-left" %}selected{% endif %}>
               Bottom Left
