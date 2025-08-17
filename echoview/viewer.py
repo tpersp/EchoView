@@ -218,9 +218,33 @@ class DisplayWindow(QMainWindow):
         self.spotify_info_label.move(margin, y)
         self.spotify_info_label.raise_()
 
+        self._position_spotify_progress_bar(rect, margin)
+
         if hasattr(self, "overlay_config") and self.clock_label.isVisible():
             pos = self.overlay_config.get("clock_position", "bottom-center")
             self._place_overlay_label(self.clock_label, pos, rect, 0)
+
+    def _position_spotify_progress_bar(self, rect, margin) -> None:
+        if not self.spotify_progress_bar.isVisible():
+            return
+        ppos = self.disp_cfg.get("spotify_progress_position", "bottom-center")
+        pb_height = 10
+        x = self.spotify_info_label.x()
+        y = self.spotify_info_label.y() + self.spotify_info_label.height() + 5
+        width = self.spotify_info_label.width()
+        if ppos == "above_info":
+            y = self.spotify_info_label.y() - pb_height - 5
+        elif ppos == "below_info":
+            y = self.spotify_info_label.y() + self.spotify_info_label.height() + 5
+        elif ppos == "top-center":
+            x, y = margin, margin
+            width = rect.width() - 2 * margin
+        elif ppos == "bottom-center":
+            x = margin
+            y = rect.height() - pb_height - margin
+            width = rect.width() - 2 * margin
+        self.spotify_progress_bar.setGeometry(x, y, width, pb_height)
+        self.spotify_progress_bar.raise_()
 
     def _check_mpv_process(self) -> None:
         """
@@ -381,25 +405,7 @@ class DisplayWindow(QMainWindow):
         margin = 10
 
         # Reposition the Spotify progress bar, if visible
-        if self.spotify_progress_bar.isVisible():
-            ppos = self.disp_cfg.get("spotify_progress_position", "bottom-center")
-            pb_height = 10
-            x = self.spotify_info_label.x()
-            y = self.spotify_info_label.y() + self.spotify_info_label.height() + 5
-            width = self.spotify_info_label.width()
-            if ppos == "above_info":
-                y = self.spotify_info_label.y() - pb_height - 5
-            elif ppos == "below_info":
-                y = self.spotify_info_label.y() + self.spotify_info_label.height() + 5
-            elif ppos == "top-center":
-                x, y = margin, margin
-                width = rect.width() - 2 * margin
-            elif ppos == "bottom-center":
-                x = margin
-                y = rect.height() - pb_height - margin
-                width = rect.width() - 2 * margin
-            self.spotify_progress_bar.setGeometry(x, y, width, pb_height)
-            self.spotify_progress_bar.raise_()
+        self._position_spotify_progress_bar(rect, margin)
 
         if hasattr(self, "overlay_config") and self.clock_label.isVisible():
             pos = self.overlay_config.get("clock_position", "bottom-center")
@@ -701,7 +707,10 @@ class DisplayWindow(QMainWindow):
                     self.spotify_info_label.setFont(font)
                 else:
                     self.spotify_info_label.useDifference = False
-                    self.spotify_info_label.setStyleSheet(f"color: #FFFFFF; font-size: {font_size}px; background: transparent;")
+                    color = self.disp_cfg.get("spotify_font_color", "#FFFFFF")
+                    self.spotify_info_label.setStyleSheet(
+                        f"color: {color}; font-size: {font_size}px; background: transparent;"
+                    )
                 self.spotify_info_label.raise_()
                 self.setup_layout()
             else:

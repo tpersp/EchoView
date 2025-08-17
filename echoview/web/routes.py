@@ -697,6 +697,7 @@ def index():
                     except:
                         dcfg["spotify_font_size"] = 18
                     dcfg["spotify_negative_font"] = True if request.form.get(pre + "spotify_negative_font") else False
+                    dcfg["spotify_font_color"] = request.form.get(pre + "spotify_font_color", dcfg.get("spotify_font_color", "#FFFFFF"))
                     dcfg["spotify_info_position"] = request.form.get(pre + "spotify_info_position", dcfg.get("spotify_info_position", "bottom-center"))
                     # New: store the live progress bar option and its settings
                     dcfg["spotify_show_progress"] = True if request.form.get(pre + "spotify_show_progress") else False
