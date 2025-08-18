@@ -92,7 +92,7 @@ class DisplayWindow(QMainWindow):
         # Caching for foreground images
         self.image_cache = OrderedDict()
         # Allow a larger cache to reduce disk I/O on slow devices
-        self.cache_capacity = 50
+        self.cache_capacity = 20
 
         self.last_displayed_path = None
         self.current_pixmap = None
