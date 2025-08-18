@@ -644,18 +644,13 @@ class DisplayWindow(QMainWindow):
             tmp_reader = QImageReader(fullpath)
             tmp_reader.setAutoDetectImageFormat(True)
             first_frame = tmp_reader.read()
-            size = os.path.getsize(fullpath)
-            movie = None
-            if self.gif_cache_mode == "all" or size < (2 * 1024 * 1024):
-                movie = QMovie(fullpath)
+            movie = QMovie(fullpath)
+            if (
+                self.gif_cache_mode == "all"
+                or os.path.getsize(fullpath) < (2 * 1024 * 1024)
+            ):
                 movie.setCacheMode(QMovie.CacheAll)
-            return {
-                "type": "gif",
-                "path": fullpath,
-                "first_frame": first_frame,
-                "movie": movie,
-                "size": size,
-            }
+            return {"type": "gif", "path": fullpath, "first_frame": first_frame, "movie": movie}
         else:
             pixmap = QPixmap(fullpath)
             return {"type": "static", "pixmap": pixmap}
@@ -820,16 +815,18 @@ class DisplayWindow(QMainWindow):
         data = self.get_cached_image(fullpath)
         if data["type"] == "gif" and not is_spotify:
             movie = data.get("movie")
-            size = data.get("size", os.path.getsize(fullpath))
             if movie is None:
                 movie = QMovie(data["path"])
-                if self.gif_cache_mode == "all" or size < (2 * 1024 * 1024):
+                if (
+                    self.gif_cache_mode == "all"
+                    or os.path.getsize(fullpath) < (2 * 1024 * 1024)
+                ):
                     movie.setCacheMode(QMovie.CacheAll)
-                    data["movie"] = movie
+                data["movie"] = movie
             else:
                 try:
                     movie.stop()
-
+                    movie.jumpToFrame(0)
                 except RuntimeError:
                     pass
             ff = data["first_frame"]
@@ -837,10 +834,6 @@ class DisplayWindow(QMainWindow):
             scaled_w = int(bw * self.fg_scale_percent / 100)
             scaled_h = int(bh * self.fg_scale_percent / 100)
             movie.setScaledSize(QSize(scaled_w, scaled_h))
-            try:
-                movie.jumpToFrame(0)
-            except RuntimeError:
-                pass
             self.current_movie = movie
             self.foreground_label.setMovie(self.current_movie)
             self.current_movie.start()
