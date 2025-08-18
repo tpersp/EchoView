@@ -88,19 +88,6 @@ You can override the path by adding `SPOTIFY_CACHE_PATH` to your `.env` file.
 Use the **Upload Media** page to add images/GIFs. You can place them in existing subfolders or create a new one. If you have a CIFS share, it will appear under your `IMAGE_DIR`.
 The file manager also lets you download images and move them between folders. Folders are always shown alphabetically for easier navigation.
 
-### Performance Options
-
-EchoView caches recently shown images and GIFs to limit disk access. You can
-adjust this behaviour in `viewerconfig.json` under the `gui` section:
-
-- `cache_capacity` – number of items kept in the in-memory LRU cache (default
-  50).
-- `gif_cache_mode` – control GIF frame caching. Use `"none"` to disable,
-  `"all"` to cache every GIF, or `"auto"` (default) to cache only files smaller
-  than 2 MB.
-
-GIF slides advance automatically when their animation completes, while static
-images still honour the configured interval.
 
 ## Directory Structure
 
