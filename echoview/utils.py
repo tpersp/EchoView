@@ -70,7 +70,8 @@ def init_config():
             "gui": {
                 "background_blur_radius": 20,
                 "background_scale_percent": 100,
-                "foreground_scale_percent": 100
+                "foreground_scale_percent": 100,
+                "gif_cache_mode": "none"
             },
             # Persist a list of websites visited in web page mode.  When a
             # new URL is entered for a display it will be appended here.  The
