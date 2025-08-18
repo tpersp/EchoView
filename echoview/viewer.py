@@ -829,6 +829,7 @@ class DisplayWindow(QMainWindow):
             else:
                 try:
                     movie.stop()
+
                 except RuntimeError:
                     pass
             ff = data["first_frame"]
