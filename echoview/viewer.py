@@ -91,12 +91,12 @@ class DisplayWindow(QMainWindow):
 
         # Caching for foreground images
         self.image_cache = OrderedDict()
-        self.cache_capacity = 15
+        # Allow a larger cache to reduce disk I/O on slow devices
+        self.cache_capacity = 50
 
         self.last_displayed_path = None
         self.current_pixmap = None
         self.current_movie = None
-        self.handling_gif_frames = False
         self.last_scaled_foreground_image = None
         self.current_video_proc = None
 
@@ -412,12 +412,12 @@ class DisplayWindow(QMainWindow):
             self._place_overlay_label(self.clock_label, pos, rect, 0)
 
         # Refresh the background from the last image/GIF frame
-        if self.current_pixmap and not self.handling_gif_frames:
+        if self.current_pixmap:
             self.updateForegroundScaled()
             if self.last_displayed_path:
                 blurred = self.make_background(self.current_pixmap)
                 self.bg_label.setPixmap(blurred if blurred else QPixmap())
-        elif self.current_movie and self.handling_gif_frames:
+        elif self.current_movie:
             frm = self.current_movie.currentImage()
             if not frm.isNull() and self.last_displayed_path:
                 pm = QPixmap.fromImage(frm)
@@ -512,6 +512,7 @@ class DisplayWindow(QMainWindow):
             self.fg_scale_percent = int(gui_cfg.get("foreground_scale_percent", 100))
         except:
             self.fg_scale_percent = 100
+        self.gif_cache_mode = gui_cfg.get("gif_cache_mode", "none")
 
         interval_s = self.disp_cfg.get("image_interval", 60)
         self.current_mode = self.disp_cfg.get("mode", "random_image")
@@ -643,7 +644,18 @@ class DisplayWindow(QMainWindow):
             tmp_reader = QImageReader(fullpath)
             tmp_reader.setAutoDetectImageFormat(True)
             first_frame = tmp_reader.read()
-            return {"type": "gif", "path": fullpath, "first_frame": first_frame}
+            size = os.path.getsize(fullpath)
+            movie = None
+            if self.gif_cache_mode == "all" or size < (2 * 1024 * 1024):
+                movie = QMovie(fullpath)
+                movie.setCacheMode(QMovie.CacheAll)
+            return {
+                "type": "gif",
+                "path": fullpath,
+                "first_frame": first_frame,
+                "movie": movie,
+                "size": size,
+            }
         else:
             pixmap = QPixmap(fullpath)
             return {"type": "static", "pixmap": pixmap}
@@ -655,7 +667,18 @@ class DisplayWindow(QMainWindow):
         data = self.load_and_cache_image(fullpath)
         self.image_cache[fullpath] = data
         if len(self.image_cache) > self.cache_capacity:
-            self.image_cache.popitem(last=False)
+            old_key, old_val = self.image_cache.popitem(last=False)
+            if old_val.get("type") == "gif":
+                mov = old_val.get("movie")
+                if mov:
+                    try:
+                        mov.stop()
+                    except RuntimeError:
+                        pass
+                    try:
+                        mov.deleteLater()
+                    except RuntimeError:
+                        pass
         return data
 
     def make_background(self, pixmap):
@@ -743,9 +766,6 @@ class DisplayWindow(QMainWindow):
             self.clear_foreground_label("No images found")
             return
 
-        if self.last_displayed_path and self.last_displayed_path in self.image_cache:
-            del self.image_cache[self.last_displayed_path]
-
         self.index += 1
         if self.index >= len(self.image_list):
             self.index = 0
@@ -763,12 +783,7 @@ class DisplayWindow(QMainWindow):
                 self.current_movie.stop()
             except RuntimeError:
                 pass
-            try:
-                self.current_movie.deleteLater()
-            except RuntimeError:
-                pass
             self.current_movie = None
-            self.handling_gif_frames = False
         self.foreground_label.setMovie(None)
         msg = message
         lower_msg = message.lower()
@@ -800,76 +815,46 @@ class DisplayWindow(QMainWindow):
                 self.current_movie.stop()
             except RuntimeError:
                 pass
-            try:
-                self.current_movie.deleteLater()
-            except RuntimeError:
-                pass
             self.current_movie = None
-            self.handling_gif_frames = False
 
         data = self.get_cached_image(fullpath)
         if data["type"] == "gif" and not is_spotify:
-            if self.fg_scale_percent == 100:
-                self.current_movie = QMovie(data["path"])
-                ff = data["first_frame"]
-                bw, bh = self.calc_bounding_for_window(ff)
-                if bw > 0 and bh > 0:
-                    self.current_movie.setScaledSize(QSize(bw, bh))
-                self.foreground_label.setMovie(self.current_movie)
-                self.current_movie.start()
-                self.handling_gif_frames = False
-                if not ff.isNull():
-                    pm = QPixmap.fromImage(ff)
-                    blurred = self.make_background(pm)
-                    self.bg_label.setPixmap(blurred if blurred else QPixmap())
+            movie = data.get("movie")
+            size = data.get("size", os.path.getsize(fullpath))
+            if movie is None:
+                movie = QMovie(data["path"])
+                if self.gif_cache_mode == "all" or size < (2 * 1024 * 1024):
+                    movie.setCacheMode(QMovie.CacheAll)
+                    data["movie"] = movie
             else:
-                self.current_movie = QMovie(data["path"])
-                self.handling_gif_frames = True
-                ff = data["first_frame"]
-                if ff.isNull():
-                    self.clear_foreground_label("GIF error")
-                    return
+                try:
+                    movie.stop()
+                except RuntimeError:
+                    pass
+            ff = data["first_frame"]
+            bw, bh = self.calc_bounding_for_window(ff)
+            scaled_w = int(bw * self.fg_scale_percent / 100)
+            scaled_h = int(bh * self.fg_scale_percent / 100)
+            movie.setScaledSize(QSize(scaled_w, scaled_h))
+            try:
+                movie.jumpToFrame(0)
+            except RuntimeError:
+                pass
+            self.current_movie = movie
+            self.foreground_label.setMovie(self.current_movie)
+            self.current_movie.start()
+            if not ff.isNull():
                 pm = QPixmap.fromImage(ff)
                 blurred = self.make_background(pm)
                 self.bg_label.setPixmap(blurred if blurred else QPixmap())
-                bw, bh = self.calc_bounding_for_window(ff)
-                self.gif_bounds = (bw, bh)
-                self.current_movie.frameChanged.connect(self.on_gif_frame_changed)
-                self.current_movie.start()
         else:
             if data["type"] == "static":
                 self.current_pixmap = data["pixmap"]
             else:
                 self.current_pixmap = QPixmap(fullpath)
-            self.handling_gif_frames = False
             self.updateForegroundScaled()
             blurred = self.make_background(self.current_pixmap)
             self.bg_label.setPixmap(blurred if blurred else QPixmap())
-        self.spotify_info_label.raise_()
-
-    def on_gif_frame_changed(self, frame_index):
-        if not self.current_movie or not self.handling_gif_frames:
-            return
-        frm_img = self.current_movie.currentImage()
-        if frm_img.isNull():
-            return
-        src_pm = QPixmap.fromImage(frm_img)
-        degraded = self.degrade_foreground(src_pm, self.gif_bounds)
-        rotated = self.apply_rotation_if_any(degraded)
-        fw = self.foreground_label.width()
-        fh = self.foreground_label.height()
-        bw, bh = self.gif_bounds
-        final_img = QImage(fw, fh, QImage.Format_ARGB32)
-        final_img.fill(Qt.transparent)
-        painter = QPainter(final_img)
-        xoff = (fw - bw) // 2
-        yoff = (fh - bh) // 2
-        painter.drawPixmap(xoff, yoff, rotated)
-        painter.end()
-        self.foreground_label.setPixmap(QPixmap.fromImage(final_img))
-        self.last_scaled_foreground_image = final_img
-        if self.overlay_config.get("auto_negative_font", False):
-            self.clock_label.update()
         self.spotify_info_label.raise_()
 
     def calc_bounding_for_window(self, first_frame):
