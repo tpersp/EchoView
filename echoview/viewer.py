@@ -92,6 +92,7 @@ class DisplayWindow(QMainWindow):
         # Caching for foreground images
         self.image_cache = OrderedDict()
         self.cache_capacity = 15
+        self.cache_lock = threading.Lock()
 
         self.last_displayed_path = None
         self.current_pixmap = None
@@ -649,14 +650,30 @@ class DisplayWindow(QMainWindow):
             return {"type": "static", "pixmap": pixmap}
 
     def get_cached_image(self, fullpath):
-        if fullpath in self.image_cache:
-            self.image_cache.move_to_end(fullpath)
-            return self.image_cache[fullpath]
+        with self.cache_lock:
+            if fullpath in self.image_cache:
+                self.image_cache.move_to_end(fullpath)
+                return self.image_cache[fullpath]
         data = self.load_and_cache_image(fullpath)
-        self.image_cache[fullpath] = data
-        if len(self.image_cache) > self.cache_capacity:
-            self.image_cache.popitem(last=False)
+        with self.cache_lock:
+            self.image_cache[fullpath] = data
+            if len(self.image_cache) > self.cache_capacity:
+                self.image_cache.popitem(last=False)
         return data
+
+    def prefetch_next_image(self):
+        if not self.image_list:
+            return
+        next_idx = (self.index + 1) % len(self.image_list)
+        next_path = self.image_list[next_idx]
+
+        def worker():
+            try:
+                self.get_cached_image(next_path)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def make_background(self, pixmap):
         """Generate a blurred/scaled background from the given pixmap."""
@@ -753,6 +770,7 @@ class DisplayWindow(QMainWindow):
         self.last_displayed_path = new_path
 
         self.show_foreground_image(new_path)
+        self.prefetch_next_image()
         if self.overlay_config.get("auto_negative_font", False):
             self.clock_label.update()
 
