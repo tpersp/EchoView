@@ -41,6 +41,31 @@ function initCollapsible() {
 window.addEventListener("DOMContentLoaded", initCollapsible);
 
 // ---- Mode section toggling ----
+function showSpotifyFallbackSections(dname) {
+  const fbSel = document.querySelector(`select[name="${dname}_fallback_mode"]`);
+  if (!fbSel) return;
+  const fbMode = fbSel.value;
+  const map = {
+    'random_image': ['random','category'],
+    'specific_image': ['category','specific_image'],
+    'mixed': ['random','mixed'],
+    'none': []
+  };
+  const all = ['random','category','specific_image','mixed'];
+  const toShow = map[fbMode] || [];
+  all.forEach(sec => {
+    const el = document.getElementById(`${dname}_${sec}_section`);
+    if (el) el.style.display = toShow.includes(sec) ? 'block' : 'none';
+  });
+  if (fbMode === 'mixed') {
+    const sec = document.getElementById(`${dname}_mixed_section`);
+    if (sec && !sec.dataset.init) {
+      initMixedUI(dname);
+      sec.dataset.init = '1';
+    }
+  }
+}
+
 function showModeSection(dname, mode) {
   const all = ['random','category','specific_image','mixed','videos','spotify','web_page'];
   const map = {
@@ -63,6 +88,9 @@ function showModeSection(dname, mode) {
       sec.dataset.init = '1';
     }
   }
+  if (mode === 'spotify') {
+    showSpotifyFallbackSections(dname);
+  }
 }
 
 function initModeHandlers() {
@@ -75,6 +103,20 @@ function initModeHandlers() {
   });
 }
 document.addEventListener('DOMContentLoaded', initModeHandlers);
+
+function initSpotifyFallbackHandlers() {
+  document.querySelectorAll('select[name$="_fallback_mode"]').forEach(sel => {
+    const dname = sel.name.replace('_fallback_mode','');
+    sel.addEventListener('change', () => {
+      showSpotifyFallbackSections(dname);
+    });
+    const modeSel = document.getElementById(`${dname}_mode`);
+    if (modeSel && modeSel.value === 'spotify') {
+      showSpotifyFallbackSections(dname);
+    }
+  });
+}
+document.addEventListener('DOMContentLoaded', initSpotifyFallbackHandlers);
 
 // ---- Mixed Folder UI (click to move items) ----
 function initMixedUI(dispName) {

@@ -101,6 +101,15 @@ class DisplayWindow(QMainWindow):
         self.last_scaled_foreground_image = None
         self.current_video_proc = None
 
+        # Cached list and index used when spotify mode falls back to
+        # displaying local images.  Building the image list for every
+        # fallback caused a noticeable pause when switching GIFs because it
+        # rescanned the filesystem each time.  Keeping a dedicated list here
+        # lets us reuse it across fallback displays and keeps transitions
+        # smooth.
+        self.fallback_image_list = []
+        self.fallback_index = -1
+
         # Variables for auto-negative sampling (no longer used for difference mode)
         self.current_drawn_image = None
         self.foreground_drawn_rect = None
@@ -574,6 +583,11 @@ class DisplayWindow(QMainWindow):
 
         self.image_list = []
         self.index = 0
+        # Reset cached fallback list whenever settings reload so that any
+        # changes to folders or shuffle options are picked up next time we
+        # need to display fallback images.
+        self.fallback_image_list = []
+        self.fallback_index = -1
         if self.current_mode in ("random_image", "mixed", "specific_image", "videos"):
             self.build_local_image_list()
         if self.current_mode == "spotify":
@@ -729,25 +743,33 @@ class DisplayWindow(QMainWindow):
                         f"color: {color}; font-size: {font_size}px; background: transparent;"
                     )
                 self.spotify_info_label.raise_()
+                # When Spotify is active we want to poll frequently for changes
+                if self.slideshow_timer.interval() != 5000:
+                    self.slideshow_timer.setInterval(5000)
                 self.setup_layout()
             else:
                 self.spotify_progress_bar.hide()
                 self.spotify_progress_timer.stop()
                 fallback_mode = self.disp_cfg.get("fallback_mode", "random_image")
                 if fallback_mode in ("random_image", "mixed", "specific_image"):
-                    image_list_backup = self.image_list
-                    mode_backup = self.current_mode
-                    self.current_mode = fallback_mode
-                    self.build_local_image_list()
-                    if not self.image_list:
+                    if not self.fallback_image_list:
+                        image_list_backup = self.image_list
+                        mode_backup = self.current_mode
+                        self.current_mode = fallback_mode
+                        self.build_local_image_list()
+                        self.fallback_image_list = self.image_list
+                        self.current_mode = mode_backup
+                        self.image_list = image_list_backup
+                        self.fallback_index = -1
+                    if not self.fallback_image_list:
                         self.clear_foreground_label("No fallback images found")
                     else:
-                        self.index = (self.index + 1) % len(self.image_list)
-                        new_path = self.image_list[self.index]
+                        self.fallback_index = (self.fallback_index + 1) % len(self.fallback_image_list)
+                        new_path = self.fallback_image_list[self.fallback_index]
                         self.last_displayed_path = new_path
                         self.show_foreground_image(new_path)
-                    self.current_mode = mode_backup
-                    self.image_list = image_list_backup
+                        fb_int = self.disp_cfg.get("image_interval", 60)
+                        self.slideshow_timer.setInterval(fb_int * 1000)
                     self.spotify_info_label.setText("")
                     self.spotify_info_label.hide()
                 else:
