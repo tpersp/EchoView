@@ -107,6 +107,7 @@ def get_system_stats():
     cpu = psutil.cpu_percent(interval=0.4)
     mem = psutil.virtual_memory()
     mem_used_mb = (mem.total - mem.available) / (1024 * 1024)
+    mem_total_mb = mem.total / (1024 * 1024)
     load1 = 0
     try:
         load1 = os.getloadavg()[0]
@@ -118,7 +119,7 @@ def get_system_stats():
         temp = out
     except:
         pass
-    return (cpu, mem_used_mb, load1, temp)
+    return (cpu, mem_used_mb, mem_total_mb, load1, temp)
 
 def get_storage_stats(path=IMAGE_DIR):
     """Return used and total bytes for the given path."""

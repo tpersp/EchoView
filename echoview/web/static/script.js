@@ -16,7 +16,7 @@ function fetchStats() {
       const tempEl = document.getElementById("stat_temp");
       const diskEl = document.getElementById("stat_disk");
       if (cpuEl)  cpuEl.textContent = data.cpu_percent + "%";
-      if (memEl)  memEl.textContent = data.mem_used_mb + "MB";
+      if (memEl)  memEl.textContent = data.mem_used_mb + "/" + data.mem_total_mb + "MB";
       if (loadEl) loadEl.textContent = data.load_1min;
       if (tempEl) tempEl.textContent = data.temp;
       if (diskEl) diskEl.textContent = data.disk_used + "/" + data.disk_total;
