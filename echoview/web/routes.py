@@ -157,13 +157,14 @@ main_bp = Blueprint("main", __name__, static_folder="static")
 
 @main_bp.route("/stats")
 def stats_json():
-    cpu, mem_mb, load1, temp = get_system_stats()
+    cpu, mem_used_mb, mem_total_mb, load1, temp = get_system_stats()
     used_bytes, total_bytes = get_storage_stats()
     used_human = format_bytes(used_bytes)
     total_human = format_bytes(total_bytes)
     return jsonify({
         "cpu_percent": cpu,
-        "mem_used_mb": round(mem_mb, 1),
+        "mem_used_mb": round(mem_used_mb, 1),
+        "mem_total_mb": round(mem_total_mb, 1),
         "load_1min": round(load1, 2),
         "temp": temp,
         "disk_used": used_human,
@@ -755,9 +756,10 @@ def index():
         img_list.sort()
         display_images[dname] = img_list
 
-    cpu, mem_mb, load1, temp = get_system_stats()
+    cpu, mem_used_mb, mem_total_mb, load1, temp = get_system_stats()
     used_bytes, total_bytes = get_storage_stats()
     disk_line = f"{format_bytes(used_bytes)}/{format_bytes(total_bytes)}"
+    mem_line = f"{round(mem_used_mb, 1)}/{round(mem_total_mb, 1)}"
     host = get_hostname()
     ipaddr = get_ip_address()
     model = get_pi_model()
@@ -796,7 +798,7 @@ def index():
         folder_counts=folder_counts,
         display_images=display_images,
         cpu=cpu,
-        mem_mb=round(mem_mb, 1),
+        mem_line=mem_line,
         load1=round(load1, 2),
         temp=temp,
         disk_usage=disk_line,
