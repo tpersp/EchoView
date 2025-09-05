@@ -72,6 +72,8 @@ def init_config():
                 "background_scale_percent": 100,
                 "foreground_scale_percent": 100
             },
+            "cache_capacity": 15,
+            "preload_count": 1,
             # Persist a list of websites visited in web page mode.  When a
             # new URL is entered for a display it will be appended here.  The
             # UI uses a datalist to offer these as suggestions, making it

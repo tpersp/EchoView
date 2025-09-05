@@ -403,6 +403,17 @@ def settings():
         except:
             cfg["gui"]["foreground_scale_percent"] = 100
 
+        try:
+            cfg["cache_capacity"] = int(request.form.get("cache_capacity", cfg.get("cache_capacity", 15)))
+        except:
+            cfg["cache_capacity"] = cfg.get("cache_capacity", 15)
+        try:
+            cfg["preload_count"] = int(request.form.get("preload_count", cfg.get("preload_count", 1)))
+        except:
+            cfg["preload_count"] = cfg.get("preload_count", 1)
+        if cfg["preload_count"] < 0:
+            cfg["preload_count"] = 0
+
         save_config(cfg)
         return redirect(url_for("main.settings"))
 

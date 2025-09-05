@@ -52,6 +52,18 @@
                  value="{{ cfg.gui.foreground_scale_percent|default('100') }}"
                  step="1" min="1" max="100">
           <br><br>
+
+          <label>Cached Images:</label><br>
+          <input type="number" name="cache_capacity"
+                 value="{{ cfg.cache_capacity|default('15') }}" min="1" max="100">
+          <br><br>
+
+          <label>Preloaded Media Count:</label><br>
+          <input type="number" name="preload_count"
+                 value="{{ cfg.preload_count|default('1') }}" min="0" max="50">
+          <br>
+          <small style="color:#888;">Changing these may reduce performance or cause crashes on weak hardware.</small>
+          <br><br>
         </fieldset>
         <button type="submit">Save GUI Settings</button>
       </form>

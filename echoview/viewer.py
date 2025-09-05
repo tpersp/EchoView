@@ -93,6 +93,7 @@ class DisplayWindow(QMainWindow):
         self.image_cache = OrderedDict()
         self.cache_capacity = 15
         self.cache_lock = threading.Lock()
+        self.preload_count = 1
 
         self.last_displayed_path = None
         self.current_pixmap = None
@@ -522,6 +523,19 @@ class DisplayWindow(QMainWindow):
             self.fg_scale_percent = int(gui_cfg.get("foreground_scale_percent", 100))
         except:
             self.fg_scale_percent = 100
+        try:
+            self.cache_capacity = int(self.cfg.get("cache_capacity", 15))
+        except:
+            self.cache_capacity = 15
+        try:
+            self.preload_count = int(self.cfg.get("preload_count", 1))
+        except:
+            self.preload_count = 1
+        if self.preload_count < 0:
+            self.preload_count = 0
+        with self.cache_lock:
+            while len(self.image_cache) > self.cache_capacity:
+                self.image_cache.popitem(last=False)
 
         interval_s = self.disp_cfg.get("image_interval", 60)
         self.current_mode = self.disp_cfg.get("mode", "random_image")
@@ -676,18 +690,20 @@ class DisplayWindow(QMainWindow):
         return data
 
     def prefetch_next_image(self):
-        if not self.image_list:
+        if not self.image_list or self.preload_count <= 0:
             return
-        next_idx = (self.index + 1) % len(self.image_list)
-        next_path = self.image_list[next_idx]
+        total = len(self.image_list)
+        for offset in range(1, self.preload_count + 1):
+            next_idx = (self.index + offset) % total
+            next_path = self.image_list[next_idx]
 
-        def worker():
-            try:
-                self.get_cached_image(next_path)
-            except Exception:
-                pass
+            def worker(path=next_path):
+                try:
+                    self.get_cached_image(path)
+                except Exception:
+                    pass
 
-        threading.Thread(target=worker, daemon=True).start()
+            threading.Thread(target=worker, daemon=True).start()
 
     def make_background(self, pixmap):
         """Generate a blurred/scaled background from the given pixmap."""
