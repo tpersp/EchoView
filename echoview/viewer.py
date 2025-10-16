@@ -674,49 +674,47 @@ class DisplayWindow(QMainWindow):
         except Exception:
             pass
 
-        if kind in ("youtube", "twitch"):
-            if kind == "youtube":
-                final_url = self._append_query_params(
-                    target,
-                    {
-                        "autoplay": "1",
-                        "mute": "1",
-                        "controls": "0",
-                        "modestbranding": "1",
-                        "playsinline": "1",
-                    },
-                )
-            else:
-                final_url = self._append_query_params(
-                    target,
-                    {
-                        "autoplay": "true",
-                        "muted": "true",
-                    },
-                )
+        if kind == "youtube":
+            play_source = cleaned
+            try:
+                parsed_clean = urlparse(cleaned)
+                if "youtube.com" in (parsed_clean.netloc or "").lower() and "/embed/" in (parsed_clean.path or ""):
+                    vid = self._extract_youtube_id(parsed_clean, parse_qs(parsed_clean.query))
+                    if vid:
+                        play_source = f"https://www.youtube.com/watch?v={vid}"
+            except Exception:
+                pass
+            if self._launch_remote_video(play_source, show_error=False):
+                return
+            final_url = self._append_query_params(
+                target,
+                {
+                    "autoplay": "1",
+                    "mute": "1",
+                    "controls": "0",
+                    "modestbranding": "1",
+                    "playsinline": "1",
+                },
+            )
+            self.web_view.load(QUrl(final_url))
+            self.web_view.show()
+            return
+
+        if kind == "twitch":
+            final_url = self._append_query_params(
+                target,
+                {
+                    "autoplay": "true",
+                    "muted": "true",
+                },
+            )
             self.web_view.load(QUrl(final_url))
             self.web_view.show()
             return
 
         if kind in ("hls", "video"):
-            self.web_view.hide()
-            if not shutil.which("mpv"):
-                self.clear_foreground_label("Video unsupported")
+            if self._launch_remote_video(target):
                 return
-            cmd = self.build_mpv_command(target)
-            try:
-                proc = subprocess.Popen(cmd)
-                self.current_video_proc = proc
-            except Exception as e:
-                log_message(f"mpv playback error: {e}")
-                self.clear_foreground_label("mpv playback error")
-                return
-
-            def wait_thread(p):
-                p.wait()
-                QTimer.singleShot(0, self.stop_current_video)
-
-            threading.Thread(target=wait_thread, args=(proc,), daemon=True).start()
             return
 
         # Default: treat as a normal website inside the web view.
@@ -825,6 +823,41 @@ class DisplayWindow(QMainWindow):
                 existing[key] = [value]
         new_query = urlencode(existing, doseq=True)
         return urlunparse(parsed._replace(query=new_query))
+
+    def _launch_remote_video(self, source: str, show_error: bool = True) -> bool:
+        """
+        Launch mpv for the provided source. When show_error is False we suppress
+        on-screen error messages so the caller can fall back to another option.
+        Returns True when mpv starts successfully, False otherwise.
+        """
+        self.web_view.hide()
+        if not shutil.which("mpv"):
+            if show_error:
+                self.clear_foreground_label("Video unsupported")
+            return False
+
+        cmd = self.build_mpv_command(source)
+        try:
+            proc = subprocess.Popen(cmd)
+        except Exception as e:
+            log_message(f"mpv playback error: {e}")
+            if show_error:
+                self.clear_foreground_label("mpv playback error")
+            return False
+
+        self.current_video_proc = proc
+
+        def wait_thread(p):
+            p.wait()
+            QTimer.singleShot(0, self.stop_current_video)
+
+        threading.Thread(target=wait_thread, args=(proc,), daemon=True).start()
+        try:
+            self.mpv_poll_timer.stop()
+            self.mpv_poll_timer.start()
+        except Exception:
+            pass
+        return True
 
     def build_local_image_list(self):
         mode = self.current_mode
