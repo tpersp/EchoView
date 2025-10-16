@@ -35,6 +35,7 @@ def init_config():
                     "mixed_folders": [],
                     "rotate": 0,
                     "web_url": "",
+                    "remote_url": "",
                     "spotify_info_position": "bottom-center",
                     "spotify_show_progress": False,
                     "spotify_progress_position": "bottom-center",   # New: progress bar location setting
@@ -189,4 +190,3 @@ def count_files_in_folder(folder_path):
         if f.lower().endswith(valid_ext):
             cnt += 1
     return cnt
-

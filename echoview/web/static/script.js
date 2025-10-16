@@ -67,14 +67,15 @@ function showSpotifyFallbackSections(dname) {
 }
 
 function showModeSection(dname, mode) {
-  const all = ['random','category','specific_image','mixed','videos','spotify','web_page'];
+  const all = ['random','category','specific_image','mixed','videos','spotify','web_page','remote_stream'];
   const map = {
     'random_image': ['random','category'],
     'specific_image': ['category','specific_image'],
     'mixed': ['random','mixed'],
     'videos': ['videos'],
     'spotify': ['spotify'],
-    'web_page': ['web_page']
+    'web_page': ['web_page'],
+    'remote_stream': ['remote_stream']
   };
   const toShow = map[mode] || [];
   all.forEach(sec => {

@@ -18,6 +18,7 @@ import subprocess
 import shutil
 from datetime import datetime
 from collections import OrderedDict
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl
 from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
@@ -487,6 +488,9 @@ class DisplayWindow(QMainWindow):
     def reload_settings(self):
         self.stop_current_video()
         self.cfg = load_config()
+        latest_disp_cfg = self.cfg.get("displays", {}).get(self.disp_name)
+        if latest_disp_cfg:
+            self.disp_cfg = latest_disp_cfg
         if "overlay" in self.disp_cfg:
             over = self.disp_cfg["overlay"]
         else:
@@ -583,6 +587,12 @@ class DisplayWindow(QMainWindow):
             self.spotify_progress_bar.hide()
             self.spotify_progress_timer.stop()
             self.slideshow_timer.stop()
+        elif self.current_mode == "remote_stream":
+            remote_url = self.disp_cfg.get("remote_url") or self.disp_cfg.get("web_url", "")
+            self.handle_remote_url(remote_url)
+            self.spotify_progress_bar.hide()
+            self.spotify_progress_timer.stop()
+            self.slideshow_timer.stop()
         elif self.current_mode == "videos":
             self.web_view.hide()
             self.spotify_progress_bar.hide()
@@ -609,6 +619,212 @@ class DisplayWindow(QMainWindow):
 
         # Ensure overlay elements are repositioned based on updated settings
         self.setup_layout()
+
+    def handle_remote_url(self, url: str) -> None:
+        """
+        Classify and handle a remote URL by selecting the appropriate playback surface.
+
+        Depending on the detected URL type, this will either launch an embedded web player
+        (YouTube/Twitch), hand the stream to mpv (HLS or direct video files), or fall back
+        to loading the page in the web view.  When no URL is provided, a helper message is
+        shown on the foreground label so the user knows to configure one.
+        """
+        self.stop_current_video()
+        cleaned = (url or "").strip()
+
+        # Ensure any active GIF/movie is stopped before swapping modes.
+        if self.current_movie:
+            try:
+                self.current_movie.stop()
+            except RuntimeError:
+                pass
+            try:
+                self.current_movie.deleteLater()
+            except RuntimeError:
+                pass
+            self.current_movie = None
+            self.handling_gif_frames = False
+        self.foreground_label.clear()
+        self.foreground_label.setMovie(None)
+        self.spotify_info_label.hide()
+        self.spotify_progress_bar.hide()
+
+        if not cleaned:
+            self.web_view.hide()
+            self.clear_foreground_label("No remote URL configured")
+            return
+
+        kind, target = self.classify_url(cleaned)
+        if not target:
+            self.web_view.hide()
+            self.clear_foreground_label("Unsupported remote URL")
+            return
+
+        # Reset timers that are irrelevant to remote playback.
+        try:
+            self.slideshow_timer.stop()
+        except Exception:
+            pass
+        try:
+            self.spotify_progress_timer.stop()
+        except Exception:
+            pass
+        try:
+            self.mpv_poll_timer.stop()
+        except Exception:
+            pass
+
+        if kind in ("youtube", "twitch"):
+            if kind == "youtube":
+                final_url = self._append_query_params(
+                    target,
+                    {
+                        "autoplay": "1",
+                        "mute": "1",
+                        "controls": "0",
+                        "modestbranding": "1",
+                        "playsinline": "1",
+                    },
+                )
+            else:
+                final_url = self._append_query_params(
+                    target,
+                    {
+                        "autoplay": "true",
+                        "muted": "true",
+                    },
+                )
+            self.web_view.load(QUrl(final_url))
+            self.web_view.show()
+            return
+
+        if kind in ("hls", "video"):
+            self.web_view.hide()
+            if not shutil.which("mpv"):
+                self.clear_foreground_label("Video unsupported")
+                return
+            cmd = self.build_mpv_command(target)
+            try:
+                proc = subprocess.Popen(cmd)
+                self.current_video_proc = proc
+            except Exception as e:
+                log_message(f"mpv playback error: {e}")
+                self.clear_foreground_label("mpv playback error")
+                return
+
+            def wait_thread(p):
+                p.wait()
+                QTimer.singleShot(0, self.stop_current_video)
+
+            threading.Thread(target=wait_thread, args=(proc,), daemon=True).start()
+            return
+
+        # Default: treat as a normal website inside the web view.
+        self.web_view.load(QUrl(target))
+        self.web_view.show()
+
+    def classify_url(self, url: str):
+        """
+        Return (kind, target) for the supplied URL.
+
+        kind is one of: "youtube", "twitch", "hls", "video", "website".
+        target is the resolved embed or playback URL for the detected kind.
+        """
+        u = (url or "").strip()
+        if not u:
+            return ("website", "")
+
+        parsed = urlparse(u)
+        netloc = (parsed.netloc or "").lower()
+        path = parsed.path or ""
+        path_lower = path.lower()
+        query_map = parse_qs(parsed.query)
+
+        # YouTube detection
+        if "youtube.com" in netloc or "youtu.be" in netloc:
+            video_id = self._extract_youtube_id(parsed, query_map)
+            if video_id:
+                embed_url = f"https://www.youtube.com/embed/{video_id}"
+                params = {}
+                for key in ("list", "start", "end", "si"):
+                    if query_map.get(key):
+                        params[key] = query_map[key][0]
+                if params:
+                    embed_url = self._append_query_params(embed_url, params)
+                return ("youtube", embed_url)
+
+        # Twitch detection – only treat direct channel URLs as embeddable.
+        if "twitch.tv" in netloc:
+            channel = self._extract_twitch_channel(parsed, query_map)
+            if channel:
+                base = "https://player.twitch.tv/"
+                params = [("channel", channel), ("parent", "localhost")]
+                target_url = f"{base}?{urlencode(params)}"
+                return ("twitch", target_url)
+
+        # HLS/DASH manifests
+        if path_lower.endswith(".m3u8") or path_lower.endswith(".mpd"):
+            return ("hls", u)
+
+        # Direct media files
+        _, ext = os.path.splitext(path_lower)
+        if ext in (".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm", ".mpg", ".mpeg", ".mp3", ".ogg"):
+            return ("video", u)
+
+        return ("website", u)
+
+    def _extract_youtube_id(self, parsed, query_map):
+        """Attempt to extract a YouTube video ID from a parsed URL."""
+        netloc = (parsed.netloc or "").lower()
+        path = parsed.path or ""
+        segments = [seg for seg in path.split("/") if seg]
+
+        if "youtu.be" in netloc:
+            if segments:
+                return segments[0]
+            return None
+
+        if path.startswith("/watch"):
+            vids = query_map.get("v")
+            if vids:
+                return vids[0]
+
+        if segments and segments[0] in ("embed", "shorts", "live"):
+            return segments[1] if len(segments) > 1 else None
+
+        return None
+
+    def _extract_twitch_channel(self, parsed, query_map):
+        """Extract a Twitch channel name from a parsed URL."""
+        path = parsed.path or ""
+        segments = [seg for seg in path.split("/") if seg]
+        if not segments:
+            # Some URLs use ?channel=NAME (player URLs)
+            channels = query_map.get("channel")
+            if channels:
+                return channels[0]
+            return None
+        first = segments[0]
+        if first in ("videos", "directory", "p"):
+            return None
+        return first
+
+    def _append_query_params(self, base_url: str, params: dict) -> str:
+        """
+        Append or overwrite query parameters on a URL, preserving existing values.
+
+        params values can be either strings or iterables. The return value is the
+        reconstructed URL with the merged query component.
+        """
+        parsed = urlparse(base_url)
+        existing = parse_qs(parsed.query, keep_blank_values=True)
+        for key, value in params.items():
+            if isinstance(value, (list, tuple)):
+                existing[key] = list(value)
+            else:
+                existing[key] = [value]
+        new_query = urlencode(existing, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
 
     def build_local_image_list(self):
         mode = self.current_mode
@@ -714,6 +930,9 @@ class DisplayWindow(QMainWindow):
             return
 
         if self.current_mode == "web_page":
+            return
+
+        if self.current_mode == "remote_stream":
             return
 
         if self.current_mode == "videos":
@@ -1201,6 +1420,7 @@ class EchoViewGUI:
                         "shuffle_mode": False,
                         "mixed_folders": [],
                         "rotate": 0,
+                        "remote_url": "",
                         "screen_name": mon_info["screen_name"]
                     }
                     log_message(f"Added fallback monitor to config: {mon_info['screen_name']}")

@@ -636,6 +636,7 @@ def index():
                 "video_play_to_end": True,
                 "video_max_seconds": 120,
                 "rotate": 0,
+                "remote_url": "",
                 "screen_name": f"{mon_name}: {minfo['current_mode']}",
                 "chosen_mode": minfo["current_mode"],
                 "spotify_info_position": "bottom-center"
@@ -697,6 +698,13 @@ def index():
                     url = dcfg["web_url"].strip()
                     if url and url not in cfg["saved_websites"]:
                         cfg["saved_websites"].append(url)
+                remote_val = request.form.get(pre + "remote_url", dcfg.get("remote_url", ""))
+                dcfg["remote_url"] = (remote_val or "").strip()
+                if request.form.get(pre + "save_remote"):
+                    cfg.setdefault("saved_websites", [])
+                    rurl = dcfg["remote_url"]
+                    if rurl and rurl not in cfg["saved_websites"]:
+                        cfg["saved_websites"].append(rurl)
 
                 # If Spotify, store extras
                 if new_mode == "spotify":

@@ -35,6 +35,7 @@
             <option value="mixed"          {% if dcfg.mode=="mixed" %}selected{% endif %}>Mixed (Multiple Folders)</option>
             <option value="videos"         {% if dcfg.mode=="videos" %}selected{% endif %}>Videos</option>
             <option value="spotify"        {% if dcfg.mode=="spotify" %}selected{% endif %}>Spotify Now Playing</option>
+            <option value="remote_stream"  {% if dcfg.mode=="remote_stream" %}selected{% endif %}>Remote Stream (auto)</option>
             <option value="web_page"       {% if dcfg.mode=="web_page" %}selected{% endif %}>Web Page</option>
           </select>
           <br><br>
@@ -259,6 +260,24 @@
             </label>
             <small style="display:block; margin-top:5px; color: var(--text-normal);">
               Saved websites appear as suggestions for all displays.
+            </small>
+            <br><br>
+          </div>
+
+          <!-- Remote Stream Settings -->
+          <div id="{{ dname }}_remote_stream_section" class="mode-section">
+            <label>Stream URL:</label><br>
+            <input type="text"
+                   name="{{ dname }}_remote_url"
+                   list="{{ dname }}_saved_sites"
+                   value="{{ dcfg.remote_url|default('') }}"
+                   style="width:90%;"
+                   placeholder="https://youtu.be/... or https://example.com/live.m3u8">
+            <label style="display:block; margin-top:8px; color: var(--text-normal);">
+              <input type="checkbox" name="{{ dname }}_save_remote" value="1"> Save this URL
+            </label>
+            <small style="display:block; margin-top:5px; color: var(--text-normal);">
+              EchoView auto-detects YouTube, Twitch, and direct video/HLS links.
             </small>
             <br><br>
           </div>
