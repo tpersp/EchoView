@@ -247,9 +247,11 @@ if [ -f /boot/firmware/config.txt ]; then
   grep -q '^max_framebuffers=2' "/boot/firmware/config.txt" || \
     sed -i '/^dtoverlay=vc4-kms-v3d/ a max_framebuffers=2' "/boot/firmware/config.txt"
 
-  # Insert hdmi_force_hotplug=1 if missing
-  grep -q '^hdmi_force_hotplug=1' "/boot/firmware/config.txt" || \
-    sed -i '/^max_framebuffers=2/ a hdmi_force_hotplug=1' "/boot/firmware/config.txt"
+  # Ensure both HDMI ports are forced hotplug
+  for port in 0 1; do
+    grep -q "^hdmi_force_hotplug:${port}=1" "/boot/firmware/config.txt" || \
+      sed -i "/^max_framebuffers=2/ a hdmi_force_hotplug:${port}=1" "/boot/firmware/config.txt"
+  done
 fi
 
 # -------------------------------------------------------
