@@ -657,13 +657,16 @@ class DisplayWindow(QMainWindow):
 
         kind, target = self.classify_url(cleaned)
         resolved_source = None
+        prefer_page = False
 
         if kind == "website":
             resolved_info = self._resolve_embed_from_page(target)
             if resolved_info:
-                kind = resolved_info.get("kind", kind)
-                target = resolved_info.get("target", target)
+                prefer_page = resolved_info.get("prefer_page", False)
                 resolved_source = resolved_info.get("source")
+                if not prefer_page:
+                    kind = resolved_info.get("kind", kind)
+                    target = resolved_info.get("target", target)
 
         if not target:
             self.web_view.hide()
@@ -683,6 +686,11 @@ class DisplayWindow(QMainWindow):
             self.mpv_poll_timer.stop()
         except Exception:
             pass
+
+        if prefer_page:
+            self.web_view.load(QUrl(cleaned))
+            self.web_view.show()
+            return
 
         if kind == "youtube":
             play_source = resolved_source or cleaned
@@ -862,13 +870,24 @@ class DisplayWindow(QMainWindow):
 
         # First, look for iframe embeds inside the document.
         iframe_sources = re.findall(r'<iframe[^>]+src=["\\\']([^"\\\']+)["\\\']', body, flags=re.IGNORECASE)
-        for raw_src in iframe_sources:
-            abs_src = urljoin(page_url, raw_src.strip())
+        iframe_abs = [urljoin(page_url, src.strip()) for src in iframe_sources]
+        prefer_page = len(iframe_abs) > 1
+        for abs_src in iframe_abs:
+            try:
+                if urlparse(abs_src).netloc == parsed_page.netloc:
+                    prefer_page = True
+                    break
+            except Exception:
+                continue
+
+        for abs_src in iframe_abs:
             kind, target = self.classify_url(abs_src)
             if kind != "website":
-                return {"kind": kind, "target": target, "source": abs_src}
+                return {"kind": kind, "target": target, "source": abs_src, "prefer_page": prefer_page}
             nested = self._resolve_embed_from_page(abs_src, depth + 1)
             if nested:
+                if prefer_page:
+                    nested["prefer_page"] = True
                 return nested
 
         # Attempt to derive EchoMosaic stream settings.
@@ -904,7 +923,7 @@ class DisplayWindow(QMainWindow):
         if not candidate:
             return None
         kind, target = self.classify_url(candidate)
-        return {"kind": kind, "target": target, "source": candidate}
+        return {"kind": kind, "target": target, "source": candidate, "prefer_page": prefer_page}
 
     def _launch_remote_video(self, source: str, show_error: bool = True) -> bool:
         """

@@ -213,9 +213,10 @@ def test_resolve_embed_from_group_page(monkeypatch):
     assert info["kind"] == "youtube"
     assert "youtube.com/embed/abc123" in info["target"]
     assert info["source"] == "https://www.youtube.com/watch?v=abc123"
+    assert info["prefer_page"] is True
 
 
-def test_handle_remote_group_page_launches_mpv(monkeypatch):
+def test_handle_remote_group_page_shows_page(monkeypatch):
     dw = _make_stub_window()
     group_url = "http://example.com/stream/group/lofi-pip"
     stream_url = "http://example.com/stream/stream1"
@@ -232,18 +233,19 @@ def test_handle_remote_group_page_launches_mpv(monkeypatch):
             raise AssertionError(f"Unexpected URL: {url}")
         return responses[url]
 
+    fake_requests = types.SimpleNamespace(get=fake_get)
+    monkeypatch.setattr(viewer, "requests", fake_requests)
     launch_calls = []
 
     def fake_launch(self, src, show_error=True):
         launch_calls.append((src, show_error))
         return True
 
-    fake_requests = types.SimpleNamespace(get=fake_get)
-    monkeypatch.setattr(viewer, "requests", fake_requests)
     monkeypatch.setattr(viewer.DisplayWindow, "_launch_remote_video", fake_launch)
     monkeypatch.setattr(viewer, "QUrl", lambda url: url)
 
     dw.handle_remote_url(group_url)
 
-    assert launch_calls == [("https://www.youtube.com/watch?v=abc123", False)]
-    assert dw.web_view.loaded is None
+    assert launch_calls == []
+    assert dw.web_view.loaded == group_url
+    assert dw.web_view.show_called is True
