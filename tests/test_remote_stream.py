@@ -49,11 +49,39 @@ def _make_stub_window():
         def start(self):
             self.started = True
 
+    class _Surface:
+        def __init__(self):
+            self.visible = False
+            self.geometry = None
+            self._wid = 42
+
+        def show(self):
+            self.visible = True
+
+        def hide(self):
+            self.visible = False
+
+        def setGeometry(self, rect):
+            self.geometry = rect
+
+        def raise_(self):
+            pass
+
+        def winId(self):
+            return self._wid
+
     class _WebView:
         def __init__(self):
             self.loaded = None
             self.hide_called = False
             self.show_called = False
+            self.attributes = {}
+            self.styles = []
+            self.raised = False
+            self._page = types.SimpleNamespace(
+                setBackgroundColor=lambda *a, **k: None,
+                runJavaScript=lambda code: setattr(self, "_last_script", code),
+            )
 
         def load(self, url):
             self.loaded = url
@@ -64,6 +92,21 @@ def _make_stub_window():
         def hide(self):
             self.hide_called = True
 
+        def setAttribute(self, key, value):
+            self.attributes[key] = value
+
+        def setStyleSheet(self, value):
+            self.styles.append(value)
+
+        def raise_(self):
+            self.raised = True
+
+        def lower(self):
+            pass
+
+        def page(self):
+            return self._page
+
     dw.foreground_label = _Label()
     dw.spotify_info_label = _HideOnly()
     dw.spotify_progress_bar = _HideOnly()
@@ -71,8 +114,15 @@ def _make_stub_window():
     dw.spotify_progress_timer = _Timer()
     dw.mpv_poll_timer = _Timer()
     dw.web_view = _WebView()
+    dw.video_surface = _Surface()
     dw.stop_current_video = lambda: None
     dw.clear_foreground_label = lambda msg: (_ for _ in ()).throw(AssertionError(f"clear_foreground_label called: {msg}"))
+    dw.setup_layout = lambda: None
+    dw._prepare_overlay_mode = DisplayWindow._prepare_overlay_mode.__get__(dw, DisplayWindow)
+    dw._on_web_view_loaded = DisplayWindow._on_web_view_loaded.__get__(dw, DisplayWindow)
+    dw._overlay_page_config = None
+    dw._overlay_css_applied = False
+    dw._active_video_widget = None
     return dw
 
 
@@ -119,7 +169,7 @@ def test_handle_remote_youtube_prefers_mpv(monkeypatch):
     dw = _make_stub_window()
     launched = []
 
-    def fake_build(self, src):
+    def fake_build(self, src, wid=None):
         launched.append(src)
         return ["mpv", src]
 
@@ -237,8 +287,8 @@ def test_handle_remote_group_page_shows_page(monkeypatch):
     monkeypatch.setattr(viewer, "requests", fake_requests)
     launch_calls = []
 
-    def fake_launch(self, src, show_error=True):
-        launch_calls.append((src, show_error))
+    def fake_launch(self, src, show_error=True, target_widget=None, keep_web_view=False):
+        launch_calls.append((src, show_error, target_widget, keep_web_view))
         return True
 
     monkeypatch.setattr(viewer.DisplayWindow, "_launch_remote_video", fake_launch)
@@ -246,6 +296,6 @@ def test_handle_remote_group_page_shows_page(monkeypatch):
 
     dw.handle_remote_url(group_url)
 
-    assert launch_calls == []
+    assert launch_calls == [("https://www.youtube.com/watch?v=abc123", False, dw.video_surface, True)]
     assert dw.web_view.loaded == group_url
     assert dw.web_view.show_called is True
