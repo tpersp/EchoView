@@ -72,6 +72,10 @@ def _make_stub_window():
     dw.mpv_poll_timer = _Timer()
     dw.web_view = _WebView()
     dw.stop_current_video = lambda: None
+    dw.stop_browser = lambda: None
+    dw.hide = lambda: None
+    dw.show = lambda: None
+    dw.showFullScreen = lambda: None
     dw.clear_foreground_label = lambda msg: (_ for _ in ()).throw(AssertionError(f"clear_foreground_label called: {msg}"))
     return dw
 
@@ -144,6 +148,11 @@ def test_handle_remote_youtube_prefers_mpv(monkeypatch):
         lambda target, args, daemon=True: types.SimpleNamespace(start=lambda: target(*args)),
     )
     monkeypatch.setattr(viewer, "QUrl", lambda url: url)
+    monkeypatch.setattr(
+        viewer.DisplayWindow,
+        "launch_external_browser",
+        lambda self, url, kiosk=True: (_ for _ in ()).throw(AssertionError("external browser should not launch")),
+    )
 
     dw.handle_remote_url("https://www.youtube.com/watch?v=Xy123")
 
@@ -237,15 +246,15 @@ def test_handle_remote_group_page_shows_page(monkeypatch):
     monkeypatch.setattr(viewer, "requests", fake_requests)
     launch_calls = []
 
-    def fake_launch(self, src, show_error=True):
-        launch_calls.append((src, show_error))
+    def fake_launch(self, url, kiosk=True):
+        launch_calls.append((url, kiosk))
         return True
 
-    monkeypatch.setattr(viewer.DisplayWindow, "_launch_remote_video", fake_launch)
+    monkeypatch.setattr(viewer.DisplayWindow, "launch_external_browser", fake_launch)
     monkeypatch.setattr(viewer, "QUrl", lambda url: url)
 
     dw.handle_remote_url(group_url)
 
-    assert launch_calls == []
-    assert dw.web_view.loaded == group_url
-    assert dw.web_view.show_called is True
+    assert launch_calls == [(group_url, True)]
+    assert dw.web_view.loaded is None
+    assert dw.web_view.show_called is False

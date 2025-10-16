@@ -167,6 +167,10 @@ class DisplayWindow(QMainWindow):
         self.spotify_progress_timer = QTimer(self)
         self.spotify_progress_timer.timeout.connect(self.update_spotify_progress)
 
+        self.browser_proc = None
+        self.browser_class = None
+        self.hidden_for_browser = False
+
         self.web_view = QWebEngineView(self.main_widget)
         try:
             profile = self.web_view.page().profile()
@@ -504,6 +508,7 @@ class DisplayWindow(QMainWindow):
     @Slot()
     def reload_settings(self):
         self.stop_current_video()
+        self.stop_browser()
         self.cfg = load_config()
         latest_disp_cfg = self.cfg.get("displays", {}).get(self.disp_name)
         if latest_disp_cfg:
@@ -599,8 +604,10 @@ class DisplayWindow(QMainWindow):
         elif self.current_mode == "web_page":
             url = self.disp_cfg.get("web_url", "")
             if url:
-                self.web_view.load(QUrl(url))
-            self.web_view.show()
+                self.launch_external_browser(url, kiosk=True)
+            else:
+                self.clear_foreground_label("No web URL configured")
+            self.web_view.hide()
             self.spotify_progress_bar.hide()
             self.spotify_progress_timer.stop()
             self.slideshow_timer.stop()
@@ -647,6 +654,7 @@ class DisplayWindow(QMainWindow):
         shown on the foreground label so the user knows to configure one.
         """
         self.stop_current_video()
+        self.stop_browser()
         cleaned = (url or "").strip()
 
         # Ensure any active GIF/movie is stopped before swapping modes.
@@ -665,6 +673,7 @@ class DisplayWindow(QMainWindow):
         self.foreground_label.setMovie(None)
         self.spotify_info_label.hide()
         self.spotify_progress_bar.hide()
+        self.web_view.hide()
 
         if not cleaned:
             self.web_view.hide()
@@ -704,8 +713,9 @@ class DisplayWindow(QMainWindow):
             pass
 
         if prefer_page:
-            self.web_view.load(QUrl(cleaned))
-            self.web_view.show()
+            if not self.launch_external_browser(cleaned, kiosk=True):
+                self.web_view.load(QUrl(cleaned))
+                self.web_view.show()
             return
 
         if kind == "youtube":
@@ -752,9 +762,10 @@ class DisplayWindow(QMainWindow):
                 return
             return
 
-        # Default: treat as a normal website inside the web view.
-        self.web_view.load(QUrl(target))
-        self.web_view.show()
+        # Default: treat as a normal website using the external browser.
+        if not self.launch_external_browser(target, kiosk=True):
+            self.web_view.load(QUrl(target))
+            self.web_view.show()
 
     def classify_url(self, url: str):
         """
@@ -976,6 +987,105 @@ class DisplayWindow(QMainWindow):
             pass
         return True
 
+    def stop_browser(self) -> None:
+        """
+        Terminate any externally launched browser instance and restore the
+        EchoView window if it was hidden while the browser was active.
+        """
+        proc = getattr(self, "browser_proc", None)
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        self.browser_proc = None
+        self.browser_class = None
+        if self.hidden_for_browser:
+            try:
+                self.show()
+                self.showFullScreen()
+            except Exception:
+                pass
+            self.hidden_for_browser = False
+
+    def launch_external_browser(self, url: str, kiosk: bool = True) -> bool:
+        """
+        Launch Firefox in kiosk mode to display the provided URL. Returns True on
+        success so callers can skip additional fallback handling.
+        """
+        firefox_bin = shutil.which("firefox") or shutil.which("firefox-esr")
+        if not firefox_bin:
+            self.clear_foreground_label("Firefox not installed")
+            return False
+
+        profile_base = os.path.join(VIEWER_HOME, "firefox_profiles")
+        try:
+            os.makedirs(profile_base, exist_ok=True)
+        except Exception:
+            pass
+        profile_dir = os.path.join(profile_base, self.disp_name)
+        try:
+            os.makedirs(profile_dir, exist_ok=True)
+        except Exception:
+            pass
+
+        geometry = self.assigned_screen.geometry() if self.assigned_screen else self.geometry()
+        width = max(geometry.width(), 100)
+        height = max(geometry.height(), 100)
+
+        class_name = f"EchoView{self.disp_name}"
+        cmd = [
+            firefox_bin,
+            "--no-remote",
+            "--profile",
+            profile_dir,
+            "--class",
+            class_name,
+            "--name",
+            class_name,
+            "--width",
+            str(width),
+            "--height",
+            str(height),
+        ]
+        if kiosk:
+            cmd.append("--kiosk")
+        else:
+            cmd.append("--new-window")
+        cmd.append(url)
+
+        env = os.environ.copy()
+        env.setdefault("MOZ_DISABLE_SAFE_MODE_KEY", "1")
+        try:
+            proc = subprocess.Popen(cmd, env=env)
+        except Exception as err:
+            log_message(f"Firefox launch error: {err}")
+            self.browser_proc = None
+            self.browser_class = None
+            if self.hidden_for_browser:
+                try:
+                    self.show()
+                    self.showFullScreen()
+                except Exception:
+                    pass
+                self.hidden_for_browser = False
+            self.clear_foreground_label("Unable to launch Firefox")
+            return False
+
+        self.browser_proc = proc
+        self.browser_class = class_name
+        if not self.hidden_for_browser:
+            try:
+                self.hide()
+            except Exception:
+                pass
+            self.hidden_for_browser = True
+        return True
+
     def build_local_image_list(self):
         mode = self.current_mode
         if mode == "random_image":
@@ -1183,6 +1293,7 @@ class DisplayWindow(QMainWindow):
 
     def clear_foreground_label(self, message):
         self.stop_current_video()
+        self.stop_browser()
         if self.current_movie:
             try:
                 self.current_movie.stop()
