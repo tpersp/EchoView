@@ -1,5 +1,5 @@
 # Runtime dependency: mpv (system package, installed via setup.sh)
-# Firefox is installed via setup.sh and launched directly for external URLs.
+# Firefox and wmctrl are installed via setup.sh and used for external URLs.
 Flask==2.2.5
 psutil==5.9.5
 requests==2.31.0

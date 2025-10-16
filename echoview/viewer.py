@@ -603,11 +603,16 @@ class DisplayWindow(QMainWindow):
             self.slideshow_timer.start()
         elif self.current_mode == "web_page":
             url = self.disp_cfg.get("web_url", "")
+            launched = False
             if url:
-                self.launch_external_browser(url, kiosk=True)
+                launched = self.launch_external_browser(url, kiosk=False)
+                if not launched:
+                    self.web_view.load(QUrl(url))
+                    self.web_view.show()
             else:
                 self.clear_foreground_label("No web URL configured")
-            self.web_view.hide()
+            if launched:
+                self.web_view.hide()
             self.spotify_progress_bar.hide()
             self.spotify_progress_timer.stop()
             self.slideshow_timer.stop()
@@ -713,7 +718,9 @@ class DisplayWindow(QMainWindow):
             pass
 
         if prefer_page:
-            if not self.launch_external_browser(cleaned, kiosk=True):
+            if self.launch_external_browser(cleaned, kiosk=True):
+                self.web_view.hide()
+            else:
                 self.web_view.load(QUrl(cleaned))
                 self.web_view.show()
             return
@@ -763,7 +770,9 @@ class DisplayWindow(QMainWindow):
             return
 
         # Default: treat as a normal website using the external browser.
-        if not self.launch_external_browser(target, kiosk=True):
+        if self.launch_external_browser(target, kiosk=True):
+            self.web_view.hide()
+        else:
             self.web_view.load(QUrl(target))
             self.web_view.show()
 
@@ -1036,6 +1045,8 @@ class DisplayWindow(QMainWindow):
         geometry = self.assigned_screen.geometry() if self.assigned_screen else self.geometry()
         width = max(geometry.width(), 100)
         height = max(geometry.height(), 100)
+        offset_x = geometry.x()
+        offset_y = geometry.y()
 
         class_name = f"EchoView{self.disp_name}"
         cmd = [
@@ -1078,6 +1089,28 @@ class DisplayWindow(QMainWindow):
 
         self.browser_proc = proc
         self.browser_class = class_name
+
+        def position_window():
+            wmctrl_bin = shutil.which("wmctrl")
+            if not wmctrl_bin:
+                return
+            geometry_expr = f"0,{offset_x},{offset_y},{width},{height}"
+            for _ in range(40):
+                if proc.poll() is not None:
+                    return
+                try:
+                    result = subprocess.call([wmctrl_bin, "-r", class_name, "-e", geometry_expr])
+                    if result == 0:
+                        break
+                except Exception:
+                    break
+                time.sleep(0.25)
+
+        try:
+            threading.Thread(target=position_window, daemon=True).start()
+        except Exception:
+            pass
+
         if not self.hidden_for_browser:
             try:
                 self.hide()

@@ -117,6 +117,8 @@ apt-get install -y \
   conky \
   python3-tk \
   git \
+  wmctrl \
+  firefox-esr \
   libxcb-cursor0 \
   libxcb-randr0 \
   libxcb-shape0 \
