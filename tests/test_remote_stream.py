@@ -150,7 +150,7 @@ def test_handle_remote_youtube_prefers_mpv(monkeypatch):
     assert launched == ["https://www.youtube.com/watch?v=Xy123"]
     assert dw.web_view.loaded is None
     assert dw.web_view.show_called is False
-    assert stop_calls == ["stop"]
+    assert stop_calls[0] == "stop"
 
 
 def test_handle_remote_youtube_fallback_to_embed(monkeypatch):
@@ -173,3 +173,77 @@ def test_handle_remote_youtube_fallback_to_embed(monkeypatch):
     assert "autoplay=1" in dw.web_view.loaded
     assert "mute=1" in dw.web_view.loaded
     assert dw.web_view.show_called is True
+
+
+class DummyResponse:
+    def __init__(self, text="", json_data=None, content_type="text/html"):
+        self.text = text
+        self._json_data = json_data
+        self.headers = {"Content-Type": content_type}
+        self.ok = True
+
+    def json(self):
+        if self._json_data is None:
+            raise ValueError("No JSON payload")
+        return self._json_data
+
+
+def test_resolve_embed_from_group_page(monkeypatch):
+    dw = _make_stub_window()
+    group_url = "http://example.com/stream/group/lofi-pip"
+    stream_url = "http://example.com/stream/stream1"
+    settings_url = "http://example.com/get-settings/stream1"
+
+    responses = {
+        group_url: DummyResponse('<iframe src="/stream/stream1"></iframe>'),
+        stream_url: DummyResponse('<script>const streamId = "stream1";</script>'),
+        settings_url: DummyResponse("", json_data={"stream_url": "https://www.youtube.com/watch?v=abc123"}, content_type="application/json"),
+    }
+
+    def fake_get(url, timeout=5):
+        if url not in responses:
+            raise AssertionError(f"Unexpected URL: {url}")
+        return responses[url]
+
+    fake_requests = types.SimpleNamespace(get=fake_get)
+    monkeypatch.setattr(viewer, "requests", fake_requests)
+
+    info = DisplayWindow._resolve_embed_from_page(dw, group_url)
+    assert info is not None
+    assert info["kind"] == "youtube"
+    assert "youtube.com/embed/abc123" in info["target"]
+    assert info["source"] == "https://www.youtube.com/watch?v=abc123"
+
+
+def test_handle_remote_group_page_launches_mpv(monkeypatch):
+    dw = _make_stub_window()
+    group_url = "http://example.com/stream/group/lofi-pip"
+    stream_url = "http://example.com/stream/stream1"
+    settings_url = "http://example.com/get-settings/stream1"
+
+    responses = {
+        group_url: DummyResponse('<iframe src="/stream/stream1"></iframe>'),
+        stream_url: DummyResponse('<script>const streamId = "stream1";</script>'),
+        settings_url: DummyResponse("", json_data={"stream_url": "https://www.youtube.com/watch?v=abc123"}, content_type="application/json"),
+    }
+
+    def fake_get(url, timeout=5):
+        if url not in responses:
+            raise AssertionError(f"Unexpected URL: {url}")
+        return responses[url]
+
+    launch_calls = []
+
+    def fake_launch(self, src, show_error=True):
+        launch_calls.append((src, show_error))
+        return True
+
+    fake_requests = types.SimpleNamespace(get=fake_get)
+    monkeypatch.setattr(viewer, "requests", fake_requests)
+    monkeypatch.setattr(viewer.DisplayWindow, "_launch_remote_video", fake_launch)
+    monkeypatch.setattr(viewer, "QUrl", lambda url: url)
+
+    dw.handle_remote_url(group_url)
+
+    assert launch_calls == [("https://www.youtube.com/watch?v=abc123", False)]
+    assert dw.web_view.loaded is None

@@ -10,6 +10,7 @@ import sys
 import os
 import random
 import time
+import re
 import requests
 import spotipy
 import tempfile
@@ -18,7 +19,7 @@ import subprocess
 import shutil
 from datetime import datetime
 from collections import OrderedDict
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl
 from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
@@ -655,6 +656,15 @@ class DisplayWindow(QMainWindow):
             return
 
         kind, target = self.classify_url(cleaned)
+        resolved_source = None
+
+        if kind == "website":
+            resolved_info = self._resolve_embed_from_page(target)
+            if resolved_info:
+                kind = resolved_info.get("kind", kind)
+                target = resolved_info.get("target", target)
+                resolved_source = resolved_info.get("source")
+
         if not target:
             self.web_view.hide()
             self.clear_foreground_label("Unsupported remote URL")
@@ -675,7 +685,7 @@ class DisplayWindow(QMainWindow):
             pass
 
         if kind == "youtube":
-            play_source = cleaned
+            play_source = resolved_source or cleaned
             try:
                 parsed_clean = urlparse(cleaned)
                 if "youtube.com" in (parsed_clean.netloc or "").lower() and "/embed/" in (parsed_clean.path or ""):
@@ -713,7 +723,8 @@ class DisplayWindow(QMainWindow):
             return
 
         if kind in ("hls", "video"):
-            if self._launch_remote_video(target):
+            launch_source = resolved_source or target
+            if self._launch_remote_video(launch_source):
                 return
             return
 
@@ -823,6 +834,77 @@ class DisplayWindow(QMainWindow):
                 existing[key] = [value]
         new_query = urlencode(existing, doseq=True)
         return urlunparse(parsed._replace(query=new_query))
+
+    def _resolve_embed_from_page(self, page_url: str, depth: int = 0):
+        """
+        Attempt to resolve a playable media URL from an HTML page by scanning for
+        iframe sources or EchoMosaic stream configuration endpoints.  Returns a
+        mapping with keys `kind`, `target`, and optional `source` when a media
+        target is identified, otherwise None.
+        """
+        if depth >= 3:
+            return None
+        try:
+            resp = requests.get(page_url, timeout=5)
+        except Exception as err:
+            log_message(f"Remote stream fetch error ({page_url}): {err}")
+            return None
+
+        if not getattr(resp, "ok", False):
+            return None
+
+        content_type = resp.headers.get("Content-Type", "")
+        if "html" not in content_type and "xml" not in content_type:
+            return None
+
+        body = resp.text or ""
+        parsed_page = urlparse(page_url)
+
+        # First, look for iframe embeds inside the document.
+        iframe_sources = re.findall(r'<iframe[^>]+src=["\\\']([^"\\\']+)["\\\']', body, flags=re.IGNORECASE)
+        for raw_src in iframe_sources:
+            abs_src = urljoin(page_url, raw_src.strip())
+            kind, target = self.classify_url(abs_src)
+            if kind != "website":
+                return {"kind": kind, "target": target, "source": abs_src}
+            nested = self._resolve_embed_from_page(abs_src, depth + 1)
+            if nested:
+                return nested
+
+        # Attempt to derive EchoMosaic stream settings.
+        stream_id = None
+        match = re.search(r'const\s+streamId\s*=\s*["\\\']([^"\\\']+)["\\\']', body)
+        if match:
+            stream_id = match.group(1)
+        else:
+            path_parts = [p for p in (parsed_page.path or "").split("/") if p]
+            if path_parts and path_parts[-1].startswith("stream"):
+                stream_id = path_parts[-1]
+
+        if not stream_id:
+            return None
+
+        base_root = f"{parsed_page.scheme}://{parsed_page.netloc}"
+        settings_url = urljoin(base_root, f"/get-settings/{stream_id}")
+        try:
+            settings_resp = requests.get(settings_url, timeout=5)
+            if not getattr(settings_resp, "ok", False):
+                return None
+            data = settings_resp.json()
+        except Exception as err:
+            log_message(f"Stream settings fetch error ({settings_url}): {err}")
+            return None
+
+        candidate = (
+            data.get("stream_url")
+            or data.get("remote_url")
+            or data.get("url")
+            or data.get("source")
+        )
+        if not candidate:
+            return None
+        kind, target = self.classify_url(candidate)
+        return {"kind": kind, "target": target, "source": candidate}
 
     def _launch_remote_video(self, source: str, show_error: bool = True) -> bool:
         """
