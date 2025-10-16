@@ -60,7 +60,59 @@ for name in [
     setattr(qtwidgets, name, type(name, (), {}))
 
 qtweb = types.ModuleType("PySide6.QtWebEngineWidgets")
-qtweb.QWebEngineView = type("QWebEngineView", (), {})
+class DummyWebProfile:
+    def setHttpUserAgent(self, agent):
+        pass
+
+
+class DummyWebSettings:
+    def setAttribute(self, *args, **kwargs):
+        pass
+
+
+class DummyWebPage:
+    def __init__(self):
+        self._profile = DummyWebProfile()
+        self._settings = DummyWebSettings()
+
+    def profile(self):
+        return self._profile
+
+    def settings(self):
+        return self._settings
+
+
+class DummyWebView:
+    def __init__(self, *args, **kwargs):
+        self._page = DummyWebPage()
+        self.loaded = None
+
+    def page(self):
+        return self._page
+
+    def settings(self):
+        return self._page.settings()
+
+    def hide(self):
+        pass
+
+    def show(self):
+        pass
+
+    def load(self, url):
+        self.loaded = url
+
+
+qtweb.QWebEngineView = DummyWebView
+
+qtwebcore = types.ModuleType("PySide6.QtWebEngineCore")
+class DummyEngineSettings:
+    PlaybackRequiresUserGesture = 0
+    FullScreenSupportEnabled = 1
+    JavascriptEnabled = 2
+    JavascriptCanOpenWindows = 3
+
+qtwebcore.QWebEngineSettings = DummyEngineSettings
 
 spotipy = types.ModuleType("spotipy")
 spotipy.Spotify = type("Spotify", (), {})
@@ -73,6 +125,7 @@ sys.modules.setdefault("PySide6.QtCore", qtcore)
 sys.modules.setdefault("PySide6.QtGui", qtgui)
 sys.modules.setdefault("PySide6.QtWidgets", qtwidgets)
 sys.modules.setdefault("PySide6.QtWebEngineWidgets", qtweb)
+sys.modules.setdefault("PySide6.QtWebEngineCore", qtwebcore)
 sys.modules.setdefault("spotipy", spotipy)
 sys.modules.setdefault("spotipy.oauth2", oauth2)
 

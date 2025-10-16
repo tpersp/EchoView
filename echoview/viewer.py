@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWebEngineCore import QWebEngineSettings
 
 from spotipy.oauth2 import SpotifyOAuth
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
@@ -168,6 +169,22 @@ class DisplayWindow(QMainWindow):
 
         # Web page view for web_page mode
         self.web_view = QWebEngineView(self.main_widget)
+        try:
+            profile = self.web_view.page().profile()
+            profile.setHttpUserAgent(
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/118.0.5993.90 Safari/537.36"
+            )
+        except Exception:
+            pass
+        try:
+            settings = self.web_view.settings()
+            settings.setAttribute(QWebEngineSettings.PlaybackRequiresUserGesture, False)
+            settings.setAttribute(QWebEngineSettings.FullScreenSupportEnabled, True)
+            settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+            settings.setAttribute(QWebEngineSettings.JavascriptCanOpenWindows, True)
+        except Exception:
+            pass
         self.web_view.hide()
 
         # Timers
