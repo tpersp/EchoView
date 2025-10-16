@@ -1,4 +1,6 @@
 # Runtime dependency: mpv (system package, installed via setup.sh)
+# NOTE: PySide6 (installed via pip) includes FFmpeg-enabled Qt WebEngine,
+# no separate 'qt6-webengine-ffmpeg' package is required or available.
 Flask==2.2.5
 psutil==5.9.5
 requests==2.31.0

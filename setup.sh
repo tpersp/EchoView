@@ -140,6 +140,9 @@ apt-get install -y \
   libtiff6 \
   libevent-2.1-7
 
+# NOTE: PySide6 (installed via pip) includes FFmpeg-enabled Qt WebEngine,
+# no separate 'qt6-webengine-ffmpeg' package is required or available.
+
 if [ $? -ne 0 ]; then
   echo "Error installing packages via apt. Exiting."
   exit 1

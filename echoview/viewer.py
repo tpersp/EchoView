@@ -11,7 +11,6 @@ import os
 import random
 import time
 import re
-import json
 import requests
 import spotipy
 import tempfile
@@ -23,7 +22,7 @@ from collections import OrderedDict
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl
-from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont, QColor
+from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QProgressBar,
     QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
@@ -168,13 +167,6 @@ class DisplayWindow(QMainWindow):
         self.spotify_progress_timer = QTimer(self)
         self.spotify_progress_timer.timeout.connect(self.update_spotify_progress)
 
-        # Surface for remote video playback (mpv embedding) and web overlay.
-        self.video_surface = QWidget(self.main_widget)
-        self.video_surface.setAttribute(Qt.WA_NativeWindow, True)
-        self.video_surface.setStyleSheet("background-color: black;")
-        self.video_surface.hide()
-
-        # Web page view for web_page mode and overlays
         self.web_view = QWebEngineView(self.main_widget)
         try:
             profile = self.web_view.page().profile()
@@ -193,12 +185,6 @@ class DisplayWindow(QMainWindow):
         except Exception:
             pass
         self.web_view.hide()
-        self.web_view.setAttribute(Qt.WA_TransparentForMouseEvents, False)
-        self.web_view.loadFinished.connect(self._on_web_view_loaded)
-
-        self._overlay_page_config = None
-        self._overlay_css_applied = False
-        self._active_video_widget = None
 
         # Timers
         self.slideshow_timer = QTimer(self)
@@ -238,12 +224,7 @@ class DisplayWindow(QMainWindow):
         self.foreground_label.setGeometry(rect)
         if self.web_view.isVisible():
             self.web_view.setGeometry(rect)
-            if self._overlay_page_config:
-                self.web_view.raise_()
-            else:
-                self.web_view.lower()
-        if self.video_surface.isVisible():
-            self.video_surface.setGeometry(rect)
+            self.web_view.lower()
         self.bg_label.lower()
 
         # Position Spotify info label – its text box spans nearly the full screen width.
@@ -380,7 +361,7 @@ class DisplayWindow(QMainWindow):
             except Exception:
                 pass
 
-    def build_mpv_command(self, fullpath, wid=None):
+    def build_mpv_command(self, fullpath):
         cmd = [
             "mpv",
             # Do not load any user/system configuration files.  User configs
@@ -407,17 +388,14 @@ class DisplayWindow(QMainWindow):
                 screen_index = screens.index(self.assigned_screen)
         except Exception:
             pass
-        if wid is None:
-            cmd.append("--fs")
-            cmd.append(f"--fs-screen={screen_index}")
+        cmd.append("--fs")
+        cmd.append(f"--fs-screen={screen_index}")
         if self.disp_cfg.get("video_mute", True):
             cmd += ["--mute=yes", "--volume=0"]
         else:
             vol = int(self.disp_cfg.get("video_volume", 100))
             cmd += ["--mute=no", f"--volume={vol}"]
         cmd += ["--", fullpath]
-        if wid is not None:
-            cmd.insert(1, f"--wid={wid}")
         return cmd
 
     def stop_current_video(self, advance: bool = False) -> None:
@@ -457,13 +435,6 @@ class DisplayWindow(QMainWindow):
 
         # Reposition the Spotify progress bar, if visible
         self._position_spotify_progress_bar(rect, margin)
-
-        if self._active_video_widget:
-            try:
-                self._active_video_widget.hide()
-            except Exception:
-                pass
-            self._active_video_widget = None
 
         if hasattr(self, "overlay_config") and self.clock_label.isVisible():
             pos = self.overlay_config.get("clock_position", "bottom-center")
@@ -694,8 +665,6 @@ class DisplayWindow(QMainWindow):
         self.foreground_label.setMovie(None)
         self.spotify_info_label.hide()
         self.spotify_progress_bar.hide()
-        self._overlay_page_config = None
-        self._overlay_css_applied = False
 
         if not cleaned:
             self.web_view.hide()
@@ -706,13 +675,11 @@ class DisplayWindow(QMainWindow):
         resolved_source = None
         prefer_page = False
 
-        overlay_config = None
         if kind == "website":
             resolved_info = self._resolve_embed_from_page(target)
             if resolved_info:
                 prefer_page = resolved_info.get("prefer_page", False)
                 resolved_source = resolved_info.get("source")
-                overlay_config = resolved_info
                 if not prefer_page:
                     kind = resolved_info.get("kind", kind)
                     target = resolved_info.get("target", target)
@@ -737,31 +704,9 @@ class DisplayWindow(QMainWindow):
             pass
 
         if prefer_page:
-            mpv_started = False
-            if resolved_source:
-                mpv_started = self._launch_remote_video(
-                    resolved_source,
-                    show_error=False,
-                    target_widget=self.video_surface,
-                    keep_web_view=True,
-                )
-            if mpv_started:
-                overlay_config = overlay_config or {}
-                overlay_config["hide_primary"] = True
-                self._prepare_overlay_mode(True)
-                self._overlay_page_config = overlay_config
-                self.web_view.load(QUrl(cleaned))
-                self.web_view.show()
-                self.web_view.raise_()
-            else:
-                self._prepare_overlay_mode(False)
-                self._overlay_page_config = None
-                self.web_view.load(QUrl(cleaned))
-                self.web_view.show()
+            self.web_view.load(QUrl(cleaned))
+            self.web_view.show()
             return
-
-        self._prepare_overlay_mode(False)
-        self._overlay_page_config = None
 
         if kind == "youtube":
             play_source = resolved_source or cleaned
@@ -914,91 +859,6 @@ class DisplayWindow(QMainWindow):
         new_query = urlencode(existing, doseq=True)
         return urlunparse(parsed._replace(query=new_query))
 
-    def _prepare_overlay_mode(self, enabled: bool) -> None:
-        try:
-            page = self.web_view.page()
-            page.setBackgroundColor(QColor(0, 0, 0, 0) if enabled else QColor(Qt.black))
-        except Exception:
-            pass
-        if enabled:
-            self.web_view.setAttribute(Qt.WA_TranslucentBackground, True)
-            self.web_view.setStyleSheet("background: transparent;")
-            self.web_view.setAttribute(Qt.WA_TransparentForMouseEvents, False)
-            self.video_surface.show()
-            try:
-                self.video_surface.raise_()
-                self.web_view.raise_()
-            except Exception:
-                pass
-            self._overlay_css_applied = False
-        else:
-            self.web_view.setAttribute(Qt.WA_TranslucentBackground, False)
-            self.web_view.setStyleSheet("")
-            if self._active_video_widget and self._active_video_widget is not self.video_surface:
-                pass
-            else:
-                self.video_surface.hide()
-            self._overlay_css_applied = False
-        try:
-            self.setup_layout()
-        except Exception:
-            pass
-
-    def _on_web_view_loaded(self, ok: bool) -> None:
-        if not ok or not self._overlay_page_config:
-            return
-        if self._overlay_css_applied:
-            return
-        self._overlay_css_applied = True
-        if not self._overlay_page_config.get("hide_primary", False):
-            return
-        primary = self._overlay_page_config.get("primary_iframe")
-        primary_json = json.dumps(primary) if primary else "null"
-        script = """
-(function() {{
-  try {{
-    document.documentElement.style.background = 'transparent';
-    document.body.style.background = 'transparent';
-    document.body.style.overflow = 'hidden';
-    var targetSrc = {primary_json};
-    if (targetSrc) {{
-      try {{
-        targetSrc = new URL(targetSrc, window.location.href).href;
-      }} catch (err) {{}}
-    }}
-    var iframes = Array.from(document.getElementsByTagName('iframe'));
-    if (iframes.length) {{
-      iframes.forEach(function(frame, index) {{
-        if (!targetSrc) {{
-          if (index === 0) {{
-            frame.style.opacity = '0';
-            frame.style.pointerEvents = 'none';
-          }}
-          return;
-        }}
-        var src = frame.src;
-        if (!src) {{
-          return;
-        }}
-        try {{
-          src = new URL(src, window.location.href).href;
-        }} catch (err) {{}}
-        if (src === targetSrc) {{
-          frame.style.opacity = '0';
-          frame.style.pointerEvents = 'none';
-        }}
-      }});
-    }}
-  }} catch (err) {{
-    console.warn('Overlay adjustments failed', err);
-  }}
-}})();
-""".format(primary_json=primary_json)
-        try:
-            self.web_view.page().runJavaScript(script)
-        except Exception:
-            pass
-
     def _resolve_embed_from_page(self, page_url: str, depth: int = 0):
         """
         Attempt to resolve a playable media URL from an HTML page by scanning for
@@ -1027,7 +887,6 @@ class DisplayWindow(QMainWindow):
         # First, look for iframe embeds inside the document.
         iframe_sources = re.findall(r'<iframe[^>]+src=["\\\']([^"\\\']+)["\\\']', body, flags=re.IGNORECASE)
         iframe_abs = [urljoin(page_url, src.strip()) for src in iframe_sources]
-        primary_iframe = iframe_abs[0] if iframe_abs else None
         prefer_page = len(iframe_abs) > 1
         for abs_src in iframe_abs:
             try:
@@ -1037,23 +896,14 @@ class DisplayWindow(QMainWindow):
             except Exception:
                 continue
 
-        base_overlay = {
-            "prefer_page": prefer_page,
-            "primary_iframe": primary_iframe,
-        }
-
         for abs_src in iframe_abs:
             kind, target = self.classify_url(abs_src)
             if kind != "website":
-                info = dict(base_overlay)
-                info.update({"kind": kind, "target": target, "source": abs_src})
-                return info
+                return {"kind": kind, "target": target, "source": abs_src, "prefer_page": prefer_page}
             nested = self._resolve_embed_from_page(abs_src, depth + 1)
             if nested:
                 if prefer_page:
                     nested["prefer_page"] = True
-                if not nested.get("primary_iframe") and primary_iframe:
-                    nested["primary_iframe"] = primary_iframe
                 return nested
 
         # Attempt to derive EchoMosaic stream settings.
@@ -1089,47 +939,27 @@ class DisplayWindow(QMainWindow):
         if not candidate:
             return None
         kind, target = self.classify_url(candidate)
-        info = dict(base_overlay)
-        info.update({"kind": kind, "target": target, "source": candidate})
-        return info
+        return {"kind": kind, "target": target, "source": candidate, "prefer_page": prefer_page}
 
-    def _launch_remote_video(self, source: str, show_error: bool = True, *, target_widget=None, keep_web_view: bool = False) -> bool:
+    def _launch_remote_video(self, source: str, show_error: bool = True) -> bool:
         """
         Launch mpv for the provided source. When show_error is False we suppress
         on-screen error messages so the caller can fall back to another option.
         Returns True when mpv starts successfully, False otherwise.
         """
-        if not keep_web_view:
-            self.web_view.hide()
-        wid = None
-        if target_widget is not None:
-            try:
-                target_widget.show()
-                self._active_video_widget = target_widget
-                wid = int(target_widget.winId())
-            except Exception:
-                wid = None
-        else:
-            self._active_video_widget = None
+        self.web_view.hide()
         if not shutil.which("mpv"):
             if show_error:
                 self.clear_foreground_label("Video unsupported")
             return False
 
-        cmd = self.build_mpv_command(source, wid=wid)
+        cmd = self.build_mpv_command(source)
         try:
             proc = subprocess.Popen(cmd)
         except Exception as e:
             log_message(f"mpv playback error: {e}")
             if show_error:
                 self.clear_foreground_label("mpv playback error")
-            if target_widget is not None:
-                try:
-                    target_widget.hide()
-                except Exception:
-                    pass
-            if self._active_video_widget is target_widget:
-                self._active_video_widget = None
             return False
 
         self.current_video_proc = proc

@@ -21,10 +21,6 @@ class DummyQt:
     SmoothTransformation = 0
     white = 0
     transparent = 0
-    black = 0
-    WA_TranslucentBackground = 0
-    WA_TransparentForMouseEvents = 0
-    WA_NativeWindow = 0
 qtcore.Qt = DummyQt
 class DummyTimer:
     def __init__(self, *a, **k):
@@ -46,7 +42,7 @@ qtcore.QRectF = object
 qtcore.QUrl = object
 
 qtgui = types.ModuleType("PySide6.QtGui")
-for name in ["QPixmap", "QMovie", "QPainter", "QImage", "QImageReader", "QTransform", "QFont", "QColor"]:
+for name in ["QPixmap", "QMovie", "QPainter", "QImage", "QImageReader", "QTransform", "QFont"]:
     setattr(qtgui, name, type(name, (), {}))
 
 qtwidgets = types.ModuleType("PySide6.QtWidgets")
@@ -226,6 +222,5 @@ def test_stop_current_video_advances(monkeypatch):
     dw.handling_gif_frames = False
     dw.current_movie = None
     dw.bg_label = types.SimpleNamespace(setPixmap=lambda *a, **k: None)
-    dw._active_video_widget = None
     DisplayWindow.stop_current_video(dw, advance=True)
     assert advanced == ["next"]
