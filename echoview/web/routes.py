@@ -915,6 +915,13 @@ def updates_dashboard():
                 need_restart = True
                 after = result.get("after", {})
                 message = f"Updated to {after.get('short_hash', '?')} - {after.get('subject', 'latest commit')}."
+                discarded = []
+                if result.get("discarded_working_tree_changes"):
+                    discarded.append("local uncommitted changes")
+                if result.get("discarded_commits"):
+                    discarded.append("local commits")
+                if discarded:
+                    message += " Discarded " + " and ".join(discarded) + "."
                 message_type = "success"
             elif action == "rollback":
                 result = rollback_to_previous()
@@ -1005,6 +1012,14 @@ def update_app():
     except GitError as exc:
         log_message(f"Git update failed: {exc}")
         return "Git update failed. Check logs.", 500
+
+    discarded_notice = []
+    if result.get("discarded_working_tree_changes"):
+        discarded_notice.append("local uncommitted changes")
+    if result.get("discarded_commits"):
+        discarded_notice.append("local commits")
+    if discarded_notice:
+        log_message(f"Update discarded {' and '.join(discarded_notice)}.")
 
     _rerun_setup_if_needed(result.get("setup_changed"))
     log_message("Soft update completed successfully.")

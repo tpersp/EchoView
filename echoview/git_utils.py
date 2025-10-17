@@ -235,33 +235,32 @@ def _ensure_clean_worktree() -> None:
         raise GitError("Uncommitted changes detected. Commit or stash changes before continuing.")
 
 
-def _ensure_not_ahead(remote: str, branch: str) -> None:
-    ahead = _count_commits(f"{remote}/{branch}..HEAD")
-    if ahead > 0:
-        raise GitError(
-            "Local branch has commits that are not on the remote. Push or back up those commits before updating."
-        )
-
-
 def update_to_latest(target_branch: Optional[str] = None) -> Dict[str, Any]:
     """
     Reset the working tree to match the remote tracking branch.
     Returns metadata about the operation including whether setup.sh changed.
+    Any local modifications or commits are discarded so the checkout mirrors
+    the remote branch (matching the legacy update behaviour).
     """
     ensure_git_repo()
-    _ensure_clean_worktree()
     remote = get_remote_name()
     branch = target_branch or get_current_branch()
+
+    had_uncommitted = has_uncommitted_changes()
+    ahead_before = 0
+
     _fetch_remote(remote, branch)
     try:
         run_git_cmd(["rev-parse", f"{remote}/{branch}"])
     except GitError:
         raise GitError(f"Remote branch {remote}/{branch} was not found.")
-    run_git_cmd(["checkout", branch])
-    _ensure_not_ahead(remote, branch)
+
+    ahead_before = _count_commits(f"{remote}/{branch}..HEAD")
+
     current_before = _commit_details("HEAD")
     setup_before = _file_hash("HEAD", "setup.sh")
 
+    run_git_cmd(["checkout", branch])
     run_git_cmd(["reset", "--hard", f"{remote}/{branch}"])
 
     current_after = _commit_details("HEAD")
@@ -274,6 +273,8 @@ def update_to_latest(target_branch: Optional[str] = None) -> Dict[str, Any]:
         "before": current_before,
         "after": current_after,
         "setup_changed": setup_changed,
+        "discarded_working_tree_changes": had_uncommitted,
+        "discarded_commits": ahead_before > 0,
     }
 
 

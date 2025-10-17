@@ -87,6 +87,7 @@
       <button type="submit">Update</button>
     </form>
     <p style="font-size:smaller; margin-bottom:10px;">Pull latest code and restart services.</p>
+    <p style="font-size:smaller; margin-top:-5px;" class="text-muted">Note: local changes on the device will be discarded during an update.</p>
     <form method="POST" action="{{ url_for('main.full_update') }}">
       <button type="submit">Full Update &amp; Reboot</button>
     </form>
