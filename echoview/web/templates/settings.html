@@ -82,6 +82,7 @@
   <div class="card" style="margin-top:20px;">
     <p><strong>Update from GitHub</strong></p>
     <p>Branch: <em>{{ update_branch }}</em></p>
+    <p class="text-muted">For detailed history, restore points, and rollback options visit the <a href="{{ url_for('main.updates_dashboard') }}">Updates page</a>.</p>
     <form method="POST" action="{{ url_for('main.update_app') }}">
       <button type="submit">Update</button>
     </form>

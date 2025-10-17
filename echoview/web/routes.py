@@ -24,6 +24,18 @@ from echoview.utils import (
     get_storage_stats, format_bytes,
     CONFIG_PATH
 )
+from echoview.git_utils import (
+    GitError,
+    create_restore_point,
+    delete_restore_point,
+    get_restore_point,
+    get_update_history,
+    get_update_status,
+    list_restore_points,
+    restore_to_point,
+    rollback_to_previous,
+    update_to_latest,
+)
 
 # Supported media file extensions for the upload/file-manager features.
 VALID_MEDIA_EXT = (
@@ -152,6 +164,32 @@ def compute_overlay_preview(overlay_cfg, monitors_dict):
          "top": overlay_box_top,
     }
     return (preview_width, preview_height, preview_overlay)
+
+
+def _rerun_setup_if_needed(setup_changed):
+    """Re-run setup.sh if the tracked hash changed during an update."""
+    if not setup_changed:
+        return
+    log_message("setup.sh changed. Re-running it in --auto-update mode...")
+    try:
+        subprocess.check_call(["sudo", "bash", "setup.sh", "--auto-update"], cwd=VIEWER_HOME)
+    except subprocess.CalledProcessError as exc:
+        log_message(f"Re-running setup.sh failed: {exc}")
+
+
+def _restart_echoview_services():
+    """Restart the viewer and controller services after an update."""
+    try:
+        subprocess.Popen(["sudo", "systemctl", "restart", "echoview.service"])
+        subprocess.Popen(["sudo", "systemctl", "restart", "controller.service"])
+    except Exception as exc:
+        log_message(f"Service restart failed: {exc}")
+
+
+def _handle_git_error(exc):
+    log_message(f"Git operation failed: {exc}")
+    return str(exc)
+
 
 main_bp = Blueprint("main", __name__, static_folder="static")
 
@@ -833,6 +871,122 @@ def index():
     )
 
 
+@main_bp.route("/updates", methods=["GET", "POST"])
+def updates_dashboard():
+    cfg = load_config()
+    theme = cfg.get("theme", "dark")
+    message = None
+    message_type = None
+
+    status = None
+    history = []
+    restore_points = []
+    status_error = None
+
+    def refresh_git_data():
+        nonlocal status, history, restore_points, status_error
+        try:
+            status = get_update_status()
+            status_error = status.get("fetch_error")
+        except GitError as exc:
+            status = None
+            status_error = str(exc)
+        try:
+            history = get_update_history(30)
+        except GitError as exc:
+            history = []
+            if not status_error:
+                status_error = str(exc)
+        try:
+            restore_points = list_restore_points()
+        except GitError as exc:
+            restore_points = []
+            if not status_error:
+                status_error = str(exc)
+
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        need_restart = False
+        setup_changed = False
+        try:
+            if action == "update":
+                result = update_to_latest(UPDATE_BRANCH)
+                setup_changed = result.get("setup_changed", False)
+                need_restart = True
+                after = result.get("after", {})
+                message = f"Updated to {after.get('short_hash', '?')} - {after.get('subject', 'latest commit')}."
+                message_type = "success"
+            elif action == "rollback":
+                result = rollback_to_previous()
+                setup_changed = result.get("setup_changed", False)
+                need_restart = True
+                after = result.get("after", {})
+                message = f"Rolled back to {after.get('short_hash', '?')} - {after.get('subject', 'previous commit')}."
+                message_type = "warning"
+            elif action == "create_restore_point":
+                name = request.form.get("name", "")
+                commit_ref = request.form.get("commit") or "HEAD"
+                description = request.form.get("description", "")
+                new_point = create_restore_point(name, commit_ref, description)
+                info = new_point.get("commit_info") or {}
+                message = (
+                    f"Restore point '{new_point.get('name')}' created at "
+                    f"{info.get('short_hash', commit_ref)}."
+                )
+                message_type = "success"
+            elif action == "restore_point":
+                tag = request.form.get("tag", "")
+                if not tag:
+                    raise GitError("Select a restore point to restore.")
+                point_meta = get_restore_point(tag)
+                result = restore_to_point(tag)
+                setup_changed = result.get("setup_changed", False)
+                need_restart = True
+                after = result.get("after", {})
+                display_name = point_meta.get("name") if point_meta else tag
+                message = (
+                    f"Restored to '{display_name}' "
+                    f"({after.get('short_hash', '?')} - {after.get('subject', 'selected commit')})."
+                )
+                message_type = "warning"
+            elif action == "delete_restore_point":
+                tag = request.form.get("tag", "")
+                if not tag:
+                    raise GitError("Select a restore point to delete.")
+                delete_restore_point(tag)
+                message = "Restore point deleted."
+                message_type = "info"
+            else:
+                raise GitError("Unknown updates action.")
+        except GitError as exc:
+            message = _handle_git_error(exc)
+            message_type = "danger"
+        except Exception as exc:
+            log_message(f"Unexpected error during Git operation: {exc}")
+            message = f"Unexpected error: {exc}"
+            message_type = "danger"
+        else:
+            _rerun_setup_if_needed(setup_changed)
+            if need_restart:
+                _restart_echoview_services()
+        finally:
+            refresh_git_data()
+    else:
+        refresh_git_data()
+
+    return render_template(
+        "updates.html",
+        theme=theme,
+        status=status,
+        status_error=status_error,
+        history=history,
+        restore_points=restore_points,
+        message=message,
+        message_type=message_type,
+        update_branch=UPDATE_BRANCH,
+    )
+
+
 @main_bp.route("/update_app", methods=["POST"])
 def update_app():
     """
@@ -846,49 +1000,17 @@ def update_app():
     """
     cfg = load_config()
     log_message(f"Starting soft update to origin/{UPDATE_BRANCH}")
-
-    old_hash = ""
     try:
-        old_hash = subprocess.check_output(
-            ["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME
-        ).decode().strip()
-    except Exception as e:
-        log_message(f"Could not get old setup.sh hash: {e}")
-
-    try:
-        subprocess.check_call(["git", "fetch"], cwd=VIEWER_HOME)
-        subprocess.check_call(["git", "checkout", UPDATE_BRANCH], cwd=VIEWER_HOME)
-        subprocess.check_call(
-            ["git", "reset", "--hard", f"origin/{UPDATE_BRANCH}"], cwd=VIEWER_HOME
-        )
-    except subprocess.CalledProcessError as e:
-        log_message(f"Git update failed: {e}")
+        result = update_to_latest(UPDATE_BRANCH)
+    except GitError as exc:
+        log_message(f"Git update failed: {exc}")
         return "Git update failed. Check logs.", 500
 
-    new_hash = ""
-    try:
-        new_hash = subprocess.check_output(
-            ["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME
-        ).decode().strip()
-    except Exception as e:
-        log_message(f"Could not get new setup.sh hash: {e}")
-
-    if old_hash and new_hash and (old_hash != new_hash):
-        log_message("setup.sh changed. Re-running it in --auto-update mode...")
-        try:
-            subprocess.check_call(
-                ["sudo", "bash", "setup.sh", "--auto-update"], cwd=VIEWER_HOME
-            )
-        except subprocess.CalledProcessError as e:
-            log_message(f"Re-running setup.sh failed: {e}")
-
+    _rerun_setup_if_needed(result.get("setup_changed"))
     log_message("Soft update completed successfully.")
 
-    # Restart services without rebooting the whole device.  The Popen
-    # calls allow this route to return immediately without blocking on
-    # service restarts.
-    subprocess.Popen(["sudo", "systemctl", "restart", "echoview.service"])
-    subprocess.Popen(["sudo", "systemctl", "restart", "controller.service"])
+    # Restart services without rebooting the whole device.
+    _restart_echoview_services()
 
     # Render a simple themed status page similar to the full update.
     theme = cfg.get("theme", "dark")
@@ -956,32 +1078,13 @@ def full_update():
     cfg = load_config()
     log_message(f"Starting update: forced reset to origin/{UPDATE_BRANCH}")
 
-    old_hash = ""
     try:
-        old_hash = subprocess.check_output(["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME).decode().strip()
-    except Exception as e:
-        log_message(f"Could not get old setup.sh hash: {e}")
-
-    try:
-        subprocess.check_call(["git", "fetch"], cwd=VIEWER_HOME)
-        subprocess.check_call(["git", "checkout", UPDATE_BRANCH], cwd=VIEWER_HOME)
-        subprocess.check_call(["git", "reset", "--hard", f"origin/{UPDATE_BRANCH}"], cwd=VIEWER_HOME)
-    except subprocess.CalledProcessError as e:
-        log_message(f"Git update failed: {e}")
+        result = update_to_latest(UPDATE_BRANCH)
+    except GitError as exc:
+        log_message(f"Git update failed: {exc}")
         return "Git update failed. Check logs.", 500
 
-    new_hash = ""
-    try:
-        new_hash = subprocess.check_output(["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME).decode().strip()
-    except Exception as e:
-        log_message(f"Could not get new setup.sh hash: {e}")
-
-    if old_hash and new_hash and (old_hash != new_hash):
-        log_message("setup.sh changed. Re-running it in --auto-update mode...")
-        try:
-            subprocess.check_call(["sudo", "bash", "setup.sh", "--auto-update"], cwd=VIEWER_HOME)
-        except subprocess.CalledProcessError as e:
-            log_message(f"Re-running setup.sh failed: {e}")
+    _rerun_setup_if_needed(result.get("setup_changed"))
 
     log_message("Update completed successfully.")
     subprocess.Popen(["sudo", "reboot"])

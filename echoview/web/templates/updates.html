@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Updates{% endblock %}
+{% block content %}
+
+<div class="page-section" style="max-width:1100px;">
+  <h2>Git Updates</h2>
+
+  {% if message %}
+    <div class="alert alert-{{ message_type or 'info' }}">{{ message }}</div>
+  {% elif status_error %}
+    <div class="alert alert-warning">{{ status_error }}</div>
+  {% endif %}
+
+  {% if status %}
+    <div class="card" style="margin-bottom:20px;">
+      <h3>Repository Status</h3>
+      <p>
+        <strong>Branch:</strong> {{ status.branch }} &nbsp;|&nbsp;
+        <strong>Remote:</strong> {{ status.remote }}
+      </p>
+      <ul class="list-unstyled">
+        <li>
+          <strong>Current:</strong>
+          {{ status.current_commit.short_hash }} &mdash; {{ status.current_commit.subject }}
+          ({{ status.current_commit.relative_time }})
+        </li>
+        {% if status.latest_commit %}
+        <li>
+          <strong>Latest Remote:</strong>
+          {{ status.latest_commit.short_hash }} &mdash; {{ status.latest_commit.subject }}
+          ({{ status.latest_commit.relative_time }})
+        </li>
+        {% else %}
+        <li><em>Remote commit information is unavailable.</em></li>
+        {% endif %}
+        {% if status.previous_commit %}
+        <li>
+          <strong>Previous:</strong>
+          {{ status.previous_commit.short_hash }} &mdash; {{ status.previous_commit.subject }}
+          ({{ status.previous_commit.relative_time }})
+        </li>
+        {% endif %}
+      </ul>
+      <p>
+        {% if status.is_behind %}
+          <strong>Warning:</strong> This branch is behind the remote by {{ status.behind_count }} commit{{ 's' if status.behind_count != 1 else '' }}.
+        {% elif status.is_ahead %}
+          <strong>Notice:</strong> The local branch is ahead of the remote by {{ status.ahead_count }} commit{{ 's' if status.ahead_count != 1 else '' }}.
+        {% else %}
+          <strong>Good news:</strong> The repository is up to date with the remote.
+        {% endif %}
+      </p>
+      <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <form method="post">
+          <input type="hidden" name="action" value="update">
+          <button type="submit" class="btn btn-primary">Update to Latest</button>
+        </form>
+        <form method="post" onsubmit="return confirm('Rollback to the previous commit? Uncommitted changes will be lost.');">
+          <input type="hidden" name="action" value="rollback">
+          <button type="submit" class="btn btn-outline-warning">Rollback to Previous Commit</button>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="card" style="margin-bottom:20px;">
+    <h3>Restore Points</h3>
+    {% if restore_points %}
+      <div class="table-responsive">
+        <table class="table table-sm table-striped">
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Commit</th>
+              <th scope="col">Created</th>
+              <th scope="col" style="width:150px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for point in restore_points %}
+              {% set info = point.commit_info %}
+              <tr>
+                <td>{{ point.name }}</td>
+                <td>
+                  {% if info %}
+                    <code>{{ info.short_hash }}</code> &ndash; {{ info.subject }}
+                    <br><small>{{ info.relative_time }}</small>
+                  {% else %}
+                    <em>Commit unavailable</em>
+                  {% endif %}
+                </td>
+                <td><small>{{ point.created_at or 'Unknown' }}</small></td>
+                <td>
+                  <form method="post" style="display:inline;" onsubmit="return confirm('Restore to {{ point.name }}? Uncommitted changes will be lost.');">
+                    <input type="hidden" name="action" value="restore_point">
+                    <input type="hidden" name="tag" value="{{ point.tag }}">
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Restore</button>
+                  </form>
+                  <form method="post" style="display:inline;" onsubmit="return confirm('Delete restore point {{ point.name }}?');">
+                    <input type="hidden" name="action" value="delete_restore_point">
+                    <input type="hidden" name="tag" value="{{ point.tag }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted">No restore points have been created yet.</p>
+    {% endif %}
+
+    <hr>
+    <h4>Create Restore Point</h4>
+    <form method="post" class="row g-2">
+      <input type="hidden" name="action" value="create_restore_point">
+      <div class="col-md-4">
+        <label class="form-label">Name</label>
+        <input type="text" name="name" class="form-control" required placeholder="e.g. stable-jan24">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Commit (optional)</label>
+        <input type="text" name="commit" class="form-control" list="commitSuggestions" placeholder="Defaults to HEAD">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Description (optional)</label>
+        <input type="text" name="description" class="form-control" placeholder="Notes about this restore point">
+      </div>
+      <div class="col-12">
+        <button type="submit" class="btn btn-success">Save Restore Point</button>
+      </div>
+    </form>
+    <datalist id="commitSuggestions">
+      {% for entry in history %}
+        <option value="{{ entry.hash }}">{{ entry.short_hash }} &mdash; {{ entry.subject }}</option>
+      {% endfor %}
+    </datalist>
+  </div>
+
+  <div class="card">
+    <h3>Recent Commits</h3>
+    {% if history %}
+      <div class="table-responsive">
+        <table class="table table-sm table-hover">
+          <thead>
+            <tr>
+              <th scope="col">Commit</th>
+              <th scope="col">Message</th>
+              <th scope="col">When</th>
+              <th scope="col">Author</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in history %}
+            <tr>
+              <td>
+                <code>{{ entry.short_hash }}</code>
+                {% if entry.decorations %}
+                  <br><small>{{ entry.decorations }}</small>
+                {% endif %}
+              </td>
+              <td>{{ entry.subject }}</td>
+              <td>{{ entry.relative_time }}</td>
+              <td>{{ entry.author }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted">No commit history is available.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
