@@ -1048,7 +1048,7 @@ class DisplayWindow(QMainWindow):
         offset_x = geometry.x()
         offset_y = geometry.y()
 
-        class_name = f"EchoView{self.disp_name}"
+        class_name = f"EchoView-{self.disp_name}"
         cmd = [
             firefox_bin,
             "--no-remote",
@@ -1095,15 +1095,34 @@ class DisplayWindow(QMainWindow):
             if not wmctrl_bin:
                 return
             geometry_expr = f"0,{offset_x},{offset_y},{width},{height}"
-            for _ in range(40):
+            target_id = None
+            for _ in range(120):
                 if proc.poll() is not None:
                     return
                 try:
-                    result = subprocess.call([wmctrl_bin, "-r", class_name, "-e", geometry_expr])
-                    if result == 0:
-                        break
+                    out = subprocess.check_output([wmctrl_bin, "-lx"], stderr=subprocess.DEVNULL).decode("utf-8", "ignore")
                 except Exception:
-                    break
+                    time.sleep(0.25)
+                    continue
+                for line in out.splitlines():
+                    parts = line.split()
+                    if not parts:
+                        continue
+                    win_id = parts[0]
+                    wm_class = parts[2].lower() if len(parts) > 2 else ""
+                    title = " ".join(parts[3:]).lower() if len(parts) > 3 else ""
+                    if class_name.lower() in wm_class or class_name.lower() in title:
+                        target_id = win_id
+                        break
+                if target_id:
+                    try:
+                        subprocess.call([wmctrl_bin, "-ir", target_id, "-e", geometry_expr], stderr=subprocess.DEVNULL)
+                        if kiosk:
+                            subprocess.call([wmctrl_bin, "-ir", target_id, "-b", "add,fullscreen"], stderr=subprocess.DEVNULL)
+                        subprocess.call([wmctrl_bin, "-ir", target_id, "-b", "remove,above"], stderr=subprocess.DEVNULL)
+                        break
+                    except Exception:
+                        break
                 time.sleep(0.25)
 
         try:
