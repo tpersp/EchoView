@@ -191,6 +191,70 @@ def _handle_git_error(exc):
     return str(exc)
 
 
+def _render_update_redirect_page(theme, heading, extra_paragraphs=None, redirect_url="/", wait_seconds=10, button_text="Return to Home Page"):
+    """Return a simple HTML page that matches the legacy update flow."""
+    extra_paragraphs = [p for p in (extra_paragraphs or []) if p]
+    if theme == "dark":
+        page_bg = "#121212"
+        text_color = "#ECECEC"
+        button_bg = "#444"
+        button_color = "#FFF"
+        link_hover_bg = "#666"
+    else:
+        page_bg = "#FFFFFF"
+        text_color = "#222"
+        button_bg = "#ddd"
+        button_color = "#111"
+        link_hover_bg = "#bbb"
+
+    extra_html = "\n        ".join(f"<p>{para}</p>" for para in extra_paragraphs)
+    wait_ms = max(int(wait_seconds * 1000), 0)
+    return f"""
+    <html>
+      <head>
+        <meta charset="utf-8"/>
+        <title>EchoView Update</title>
+        <style>
+          body {{
+            background-color: {page_bg};
+            color: {text_color};
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+          }}
+          a.button {{
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 20px;
+            background-color: {button_bg};
+            color: {button_color};
+            border: none;
+            border-radius: 6px;
+            text-decoration: none;
+            cursor: pointer;
+          }}
+          a.button:hover {{
+            background-color: {link_hover_bg};
+          }}
+        </style>
+      </head>
+      <body>
+        <h2>{heading}</h2>
+        {extra_html}
+        <p>Please wait a moment. You will be redirected shortly.</p>
+        <p>If you are not redirected automatically, click below
+            <br>
+           <a href="{redirect_url}" class="button">{button_text}</a></p>
+        <script>
+          setTimeout(function() {{
+            window.location.href = "{redirect_url}";
+          }}, {wait_ms});
+        </script>
+      </body>
+    </html>
+    """
+
+
 main_bp = Blueprint("main", __name__, static_folder="static")
 
 @main_bp.route("/stats")
@@ -908,13 +972,41 @@ def updates_dashboard():
         action = request.form.get("action", "")
         need_restart = False
         setup_changed = False
+        redirect_response = None
         try:
             if action == "update":
                 result = update_to_latest(UPDATE_BRANCH)
                 setup_changed = result.get("setup_changed", False)
                 need_restart = True
                 after = result.get("after", {})
-                message = f"Updated to {after.get('short_hash', '?')} - {after.get('subject', 'latest commit')}."
+                discarded = []
+                if result.get("discarded_working_tree_changes"):
+                    discarded.append("local uncommitted changes")
+                if result.get("discarded_commits"):
+                    discarded.append("local commits")
+                if discarded:
+                    log_message(f"Update discarded {' and '.join(discarded)}.")
+                extra_paragraphs = [
+                    f"Updated to <code>{after.get('short_hash', '?')}</code> - {after.get('subject', 'latest commit')}."
+                ]
+                if discarded:
+                    extra_paragraphs.append(f"Discarded {' and '.join(discarded)}.")
+                redirect_response = _render_update_redirect_page(
+                    theme,
+                    "Soft update complete. Services are restarting…",
+                    extra_paragraphs,
+                    redirect_url="/",
+                    wait_seconds=10,
+                    button_text="Return to Home Page",
+                )
+                message = None
+                message_type = None
+            elif action == "rollback":
+                result = rollback_to_previous()
+                setup_changed = result.get("setup_changed", False)
+                need_restart = True
+                after = result.get("after", {})
+                message = f"Rolled back to {after.get('short_hash', '?')} - {after.get('subject', 'previous commit')}."
                 discarded = []
                 if result.get("discarded_working_tree_changes"):
                     discarded.append("local uncommitted changes")
@@ -922,13 +1014,7 @@ def updates_dashboard():
                     discarded.append("local commits")
                 if discarded:
                     message += " Discarded " + " and ".join(discarded) + "."
-                message_type = "success"
-            elif action == "rollback":
-                result = rollback_to_previous()
-                setup_changed = result.get("setup_changed", False)
-                need_restart = True
-                after = result.get("after", {})
-                message = f"Rolled back to {after.get('short_hash', '?')} - {after.get('subject', 'previous commit')}."
+                    log_message(f"Rollback discarded {' and '.join(discarded)}.")
                 message_type = "warning"
             elif action == "create_restore_point":
                 name = request.form.get("name", "")
@@ -955,6 +1041,14 @@ def updates_dashboard():
                     f"Restored to '{display_name}' "
                     f"({after.get('short_hash', '?')} - {after.get('subject', 'selected commit')})."
                 )
+                discarded = []
+                if result.get("discarded_working_tree_changes"):
+                    discarded.append("local uncommitted changes")
+                if result.get("discarded_commits"):
+                    discarded.append("local commits")
+                if discarded:
+                    message += " Discarded " + " and ".join(discarded) + "."
+                    log_message(f"Restore discarded {' and '.join(discarded)}.")
                 message_type = "warning"
             elif action == "delete_restore_point":
                 tag = request.form.get("tag", "")
@@ -976,8 +1070,11 @@ def updates_dashboard():
             _rerun_setup_if_needed(setup_changed)
             if need_restart:
                 _restart_echoview_services()
+            if redirect_response:
+                return redirect_response
         finally:
-            refresh_git_data()
+            if not redirect_response:
+                refresh_git_data()
     else:
         refresh_git_data()
 
@@ -1027,64 +1124,22 @@ def update_app():
     # Restart services without rebooting the whole device.
     _restart_echoview_services()
 
-    # Render a simple themed status page similar to the full update.
-    theme = cfg.get("theme", "dark")
-    if theme == "dark":
-        page_bg = "#121212"
-        text_color = "#ECECEC"
-        button_bg = "#444"
-        button_color = "#FFF"
-        link_hover_bg = "#666"
-    else:
-        page_bg = "#FFFFFF"
-        text_color = "#222"
-        button_bg = "#ddd"
-        button_color = "#111"
-        link_hover_bg = "#bbb"
+    after = result.get("after", {})
+    extra_paragraphs = [
+        f"Updated to <code>{after.get('short_hash', '?')}</code> - {after.get('subject', 'latest commit')}."
+    ]
+    if discarded_notice:
+        extra_paragraphs.append(f"Discarded {' and '.join(discarded_notice)}.")
 
-    return f"""
-    <html>
-      <head>
-        <meta charset=\"utf-8\"/>
-        <title>EchoView Update</title>
-        <style>
-          body {{
-            background-color: {page_bg};
-            color: {text_color};
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 50px;
-          }}
-          a.button {{
-            display: inline-block;
-            margin-top: 20px;
-            padding: 10px 20px;
-            background-color: {button_bg};
-            color: {button_color};
-            border: none;
-            border-radius: 6px;
-            text-decoration: none;
-            cursor: pointer;
-          }}
-          a.button:hover {{
-            background-color: {link_hover_bg};
-          }}
-        </style>
-      </head>
-      <body>
-        <h2>Soft update complete. Services are restarting…</h2>
-        <p>Please wait a moment. You will be redirected shortly.</p>
-        <p>If you are not redirected automatically, click below
-            <br>
-           <a href=\"/\" class=\"button\">Return to Home Page</a></p>
-        <script>
-          setTimeout(function() {{
-            window.location.href = "/";
-          }}, 10000);
-        </script>
-      </body>
-    </html>
-    """
+    theme = cfg.get("theme", "dark")
+    return _render_update_redirect_page(
+        theme=theme,
+        heading="Soft update complete. Services are restarting…",
+        extra_paragraphs=extra_paragraphs,
+        redirect_url="/",
+        wait_seconds=10,
+        button_text="Return to Home Page",
+    )
 
 
 @main_bp.route("/full_update", methods=["POST"])
@@ -1098,6 +1153,14 @@ def full_update():
     except GitError as exc:
         log_message(f"Git update failed: {exc}")
         return "Git update failed. Check logs.", 500
+
+    discarded_notice = []
+    if result.get("discarded_working_tree_changes"):
+        discarded_notice.append("local uncommitted changes")
+    if result.get("discarded_commits"):
+        discarded_notice.append("local commits")
+    if discarded_notice:
+        log_message(f"Update discarded {' and '.join(discarded_notice)}.")
 
     _rerun_setup_if_needed(result.get("setup_changed"))
 

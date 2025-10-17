@@ -383,9 +383,12 @@ table td button {
   /* Additional dropdown variables for dark theme */
   --dropdown-bg: #333;
   --dropdown-hover-bg: #444;
-  --btn-primary-bg: #3b82f6;
-  --btn-primary-fg: #ffffff;
-  --btn-primary-border: #2563eb;
+  --btn-primary-bg: #345f9c;
+  --btn-primary-fg: #f5f8ff;
+  --btn-primary-border: #284a79;
+  --btn-success-bg: #2f855a;
+  --btn-success-fg: #f0fff4;
+  --btn-success-border: #276749;
   --btn-outline-warning-fg: #facc15;
   --btn-outline-warning-border: #facc15;
   --btn-outline-warning-hover-bg: rgba(250, 204, 21, 0.12);
@@ -435,9 +438,12 @@ table td button {
   /* Additional dropdown variables for light theme */
   --dropdown-bg: #eee;
   --dropdown-hover-bg: #ccc;
-  --btn-primary-bg: #2563eb;
+  --btn-primary-bg: #2b6cb0;
   --btn-primary-fg: #ffffff;
-  --btn-primary-border: #1d4ed8;
+  --btn-primary-border: #244f82;
+  --btn-success-bg: #2f855a;
+  --btn-success-fg: #ffffff;
+  --btn-success-border: #276749;
   --btn-outline-warning-fg: #b45309;
   --btn-outline-warning-border: #f59e0b;
   --btn-outline-warning-hover-bg: rgba(245, 158, 11, 0.15);
@@ -482,6 +488,17 @@ body.light-theme .btn-primary {
 }
 body.dark-theme .btn-primary:hover,
 body.light-theme .btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+body.dark-theme .btn-success,
+body.light-theme .btn-success {
+  background-color: var(--btn-success-bg);
+  border-color: var(--btn-success-border);
+  color: var(--btn-success-fg);
+}
+body.dark-theme .btn-success:hover,
+body.light-theme .btn-success:hover {
   filter: brightness(1.05);
 }
 

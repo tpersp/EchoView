@@ -230,11 +230,6 @@ def _file_hash(ref: str, path: str) -> str:
         return ""
 
 
-def _ensure_clean_worktree() -> None:
-    if has_uncommitted_changes():
-        raise GitError("Uncommitted changes detected. Commit or stash changes before continuing.")
-
-
 def update_to_latest(target_branch: Optional[str] = None) -> Dict[str, Any]:
     """
     Reset the working tree to match the remote tracking branch.
@@ -281,10 +276,10 @@ def update_to_latest(target_branch: Optional[str] = None) -> Dict[str, Any]:
 def rollback_to_previous() -> Dict[str, Any]:
     """Reset the working tree to the previous commit."""
     ensure_git_repo()
-    _ensure_clean_worktree()
     if not _optional_commit_details("HEAD^"):
         raise GitError("No previous commit is available for rollback.")
 
+    had_uncommitted = has_uncommitted_changes()
     current_before = _commit_details("HEAD")
     setup_before = _file_hash("HEAD", "setup.sh")
     run_git_cmd(["reset", "--hard", "HEAD^"])
@@ -296,15 +291,18 @@ def rollback_to_previous() -> Dict[str, Any]:
         "after": current_after,
         "target": "HEAD^",
         "setup_changed": bool(setup_before and setup_after and setup_before != setup_after),
+        "discarded_working_tree_changes": had_uncommitted,
+        "discarded_commits": True,
     }
 
 
 def restore_to_ref(ref: str) -> Dict[str, Any]:
     """Reset the working tree to the supplied Git ref."""
     ensure_git_repo()
-    _ensure_clean_worktree()
     run_git_cmd(["rev-parse", "--verify", ref])
 
+    had_uncommitted = has_uncommitted_changes()
+    discarded_commits = _count_commits(f"{ref}..HEAD") > 0
     current_before = _commit_details("HEAD")
     setup_before = _file_hash("HEAD", "setup.sh")
     run_git_cmd(["reset", "--hard", ref])
@@ -315,6 +313,8 @@ def restore_to_ref(ref: str) -> Dict[str, Any]:
         "after": current_after,
         "target": ref,
         "setup_changed": bool(setup_before and setup_after and setup_before != setup_after),
+        "discarded_working_tree_changes": had_uncommitted,
+        "discarded_commits": discarded_commits,
     }
 
 
