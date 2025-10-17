@@ -8,6 +8,7 @@
   <!-- Theme selection card -->
   <div class="card" style="margin-bottom:20px;">
     <form method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="form_id" value="theme">
 
       <label>Theme:</label><br>
       <select name="theme">
@@ -27,6 +28,22 @@
     </form>
   </div>
 
+  <!-- Content visibility card -->
+  <div class="card" style="margin-bottom:20px;">
+    <h3>Content Visibility</h3>
+    <form method="POST">
+      <input type="hidden" name="form_id" value="content_filters">
+      <label style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" name="hide_nsfw" value="1" {% if filter_cfg.hide_nsfw %}checked{% endif %}>
+        Hide NSFW Content
+      </label>
+      <p style="color:#888; font-size:smaller;">
+        Keeps folders or files containing "nsfw" out of user visible lists and random media selections. System folders (starting with "_") are always hidden.
+      </p>
+      <button type="submit">Save Content Preferences</button>
+    </form>
+  </div>
+
   <!-- GUI settings card -->
   <div class="cards-container">
 
@@ -34,8 +51,8 @@
     <div class="card">
       <h3>GUI Settings</h3>
       <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="form_id" value="gui">
         <fieldset style="border:none;">
-          <input type="hidden" name="theme" value="{{ cfg.theme }}">
           <label>Background Blur Radius:</label><br>
           <input type="number" name="background_blur_radius"
                  value="{{ cfg.gui.background_blur_radius|default('20') }}" min="0">

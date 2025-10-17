@@ -32,7 +32,15 @@ from PySide6.QtWebEngineCore import QWebEngineSettings
 
 from spotipy.oauth2 import SpotifyOAuth
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
-from echoview.utils import load_config, save_config, log_message, get_ip_address
+from echoview.utils import (
+    load_config,
+    save_config,
+    log_message,
+    get_ip_address,
+    get_content_filter_settings,
+    should_exclude_folder,
+    should_exclude_file,
+)
 
 
 # --- Custom label for negative (difference) text drawing ---
@@ -85,6 +93,7 @@ def detect_monitors():
 
 
 class DisplayWindow(QMainWindow):
+    hide_nsfw = True
     def __init__(self, disp_name, disp_cfg, assigned_screen=None):
         super().__init__()
         self.disp_name = disp_name
@@ -208,6 +217,7 @@ class DisplayWindow(QMainWindow):
 
         # Load config and start
         self.cfg = load_config()
+        self.hide_nsfw = get_content_filter_settings(self.cfg)["hide_nsfw"]
         self.reload_settings()
         self.next_image(force=True)
         QTimer.singleShot(1000, self.setup_layout)
@@ -510,6 +520,7 @@ class DisplayWindow(QMainWindow):
         self.stop_current_video()
         self.stop_browser()
         self.cfg = load_config()
+        self.hide_nsfw = get_content_filter_settings(self.cfg)["hide_nsfw"]
         latest_disp_cfg = self.cfg.get("displays", {}).get(self.disp_name)
         if latest_disp_cfg:
             self.disp_cfg = latest_disp_cfg
@@ -1142,12 +1153,20 @@ class DisplayWindow(QMainWindow):
         mode = self.current_mode
         if mode == "random_image":
             cat = self.disp_cfg.get("image_category", "")
-            images = self.gather_images(cat)
+            if cat and should_exclude_folder(cat, self.hide_nsfw):
+                images = []
+            else:
+                images = self.gather_images(cat)
             if self.disp_cfg.get("shuffle_mode", False):
                 random.shuffle(images)
             self.image_list = images
         elif mode == "mixed":
             folder_list = self.disp_cfg.get("mixed_folders", [])
+            if folder_list:
+                folder_list = [
+                    f for f in folder_list
+                    if not should_exclude_folder(f, self.hide_nsfw)
+                ]
             allimg = []
             for folder in folder_list:
                 allimg += self.gather_images(folder)
@@ -1157,7 +1176,13 @@ class DisplayWindow(QMainWindow):
         elif mode == "specific_image":
             cat = self.disp_cfg.get("image_category", "")
             spec = self.disp_cfg.get("specific_image", "")
-            path = os.path.join(IMAGE_DIR, cat, spec)
+            if cat and should_exclude_folder(cat, self.hide_nsfw):
+                self.image_list = []
+                return
+            if should_exclude_file(spec, hide_nsfw=self.hide_nsfw):
+                self.image_list = []
+                return
+            path = os.path.join(IMAGE_DIR, cat, spec) if cat else os.path.join(IMAGE_DIR, spec)
             if os.path.exists(path):
                 self.image_list = [path]
             else:
@@ -1165,32 +1190,45 @@ class DisplayWindow(QMainWindow):
                 self.image_list = []
         elif mode == "videos":
             cat = self.disp_cfg.get("video_category", "")
-            vids = self.gather_videos(cat)
+            if cat and should_exclude_folder(cat, self.hide_nsfw):
+                vids = []
+            else:
+                vids = self.gather_videos(cat)
             if self.disp_cfg.get("shuffle_videos", False):
                 random.shuffle(vids)
             self.image_list = vids
 
     def gather_images(self, category):
+        if category and should_exclude_folder(category, self.hide_nsfw):
+            return []
         base = os.path.join(IMAGE_DIR, category) if category else IMAGE_DIR
         if not os.path.isdir(base):
             return []
         results = []
         for fname in os.listdir(base):
             lf = fname.lower()
-            if lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
-                results.append(os.path.join(base, fname))
+            if not lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
+                continue
+            if should_exclude_file(fname, hide_nsfw=self.hide_nsfw):
+                continue
+            results.append(os.path.join(base, fname))
         results.sort()
         return results
 
     def gather_videos(self, category):
+        if category and should_exclude_folder(category, self.hide_nsfw):
+            return []
         base = os.path.join(IMAGE_DIR, category) if category else IMAGE_DIR
         if not os.path.isdir(base):
             return []
         results = []
         for fname in os.listdir(base):
             lf = fname.lower()
-            if lf.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
-                results.append(os.path.join(base, fname))
+            if not lf.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
+                continue
+            if should_exclude_file(fname, hide_nsfw=self.hide_nsfw):
+                continue
+            results.append(os.path.join(base, fname))
         results.sort()
         return results
 

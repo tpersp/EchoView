@@ -75,6 +75,9 @@ def init_config():
             },
             "cache_capacity": 15,
             "preload_count": 1,
+            "content_filters": {
+                "hide_nsfw": True
+            },
             # Persist a list of websites visited in web page mode.  When a
             # new URL is entered for a display it will be appended here.  The
             # UI uses a datalist to offer these as suggestions, making it
@@ -99,6 +102,34 @@ def save_config(cfg):
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
     with open(CONFIG_PATH, "w") as f:
         json.dump(cfg, f, indent=2)
+
+def get_content_filter_settings(cfg=None):
+    """
+    Return the current content filter configuration, ensuring defaults exist.
+    """
+    if cfg is None:
+        cfg = load_config()
+    filters = cfg.get("content_filters") or {}
+    hide_nsfw = filters.get("hide_nsfw", True)
+    return {"hide_nsfw": hide_nsfw}
+
+def is_system_folder(name: str) -> bool:
+    return name.startswith("_")
+
+def is_nsfw_labeled(name: str) -> bool:
+    return "nsfw" in name.lower()
+
+def should_exclude_folder(name: str, hide_nsfw: bool = True) -> bool:
+    if is_system_folder(name):
+        return True
+    if hide_nsfw and is_nsfw_labeled(name):
+        return True
+    return False
+
+def should_exclude_file(name: str, hide_nsfw: bool = True) -> bool:
+    if hide_nsfw and is_nsfw_labeled(name):
+        return True
+    return False
 
 def log_message(msg):
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
@@ -166,19 +197,26 @@ def get_pi_model():
             return f.read().strip()
     return "Unknown Model"
 
-def get_subfolders():
+def get_subfolders(cfg=None, hide_nsfw=None):
     """Return a sorted list of subfolders inside IMAGE_DIR."""
     try:
-        folders = [
-            d for d in os.listdir(IMAGE_DIR)
-            if os.path.isdir(os.path.join(IMAGE_DIR, d))
-        ]
+        if hide_nsfw is None:
+            filters = get_content_filter_settings(cfg)
+            hide_nsfw = filters["hide_nsfw"]
+        folders = []
+        for entry in os.listdir(IMAGE_DIR):
+            full_path = os.path.join(IMAGE_DIR, entry)
+            if not os.path.isdir(full_path):
+                continue
+            if should_exclude_folder(entry, hide_nsfw=hide_nsfw):
+                continue
+            folders.append(entry)
         folders.sort(key=lambda x: x.lower())
         return folders
     except Exception:
         return []
 
-def count_files_in_folder(folder_path):
+def count_files_in_folder(folder_path, hide_nsfw=None):
     if not os.path.isdir(folder_path):
         return 0
     cnt = 0
@@ -186,7 +224,12 @@ def count_files_in_folder(folder_path):
         ".png", ".jpg", ".jpeg", ".gif",
         ".mp4", ".mov", ".avi", ".mkv", ".webm"
     )
+    if hide_nsfw is None:
+        filters = get_content_filter_settings()
+        hide_nsfw = filters["hide_nsfw"]
     for f in os.listdir(folder_path):
+        if should_exclude_file(f, hide_nsfw=hide_nsfw):
+            continue
         if f.lower().endswith(valid_ext):
             cnt += 1
     return cnt

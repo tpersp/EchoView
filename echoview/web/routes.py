@@ -21,7 +21,8 @@ from echoview.utils import (
     load_config, save_config, init_config, log_message,
     get_system_stats, get_subfolders, count_files_in_folder,
     get_hostname, get_ip_address, get_pi_model,
-    get_storage_stats, format_bytes,
+    get_storage_stats, format_bytes, get_content_filter_settings,
+    should_exclude_file, should_exclude_folder,
     CONFIG_PATH
 )
 from echoview.git_utils import (
@@ -345,17 +346,22 @@ def move_image():
 @main_bp.route("/upload_media", methods=["GET", "POST"])
 def upload_media():
     cfg = load_config()
+    filter_cfg = get_content_filter_settings(cfg)
+    hide_nsfw = filter_cfg["hide_nsfw"]
     theme = cfg.get("theme", "dark")
     if request.method == "GET":
         sort_opt = request.args.get("sort", "name_asc")
         folder_files = {}
-        subfolders = get_subfolders()
+        subfolders = get_subfolders(cfg=cfg, hide_nsfw=hide_nsfw)
         for sf in subfolders:
             try:
                 folder_path = os.path.join(IMAGE_DIR, sf)
                 files = [
                     f for f in os.listdir(folder_path)
-                    if f.lower().endswith(VALID_MEDIA_EXT)
+                    if (
+                        f.lower().endswith(VALID_MEDIA_EXT)
+                        and not should_exclude_file(f, hide_nsfw=hide_nsfw)
+                    )
                 ]
                 if sort_opt.startswith("name"):
                     files.sort(reverse=(sort_opt == "name_desc"))
@@ -373,6 +379,7 @@ def upload_media():
             folder_files=folder_files,
             sort_option=sort_opt,
             subfolders=subfolders,
+            hide_nsfw=hide_nsfw,
         )
 
     files = request.files.getlist("mediafiles")
@@ -478,57 +485,65 @@ def create_folder():
 def settings():
     cfg = load_config()
     if request.method == "POST":
-        new_theme = request.form.get("theme", "dark")
-        cfg["theme"] = new_theme
-
-        if new_theme == "custom":
-            if "bg_image" in request.files:
+        form_id = request.form.get("form_id", "")
+        if form_id == "theme":
+            new_theme = request.form.get("theme")
+            if new_theme:
+                cfg["theme"] = new_theme
+            if new_theme == "custom" and "bg_image" in request.files:
                 f = request.files["bg_image"]
                 if f and f.filename:
                     f.save(WEB_BG)
-
-
-        if "gui" not in cfg:
-            cfg["gui"] = {}
-        try:
-            cfg["gui"]["background_blur_radius"] = int(request.form.get("background_blur_radius", "20"))
-        except:
-            cfg["gui"]["background_blur_radius"] = 20
-
-        try:
-            cfg["gui"]["background_scale_percent"] = int(request.form.get("background_scale_percent", "100"))
-        except:
-            cfg["gui"]["background_scale_percent"] = 100
-
-        try:
-            cfg["gui"]["foreground_scale_percent"] = int(request.form.get("foreground_scale_percent", "100"))
-        except:
-            cfg["gui"]["foreground_scale_percent"] = 100
-
-        try:
-            cfg["cache_capacity"] = int(request.form.get("cache_capacity", cfg.get("cache_capacity", 15)))
-        except:
-            cfg["cache_capacity"] = cfg.get("cache_capacity", 15)
-        try:
-            cfg["preload_count"] = int(request.form.get("preload_count", cfg.get("preload_count", 1)))
-        except:
-            cfg["preload_count"] = cfg.get("preload_count", 1)
-        if cfg["preload_count"] < 0:
-            cfg["preload_count"] = 0
-
-        save_config(cfg)
+            save_config(cfg)
+        elif form_id == "gui":
+            gui_cfg = cfg.setdefault("gui", {})
+            blur_val = request.form.get("background_blur_radius")
+            if blur_val is not None:
+                try:
+                    gui_cfg["background_blur_radius"] = int(blur_val)
+                except:
+                    pass
+            bg_scale_val = request.form.get("background_scale_percent")
+            if bg_scale_val is not None:
+                try:
+                    gui_cfg["background_scale_percent"] = int(bg_scale_val)
+                except:
+                    pass
+            fg_scale_val = request.form.get("foreground_scale_percent")
+            if fg_scale_val is not None:
+                try:
+                    gui_cfg["foreground_scale_percent"] = int(fg_scale_val)
+                except:
+                    pass
+            cache_val = request.form.get("cache_capacity")
+            if cache_val is not None:
+                try:
+                    cfg["cache_capacity"] = int(cache_val)
+                except:
+                    pass
+            preload_val = request.form.get("preload_count")
+            if preload_val is not None:
+                try:
+                    cfg["preload_count"] = max(0, int(preload_val))
+                except:
+                    pass
+            save_config(cfg)
+        elif form_id == "content_filters":
+            filters = cfg.setdefault("content_filters", {})
+            filters["hide_nsfw"] = "hide_nsfw" in request.form
+            save_config(cfg)
         return redirect(url_for("main.settings"))
 
-    else:
-        cfg = load_config()
-        theme = cfg.get("theme", "dark")
-        return render_template(
-            "settings.html",
-            theme=theme,
-            cfg=cfg,
-            update_branch=UPDATE_BRANCH,
-            version=APP_VERSION
-        )
+    theme = cfg.get("theme", "dark")
+    filter_cfg = get_content_filter_settings(cfg)
+    return render_template(
+        "settings.html",
+        theme=theme,
+        cfg=cfg,
+        filter_cfg=filter_cfg,
+        update_branch=UPDATE_BRANCH,
+        version=APP_VERSION
+    )
 
 @main_bp.route('/toggle_theme', methods=['POST'])
 def toggle_theme():
@@ -704,6 +719,8 @@ def overlay_config():
 @main_bp.route("/", methods=["GET", "POST"])
 def index():
     cfg = load_config()
+    filter_cfg = get_content_filter_settings(cfg)
+    hide_nsfw = filter_cfg["hide_nsfw"]
 
     # Re-detect extended monitors, just to show their current resolution
     ext_mons = detect_monitors_extended()
@@ -772,12 +789,24 @@ def index():
                 rotate_str = request.form.get(pre + "rotate", "0")
                 mixed_str = request.form.get(pre + "mixed_order", "")
                 mixed_list = [x for x in mixed_str.split(",") if x]
+                if mixed_list:
+                    mixed_list = [
+                        x for x in mixed_list
+                        if not should_exclude_folder(x, hide_nsfw=hide_nsfw)
+                    ]
                 new_vid_cat = request.form.get(pre + "video_category", dcfg.get("video_category", ""))
                 shuffle_videos_val = request.form.get(pre + "shuffle_videos", "no")
                 video_mute_val = request.form.get(pre + "video_mute")
                 video_vol_str = request.form.get(pre + "video_volume", str(dcfg.get("video_volume", 100)))
                 video_play_to_end_val = request.form.get(pre + "video_play_to_end")
                 video_max_str = request.form.get(pre + "video_max_seconds", str(dcfg.get("video_max_seconds", 120)))
+
+                if new_cat and should_exclude_folder(new_cat, hide_nsfw=hide_nsfw):
+                    new_cat = ""
+                if new_vid_cat and should_exclude_folder(new_vid_cat, hide_nsfw=hide_nsfw):
+                    new_vid_cat = ""
+                if new_spec and should_exclude_file(new_spec, hide_nsfw=hide_nsfw):
+                    new_spec = ""
 
                 try:
                     new_interval = int(new_interval_s)
@@ -858,22 +887,29 @@ def index():
             return redirect(url_for("main.index"))
 
     # Build folder counts
+    visible_subfolders = get_subfolders(cfg=cfg, hide_nsfw=hide_nsfw)
     folder_counts = {}
-    for sf in get_subfolders():
-        folder_counts[sf] = count_files_in_folder(os.path.join(IMAGE_DIR, sf))
+    for sf in visible_subfolders:
+        folder_counts[sf] = count_files_in_folder(os.path.join(IMAGE_DIR, sf), hide_nsfw=hide_nsfw)
 
     # Collect images for "specific_image" selection
     display_images = {}
     for dname, dcfg in cfg["displays"].items():
         cat = dcfg.get("image_category", "")
-        base_dir = os.path.join(IMAGE_DIR, cat) if cat else IMAGE_DIR
+        if cat and should_exclude_folder(cat, hide_nsfw=hide_nsfw):
+            base_dir = None
+        else:
+            base_dir = os.path.join(IMAGE_DIR, cat) if cat else IMAGE_DIR
         img_list = []
-        if os.path.isdir(base_dir):
+        if base_dir and os.path.isdir(base_dir):
             for fname in os.listdir(base_dir):
                 lf = fname.lower()
-                if lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
-                    rel_path = fname
-                    img_list.append(os.path.join(cat, rel_path) if cat else rel_path)
+                if not lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
+                    continue
+                if should_exclude_file(fname, hide_nsfw=hide_nsfw):
+                    continue
+                rel_path = fname
+                img_list.append(os.path.join(cat, rel_path) if cat else rel_path)
         img_list.sort()
         display_images[dname] = img_list
 
@@ -915,7 +951,7 @@ def index():
     return render_template(
         "index.html",
         cfg=cfg,
-        subfolders=get_subfolders(),
+        subfolders=visible_subfolders,
         folder_counts=folder_counts,
         display_images=display_images,
         cpu=cpu,

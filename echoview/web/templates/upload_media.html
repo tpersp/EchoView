@@ -16,6 +16,11 @@
       <option value="date_asc" {% if sort_option == 'date_asc' %}selected{% endif %}>Date Added (Oldest)</option>
     </select>
   </form>
+  {% if hide_nsfw %}
+  <p style="color:#888; font-size:smaller;">
+    Folders and files containing "nsfw" are hidden. You can adjust this preference in Settings → Content Visibility.
+  </p>
+  {% endif %}
   {% for folder, files in folder_files.items() %}
   <details class="card">
     <summary>{{ folder }}</summary>
