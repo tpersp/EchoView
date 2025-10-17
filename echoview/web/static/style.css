@@ -82,6 +82,32 @@ form input, form select, form button {
   background: var(--input-bg);
   color: var(--text-normal);
 }
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="email"],
+textarea,
+.form-control,
+.form-select {
+  background: var(--input-bg);
+  color: var(--text-normal);
+  border: 1px solid var(--input-border);
+}
+.form-control:focus,
+.form-select:focus {
+  background: var(--input-bg);
+  color: var(--text-normal);
+  border-color: var(--nav-active);
+  box-shadow: 0 0 0 0.2rem rgba(100, 149, 237, 0.25);
+}
+
+.btn {
+  border-radius: 4px;
+  transition: opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+.btn:hover {
+  opacity: 0.9;
+}
 /* Ensure dropdown options are readable in dark mode */
 select option {
   background: var(--input-bg);
@@ -165,6 +191,19 @@ table th, table td {
 }
 table td button {
   margin-right: 4px;
+}
+.table {
+  color: var(--text-normal);
+  background-color: transparent;
+}
+.table th {
+  color: var(--text-normal);
+}
+.table-striped tbody tr:nth-of-type(odd) {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+.table-hover tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
 /* Collapsible sections, used in Spotify page, etc. */
@@ -282,6 +321,26 @@ table td button {
   /* Additional dropdown variables for dark theme */
   --dropdown-bg: #333;
   --dropdown-hover-bg: #444;
+  --btn-primary-bg: #3b82f6;
+  --btn-primary-fg: #ffffff;
+  --btn-primary-border: #2563eb;
+  --btn-outline-warning-fg: #facc15;
+  --btn-outline-warning-border: #facc15;
+  --btn-outline-warning-hover-bg: rgba(250, 204, 21, 0.12);
+  --btn-outline-primary-fg: #60a5fa;
+  --btn-outline-primary-border: #60a5fa;
+  --btn-outline-primary-hover-bg: rgba(96, 165, 250, 0.15);
+  --btn-outline-danger-fg: #f87171;
+  --btn-outline-danger-border: #f87171;
+  --btn-outline-danger-hover-bg: rgba(248, 113, 113, 0.18);
+  --alert-bg: rgba(59, 130, 246, 0.12);
+  --alert-border: #3b82f6;
+  --alert-warning-bg: rgba(250, 204, 21, 0.16);
+  --alert-warning-border: #facc15;
+  --alert-danger-bg: rgba(248, 113, 113, 0.16);
+  --alert-danger-border: #f87171;
+  --alert-info-bg: rgba(96, 165, 250, 0.16);
+  --alert-info-border: #60a5fa;
 }
 
 .light-theme {
@@ -312,6 +371,132 @@ table td button {
   /* Additional dropdown variables for light theme */
   --dropdown-bg: #eee;
   --dropdown-hover-bg: #ccc;
+  --btn-primary-bg: #2563eb;
+  --btn-primary-fg: #ffffff;
+  --btn-primary-border: #1d4ed8;
+  --btn-outline-warning-fg: #b45309;
+  --btn-outline-warning-border: #f59e0b;
+  --btn-outline-warning-hover-bg: rgba(245, 158, 11, 0.15);
+  --btn-outline-primary-fg: #1d4ed8;
+  --btn-outline-primary-border: #2563eb;
+  --btn-outline-primary-hover-bg: rgba(37, 99, 235, 0.12);
+  --btn-outline-danger-fg: #c53030;
+  --btn-outline-danger-border: #f87171;
+  --btn-outline-danger-hover-bg: rgba(248, 113, 113, 0.15);
+  --alert-bg: rgba(37, 99, 235, 0.12);
+  --alert-border: #2563eb;
+  --alert-warning-bg: rgba(245, 158, 11, 0.18);
+  --alert-warning-border: #d97706;
+  --alert-danger-bg: rgba(248, 113, 113, 0.18);
+  --alert-danger-border: #dc2626;
+  --alert-info-bg: rgba(59, 130, 246, 0.18);
+  --alert-info-border: #2563eb;
+}
+
+/* --------------------------------------------------------------
+   Theme-aware overrides for Bootstrap components
+   -------------------------------------------------------------- */
+body.dark-theme .card,
+body.dark-theme .page-section {
+  background-color: var(--card-bg);
+  color: var(--text-normal);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+body.light-theme .card,
+body.light-theme .page-section {
+  background-color: var(--card-bg);
+  color: var(--text-normal);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+body.dark-theme .btn-primary,
+body.light-theme .btn-primary {
+  background-color: var(--btn-primary-bg);
+  border-color: var(--btn-primary-border);
+  color: var(--btn-primary-fg);
+}
+body.dark-theme .btn-primary:hover,
+body.light-theme .btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+body.dark-theme .btn-outline-warning,
+body.light-theme .btn-outline-warning {
+  color: var(--btn-outline-warning-fg);
+  border-color: var(--btn-outline-warning-border);
+}
+body.dark-theme .btn-outline-warning:hover,
+body.light-theme .btn-outline-warning:hover {
+  background-color: var(--btn-outline-warning-hover-bg);
+  color: var(--btn-outline-warning-fg);
+}
+
+body.dark-theme .btn-outline-primary,
+body.light-theme .btn-outline-primary {
+  color: var(--btn-outline-primary-fg);
+  border-color: var(--btn-outline-primary-border);
+}
+body.dark-theme .btn-outline-primary:hover,
+body.light-theme .btn-outline-primary:hover {
+  background-color: var(--btn-outline-primary-hover-bg);
+  color: var(--btn-outline-primary-fg);
+}
+
+body.dark-theme .btn-outline-danger,
+body.light-theme .btn-outline-danger {
+  color: var(--btn-outline-danger-fg);
+  border-color: var(--btn-outline-danger-border);
+}
+body.dark-theme .btn-outline-danger:hover,
+body.light-theme .btn-outline-danger:hover {
+  background-color: var(--btn-outline-danger-hover-bg);
+  color: var(--btn-outline-danger-fg);
+}
+
+body.dark-theme .alert {
+  color: var(--text-normal);
+  background-color: var(--alert-bg);
+  border-color: var(--alert-border);
+}
+body.dark-theme .alert-warning {
+  background-color: var(--alert-warning-bg);
+  border-color: var(--alert-warning-border);
+}
+body.dark-theme .alert-danger {
+  background-color: var(--alert-danger-bg);
+  border-color: var(--alert-danger-border);
+}
+body.dark-theme .alert-info,
+body.dark-theme .alert-success {
+  background-color: var(--alert-info-bg);
+  border-color: var(--alert-info-border);
+}
+
+body.light-theme .alert {
+  color: var(--text-normal);
+  background-color: var(--alert-bg);
+  border-color: var(--alert-border);
+}
+body.light-theme .alert-warning {
+  background-color: var(--alert-warning-bg);
+  border-color: var(--alert-warning-border);
+}
+body.light-theme .alert-danger {
+  background-color: var(--alert-danger-bg);
+  border-color: var(--alert-danger-border);
+}
+body.light-theme .alert-info,
+body.light-theme .alert-success {
+  background-color: var(--alert-info-bg);
+  border-color: var(--alert-info-border);
+}
+
+body.light-theme .table-striped tbody tr:nth-of-type(odd) {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+body.light-theme .table-hover tbody tr:hover {
+  background-color: rgba(37, 99, 235, 0.12);
 }
 
 /* Dropdown for power icon in top nav */
@@ -556,4 +741,3 @@ main.content {
   cursor: pointer;
   color: var(--text-normal);
 }
-
