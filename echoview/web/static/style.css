@@ -113,8 +113,63 @@ select option {
   background: var(--input-bg);
   color: var(--text-normal);
 }
+body.dark-theme option,
+body.dark-theme optgroup {
+  background-color: var(--input-bg);
+  color: var(--text-normal);
+}
+body.light-theme option,
+body.light-theme optgroup {
+  background-color: var(--input-bg);
+  color: var(--text-normal);
+}
 label {
   color: var(--text-normal);
+}
+
+body.dark-theme input[type="text"],
+body.dark-theme input[type="number"],
+body.dark-theme input[type="password"],
+body.dark-theme input[type="email"],
+body.dark-theme input[type="search"],
+body.dark-theme input[type="url"],
+body.dark-theme textarea,
+body.dark-theme select,
+body.dark-theme .form-control,
+body.dark-theme .form-select {
+  background-color: var(--input-bg) !important;
+  color: var(--text-normal) !important;
+  border-color: var(--input-border) !important;
+}
+body.dark-theme .form-control:focus,
+body.dark-theme .form-select:focus {
+  border-color: var(--nav-active) !important;
+  box-shadow: 0 0 0 0.2rem rgba(63, 131, 248, 0.25) !important;
+}
+body.dark-theme .form-control::placeholder,
+body.dark-theme input::placeholder,
+body.dark-theme textarea::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+body.light-theme .form-control,
+body.light-theme .form-select,
+body.light-theme input,
+body.light-theme textarea,
+body.light-theme select {
+  background-color: var(--input-bg) !important;
+  color: var(--text-normal) !important;
+  border-color: var(--input-border) !important;
+}
+body.light-theme .form-control:focus,
+body.light-theme .form-select:focus {
+  border-color: var(--nav-active) !important;
+  box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.25) !important;
+}
+body.light-theme .form-control::placeholder,
+body.light-theme input::placeholder,
+body.light-theme textarea::placeholder {
+  color: rgba(34, 34, 34, 0.6);
 }
 
 /* Container for grouping content (cards, forms, etc.) */
@@ -195,15 +250,20 @@ table td button {
 .table {
   color: var(--text-normal);
   background-color: transparent;
+  border-color: var(--table-border);
 }
 .table th {
   color: var(--text-normal);
+  border-color: var(--table-border);
+}
+.table td {
+  border-color: var(--table-border);
 }
 .table-striped tbody tr:nth-of-type(odd) {
-  background-color: rgba(255, 255, 255, 0.04);
+  background-color: var(--table-row-alt);
 }
 .table-hover tbody tr:hover {
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: var(--table-row-hover);
 }
 
 /* Collapsible sections, used in Spotify page, etc. */
@@ -300,14 +360,16 @@ table td button {
   --nav-active: #444;
   --nav-active-fg: #FFF;
 
-  --text-normal: #FFFFFF;
-  --input-border: #555;
-  --input-bg: #3A3A3A;
-  --section-bg: rgba(255,255,255,0.06);
-  --card-bg: rgba(255,255,255,0.1);
-  --border-muted: #666;
-  --table-head-bg: rgba(255,255,255,0.08);
-  --table-border: #666;
+  --text-normal: #f1f1f1;
+  --input-border: #4f4f4f;
+  --input-bg: #262626;
+  --section-bg: #181818;
+  --card-bg: #202020;
+  --border-muted: #333;
+  --table-head-bg: #242424;
+  --table-border: #303030;
+  --table-row-alt: #1b1b1b;
+  --table-row-hover: #262626;
 
   --collapsible-bg: rgba(255,255,255,0.08);
   --collapsible-hover: rgba(255,255,255,0.15);
@@ -350,14 +412,16 @@ table td button {
   --nav-active: #ddd;
   --nav-active-fg: #111;
 
-  --text-normal: #222;
-  --input-border: #888;
-  --input-bg: #fff;
+  --text-normal: #1f1f1f;
+  --input-border: #b8b8b8;
+  --input-bg: #ffffff;
   --section-bg: #ffffff;
   --card-bg: #fafafa;
-  --border-muted: #ccc;
-  --table-head-bg: #eee;
-  --table-border: #ccc;
+  --border-muted: #dcdcdc;
+  --table-head-bg: #f0f0f0;
+  --table-border: #d6d6d6;
+  --table-row-alt: rgba(0, 0, 0, 0.03);
+  --table-row-hover: rgba(37, 99, 235, 0.12);
 
   --collapsible-bg: #eee;
   --collapsible-hover: #ddd;
