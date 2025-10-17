@@ -266,6 +266,49 @@ table td button {
   background-color: var(--table-row-hover);
 }
 
+body.dark-theme .table {
+  --bs-table-color: var(--text-normal);
+  --bs-table-bg: var(--card-bg);
+  --bs-table-striped-color: var(--text-normal);
+  --bs-table-striped-bg: var(--table-row-alt);
+  --bs-table-hover-color: var(--text-normal);
+  --bs-table-hover-bg: var(--table-row-hover);
+  color: var(--text-normal);
+  border-color: var(--table-border);
+}
+body.dark-theme .table > :not(caption) > * > * {
+  background-color: transparent;
+  border-color: var(--table-border);
+}
+body.dark-theme .table thead,
+body.dark-theme .table thead th {
+  background-color: var(--table-head-bg);
+  color: var(--text-normal);
+}
+body.dark-theme .table code {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-normal);
+}
+
+body.light-theme .table {
+  --bs-table-color: var(--text-normal);
+  --bs-table-bg: var(--card-bg);
+  --bs-table-striped-color: var(--text-normal);
+  --bs-table-striped-bg: var(--table-row-alt);
+  --bs-table-hover-color: var(--text-normal);
+  --bs-table-hover-bg: var(--table-row-hover);
+  border-color: var(--table-border);
+}
+body.light-theme .table > :not(caption) > * > * {
+  background-color: transparent;
+  border-color: var(--table-border);
+}
+body.light-theme .table thead,
+body.light-theme .table thead th {
+  background-color: var(--table-head-bg);
+  color: var(--text-normal);
+}
+
 /* Collapsible sections, used in Spotify page, etc. */
 .collapsible-header {
   cursor: pointer; /* show pointer to indicate clickable */
@@ -383,12 +426,12 @@ table td button {
   /* Additional dropdown variables for dark theme */
   --dropdown-bg: #333;
   --dropdown-hover-bg: #444;
-  --btn-primary-bg: #345f9c;
-  --btn-primary-fg: #f5f8ff;
-  --btn-primary-border: #284a79;
-  --btn-success-bg: #2f855a;
-  --btn-success-fg: #f0fff4;
-  --btn-success-border: #276749;
+  --btn-primary-bg: #1d4ed8;
+  --btn-primary-fg: #f8fafc;
+  --btn-primary-border: #1e40af;
+  --btn-success-bg: #16a34a;
+  --btn-success-fg: #f0fdf4;
+  --btn-success-border: #15803d;
   --btn-outline-warning-fg: #facc15;
   --btn-outline-warning-border: #facc15;
   --btn-outline-warning-hover-bg: rgba(250, 204, 21, 0.12);
@@ -438,12 +481,12 @@ table td button {
   /* Additional dropdown variables for light theme */
   --dropdown-bg: #eee;
   --dropdown-hover-bg: #ccc;
-  --btn-primary-bg: #2b6cb0;
+  --btn-primary-bg: #2563eb;
   --btn-primary-fg: #ffffff;
-  --btn-primary-border: #244f82;
-  --btn-success-bg: #2f855a;
+  --btn-primary-border: #1d4ed8;
+  --btn-success-bg: #22c55e;
   --btn-success-fg: #ffffff;
-  --btn-success-border: #276749;
+  --btn-success-border: #16a34a;
   --btn-outline-warning-fg: #b45309;
   --btn-outline-warning-border: #f59e0b;
   --btn-outline-warning-hover-bg: rgba(245, 158, 11, 0.15);
