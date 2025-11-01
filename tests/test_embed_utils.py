@@ -1,5 +1,6 @@
 import pathlib
 import sys
+from types import SimpleNamespace
 
 import pathlib
 import sys
@@ -111,7 +112,7 @@ def test_build_youtube_live_embed_url():
     assert url == f"https://www.youtube.com/embed/live_stream?channel={channel}"
 
 
-def test_classify_youtube_live_uses_channel_id(monkeypatch):
+def test_classify_youtube_live_prefers_hls(monkeypatch):
     url = "https://www.youtube.com/watch?v=live123abcdE"
 
     def fake_get(endpoint, params=None, timeout=0):
@@ -124,12 +125,34 @@ def test_classify_youtube_live_uses_channel_id(monkeypatch):
             }
         )
 
+    class _DummyYDL:
+        def __init__(self, opts):
+            self.opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def extract_info(self, target, download=False):
+            assert download is False
+            return {
+                "formats": [
+                    {"url": "https://cdn.example.com/live_360.m3u8", "protocol": "m3u8_native", "height": 360},
+                    {"url": "https://cdn.example.com/live_720.m3u8", "protocol": "m3u8_native", "height": 720},
+                ]
+            }
+
     monkeypatch.setattr(embed_utils.requests, "get", fake_get)
+    monkeypatch.setattr(embed_utils, "_YT_DLP_AVAILABLE", True)
+    monkeypatch.setattr(embed_utils, "yt_dlp", SimpleNamespace(YoutubeDL=_DummyYDL))
     meta = embed_utils.classify_url(url)
 
     assert meta.content_type == "live"
+    assert meta.embed_type == "hls"
     assert meta.channel_id == "UC999CHANNELID"
-    assert meta.canonical_url == "https://www.youtube.com/embed/live_stream?channel=UC999CHANNELID"
+    assert meta.canonical_url == "https://cdn.example.com/live_720.m3u8"
 
 
 def test_classify_youtube_live_without_channel_falls_back(monkeypatch):
@@ -145,8 +168,10 @@ def test_classify_youtube_live_without_channel_falls_back(monkeypatch):
         )
 
     monkeypatch.setattr(embed_utils.requests, "get", fake_get)
+    monkeypatch.setattr(embed_utils, "_YT_DLP_AVAILABLE", False)
     meta = embed_utils.classify_url(url)
 
     assert meta.content_type == "live"
+    assert meta.embed_type == "youtube"
     assert meta.channel_id is None
     assert meta.canonical_url == "https://www.youtube.com/embed/livefallback00"

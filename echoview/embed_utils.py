@@ -226,6 +226,57 @@ def build_youtube_live_embed_url(channel_id: str) -> str:
     return f"https://www.youtube.com/embed/live_stream?channel={channel_id}"
 
 
+def _extract_youtube_live_hls(url: str, video_id: Optional[str]) -> Optional[str]:
+    """
+    Attempt to resolve a direct HLS manifest for a live YouTube broadcast.
+    Returns the best .m3u8 URL when available.
+    """
+    if not _YT_DLP_AVAILABLE:
+        return None
+
+    target = url
+    if video_id:
+        target = f"https://www.youtube.com/watch?v={video_id}"
+
+    opts = {
+        "skip_download": True,
+        "quiet": True,
+        "nocheckcertificate": True,
+        "noplaylist": True,
+    }
+    try:  # pragma: no cover - network-less failures handled in tests via monkeypatch
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(target, download=False)
+    except Exception as exc:  # pragma: no cover - error path verified in tests
+        logger.warning("yt_dlp live extraction failed for %s: %s", target, exc)
+        return None
+
+    def _score(fmt: Dict[str, Any]) -> int:
+        height = fmt.get("height") or 0
+        tbr = fmt.get("tbr") or 0
+        return int(height) * 1000 + int(tbr)
+
+    formats = info.get("formats") or []
+    candidates: list[Tuple[int, str]] = []
+    for fmt in formats:
+        fmt_url = fmt.get("url") or ""
+        if not fmt_url:
+            continue
+        protocol = (fmt.get("protocol") or "").lower()
+        ext = (fmt.get("ext") or "").lower()
+        if "m3u8" in protocol or "m3u8" in fmt_url or ext == "m3u8":
+            candidates.append((_score(fmt), fmt_url))
+
+    if not candidates:
+        fallback_url = info.get("url")
+        if isinstance(fallback_url, str) and "m3u8" in fallback_url:
+            return fallback_url
+        return None
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1]
+
+
 def youtube_oembed_lookup(url: str) -> Optional[Dict[str, Any]]:
     """
     Retrieve metadata from the YouTube oEmbed endpoint with basic caching.
@@ -323,7 +374,23 @@ def classify_url(url: str) -> EmbedMetadata:
                         break
 
         canonical: str
+        embed_type = "youtube"
         if content_type == "live":
+            hls_url = _extract_youtube_live_hls(normalized, yt_details["video_id"])
+            if hls_url:
+                return EmbedMetadata(
+                    embed_type="hls",
+                    original_url=normalized,
+                    canonical_url=hls_url,
+                    provider=provider,
+                    title=title or yt_details["video_id"],
+                    content_type=content_type,
+                    video_id=yt_details["video_id"],
+                    playlist_id=yt_details.get("playlist_id"),
+                    channel_id=channel_id,
+                    start_seconds=None,
+                    thumbnail_url=thumbnail,
+                )
             if channel_id:
                 canonical = build_youtube_live_embed_url(channel_id)
             else:
@@ -341,7 +408,7 @@ def classify_url(url: str) -> EmbedMetadata:
             )
 
         return EmbedMetadata(
-            embed_type="youtube",
+            embed_type=embed_type,
             original_url=normalized,
             canonical_url=canonical,
             provider=provider,
