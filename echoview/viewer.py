@@ -518,6 +518,11 @@ class DisplayWindow(QMainWindow):
             return ""
         parsed = urlparse(base_url)
         query = parse_qs(parsed.query, keep_blank_values=True)
+        is_live = (metadata.content_type or "").lower() == "live"
+
+        if is_live:
+            for param in ("list", "index", "start", "t", "feature"):
+                query.pop(param, None)
 
         autoplay = "1" if self.disp_cfg.get("youtube_autoplay", True) else "0"
         mute = "1" if self.disp_cfg.get("youtube_mute", True) else "0"
@@ -539,7 +544,10 @@ class DisplayWindow(QMainWindow):
         query.setdefault("rel", ["0"])
         query.setdefault("modestbranding", ["1"])
         query.setdefault("enablejsapi", ["1"])
-        query.setdefault("feature", ["oembed"])
+        if not is_live:
+            query.setdefault("feature", ["oembed"])
+        else:
+            query.pop("feature", None)
         query["origin"] = ["https://echoview.local"]
 
         new_query = urlencode(query, doseq=True)

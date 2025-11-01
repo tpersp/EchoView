@@ -9,6 +9,7 @@ viewer configuration.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 import time
@@ -39,6 +40,7 @@ YOUTUBE_DOMAINS = {
 OEMBED_ENDPOINT = "https://www.youtube.com/oembed"
 OEMBED_CACHE_TTL = 60 * 60 * 24  # 24 hours
 _oembed_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+logger = logging.getLogger(__name__)
 _cache_lock = threading.Lock()
 
 
@@ -54,6 +56,7 @@ class EmbedMetadata:
     content_type: Optional[str] = None
     video_id: Optional[str] = None
     playlist_id: Optional[str] = None
+    channel_id: Optional[str] = None
     start_seconds: Optional[int] = None
     thumbnail_url: Optional[str] = None
 
@@ -75,6 +78,7 @@ class EmbedMetadata:
             content_type=data.get("content_type"),
             video_id=data.get("video_id"),
             playlist_id=data.get("playlist_id"),
+            channel_id=data.get("channel_id"),
             start_seconds=data.get("start_seconds"),
             thumbnail_url=data.get("thumbnail_url"),
         )
@@ -131,6 +135,7 @@ def parse_youtube_url_details(url: str) -> Dict[str, Any]:
         "playlist_id": None,
         "playlist_index": None,
         "start_seconds": None,
+        "channel_id": None,
     }
     if not parsed.netloc or not _is_youtube_host(parsed.netloc):
         return details
@@ -151,6 +156,12 @@ def parse_youtube_url_details(url: str) -> Dict[str, Any]:
         video_id = _sanitize_youtube_id(path_parts[1])
     elif path_parts and re.match(r"^[0-9A-Za-z_-]{11}$", path_parts[0]):
         video_id = _sanitize_youtube_id(path_parts[0])
+
+    channel_id = None
+    if "channel" in qs and qs["channel"]:
+        channel_candidate = _sanitize_youtube_id(qs["channel"][0])
+        if channel_candidate:
+            channel_id = channel_candidate
 
     if "list" in qs:
         playlist_id = _sanitize_youtube_id(qs["list"][0])
@@ -173,12 +184,21 @@ def parse_youtube_url_details(url: str) -> Dict[str, Any]:
                 if start_seconds is not None:
                     break
 
+    if channel_id is None:
+        for idx, part in enumerate(path_parts):
+            if part.lower() == "channel" and idx + 1 < len(path_parts):
+                channel_candidate = _sanitize_youtube_id(path_parts[idx + 1])
+                if channel_candidate:
+                    channel_id = channel_candidate
+                    break
+
     details.update(
         {
             "video_id": video_id,
             "playlist_id": playlist_id,
             "playlist_index": playlist_index,
             "start_seconds": start_seconds,
+            "channel_id": channel_id,
         }
     )
     return details
@@ -200,6 +220,10 @@ def build_youtube_embed_url(
     query = urlencode(params, doseq=True)
     base = f"https://www.youtube-nocookie.com/embed/{video_id}"
     return f"{base}?{query}" if query else base
+
+
+def build_youtube_live_embed_url(channel_id: str) -> str:
+    return f"https://www.youtube.com/embed/live_stream?channel={channel_id}"
 
 
 def youtube_oembed_lookup(url: str) -> Optional[Dict[str, Any]]:
@@ -274,16 +298,11 @@ def classify_url(url: str) -> EmbedMetadata:
 
     yt_details = parse_youtube_url_details(normalized)
     if yt_details["is_youtube"] and yt_details["video_id"]:
-        canonical = build_youtube_embed_url(
-            yt_details["video_id"],
-            yt_details.get("playlist_id"),
-            yt_details.get("playlist_index"),
-            yt_details.get("start_seconds"),
-        )
         provider = "YouTube"
         title = None
         thumbnail = None
         content_type = "video"
+        channel_id = yt_details.get("channel_id")
 
         data = youtube_oembed_lookup(normalized)
         if data:
@@ -295,6 +314,31 @@ def classify_url(url: str) -> EmbedMetadata:
                 content_type = "playlist"
             if "live" in html or "is_live" in html:
                 content_type = "live"
+            for key in ("author_url", "provider_url"):
+                candidate = data.get(key)
+                if candidate:
+                    extracted = parse_youtube_url_details(candidate).get("channel_id")
+                    if extracted:
+                        channel_id = channel_id or extracted
+                        break
+
+        canonical: str
+        if content_type == "live":
+            if channel_id:
+                canonical = build_youtube_live_embed_url(channel_id)
+            else:
+                canonical = f"https://www.youtube.com/embed/{yt_details['video_id']}"
+                logger.warning(
+                    "Live YouTube embed without channel_id; falling back to video embed for %s",
+                    normalized,
+                )
+        else:
+            canonical = build_youtube_embed_url(
+                yt_details["video_id"],
+                yt_details.get("playlist_id"),
+                yt_details.get("playlist_index"),
+                yt_details.get("start_seconds"),
+            )
 
         return EmbedMetadata(
             embed_type="youtube",
@@ -305,6 +349,7 @@ def classify_url(url: str) -> EmbedMetadata:
             content_type=content_type,
             video_id=yt_details["video_id"],
             playlist_id=yt_details.get("playlist_id"),
+            channel_id=channel_id,
             start_seconds=yt_details.get("start_seconds"),
             thumbnail_url=thumbnail,
         )

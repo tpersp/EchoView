@@ -103,3 +103,50 @@ def test_embed_metadata_roundtrip():
     payload = embed_utils.serialize_embed_metadata(meta)
     restored = embed_utils.deserialize_embed_metadata(payload)
     assert restored == meta
+
+
+def test_build_youtube_live_embed_url():
+    channel = "UC1234567890ABC"
+    url = embed_utils.build_youtube_live_embed_url(channel)
+    assert url == f"https://www.youtube.com/embed/live_stream?channel={channel}"
+
+
+def test_classify_youtube_live_uses_channel_id(monkeypatch):
+    url = "https://www.youtube.com/watch?v=live123abcdE"
+
+    def fake_get(endpoint, params=None, timeout=0):
+        return _FakeResponse(
+            payload={
+                "provider_name": "YouTube",
+                "title": "Live Broadcast",
+                "html": '<iframe src="https://www.youtube.com/embed/live123abcdE" data-is_live="true"></iframe>',
+                "provider_url": "https://www.youtube.com/channel/UC999CHANNELID",
+            }
+        )
+
+    monkeypatch.setattr(embed_utils.requests, "get", fake_get)
+    meta = embed_utils.classify_url(url)
+
+    assert meta.content_type == "live"
+    assert meta.channel_id == "UC999CHANNELID"
+    assert meta.canonical_url == "https://www.youtube.com/embed/live_stream?channel=UC999CHANNELID"
+
+
+def test_classify_youtube_live_without_channel_falls_back(monkeypatch):
+    url = "https://www.youtube.com/watch?v=livefallback00"
+
+    def fake_get(endpoint, params=None, timeout=0):
+        return _FakeResponse(
+            payload={
+                "provider_name": "YouTube",
+                "title": "Mystery Live",
+                "html": '<div class="is_live">Live now</div>',
+            }
+        )
+
+    monkeypatch.setattr(embed_utils.requests, "get", fake_get)
+    meta = embed_utils.classify_url(url)
+
+    assert meta.content_type == "live"
+    assert meta.channel_id is None
+    assert meta.canonical_url == "https://www.youtube.com/embed/livefallback00"

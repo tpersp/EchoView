@@ -73,6 +73,12 @@ Browse to `http://<PI-IP>:8080` to access the interface. You’ll see:
   - Position, size, and color of the overlay
   - Font sizes, clock toggles, etc.
 
+### YouTube Live Streams
+
+- Make sure the YouTube channel you embed has the **Live Streaming** and **Embed Live Streams** permissions enabled; YouTube currently requires account verification and at least 1,000 subscribers before granting these features.
+- Only public or unlisted streams can be embedded. Private broadcasts will refuse to load inside EchoView (or any external player).
+- EchoView automatically uses `https://www.youtube.com/embed/live_stream?channel=CHANNEL_ID` for live events when a channel ID can be determined, and falls back to the standard video embed otherwise.
+
 ### Spotify Integration
 
 In `Configure Spotify`, provide your **Client ID**, **Client Secret**, and **Redirect URI** from the Spotify Developer Dashboard. Then click **Authorize Spotify** to store the OAuth token. You can set one or more displays to `spotify` mode.
