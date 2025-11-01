@@ -62,6 +62,65 @@ for name in [
 qtweb = types.ModuleType("PySide6.QtWebEngineWidgets")
 qtweb.QWebEngineView = type("QWebEngineView", (), {})
 
+qtmultimedia = types.ModuleType("PySide6.QtMultimedia")
+
+
+class _DummyAudioOutput:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def setVolume(self, *args, **kwargs):
+        pass
+
+    def setMuted(self, *args, **kwargs):
+        pass
+
+
+class _DummyMediaPlayer:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def setAudioOutput(self, *args, **kwargs):
+        pass
+
+    def setVideoOutput(self, *args, **kwargs):
+        pass
+
+    def setSource(self, *args, **kwargs):
+        pass
+
+    def play(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+qtmultimedia.QAudioOutput = _DummyAudioOutput
+qtmultimedia.QMediaPlayer = _DummyMediaPlayer
+
+qtmultimedia_widgets = types.ModuleType("PySide6.QtMultimediaWidgets")
+
+
+class _DummyVideoWidget:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def hide(self):
+        pass
+
+    def show(self):
+        pass
+
+    def setGeometry(self, *args, **kwargs):
+        pass
+
+    def lower(self):
+        pass
+
+
+qtmultimedia_widgets.QVideoWidget = _DummyVideoWidget
+
 spotipy = types.ModuleType("spotipy")
 spotipy.Spotify = type("Spotify", (), {})
 oauth2 = types.ModuleType("spotipy.oauth2")
@@ -73,6 +132,8 @@ sys.modules.setdefault("PySide6.QtCore", qtcore)
 sys.modules.setdefault("PySide6.QtGui", qtgui)
 sys.modules.setdefault("PySide6.QtWidgets", qtwidgets)
 sys.modules.setdefault("PySide6.QtWebEngineWidgets", qtweb)
+sys.modules.setdefault("PySide6.QtMultimedia", qtmultimedia)
+sys.modules.setdefault("PySide6.QtMultimediaWidgets", qtmultimedia_widgets)
 sys.modules.setdefault("spotipy", spotipy)
 sys.modules.setdefault("spotipy.oauth2", oauth2)
 

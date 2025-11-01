@@ -35,6 +35,11 @@ def init_config():
                     "mixed_folders": [],
                     "rotate": 0,
                     "web_url": "",
+                    "embed_metadata": None,
+                    "youtube_autoplay": True,
+                    "youtube_mute": True,
+                    "youtube_captions": False,
+                    "youtube_quality": "default",
                     "spotify_info_position": "bottom-center",
                     "spotify_show_progress": False,
                     "spotify_progress_position": "bottom-center",   # New: progress bar location setting
@@ -106,7 +111,10 @@ def load_config():
     if not os.path.exists(CONFIG_PATH):
         init_config()
     with open(CONFIG_PATH, "r") as f:
-        return json.load(f)
+        cfg = json.load(f)
+    if upgrade_config(cfg):
+        save_config(cfg)
+    return cfg
 
 def save_config(cfg):
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
@@ -204,3 +212,28 @@ def count_files_in_folder(folder_path):
             cnt += 1
     return cnt
 
+
+def upgrade_config(cfg):
+    """
+    Ensure newer configuration keys exist when loading viewerconfig.json from
+    earlier EchoView releases.
+    """
+    changed = False
+    displays = cfg.get("displays", {})
+    for dcfg in displays.values():
+        if "embed_metadata" not in dcfg:
+            dcfg["embed_metadata"] = None
+            changed = True
+        if "youtube_autoplay" not in dcfg:
+            dcfg["youtube_autoplay"] = True
+            changed = True
+        if "youtube_mute" not in dcfg:
+            dcfg["youtube_mute"] = True
+            changed = True
+        if "youtube_captions" not in dcfg:
+            dcfg["youtube_captions"] = False
+            changed = True
+        if "youtube_quality" not in dcfg:
+            dcfg["youtube_quality"] = "default"
+            changed = True
+    return changed

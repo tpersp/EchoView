@@ -18,6 +18,7 @@ import subprocess
 import shutil
 from datetime import datetime
 from collections import OrderedDict
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl
 from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
@@ -25,11 +26,14 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QProgressBar,
     QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
 )
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from spotipy.oauth2 import SpotifyOAuth
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
 from echoview.utils import load_config, save_config, log_message, get_ip_address
+from echoview.embed_utils import deserialize_embed_metadata, EmbedMetadata
 
 
 # --- Custom label for negative (difference) text drawing ---
@@ -168,6 +172,15 @@ class DisplayWindow(QMainWindow):
         self.web_view = QWebEngineView(self.main_widget)
         self.web_view.hide()
 
+        # Dedicated HLS playback components (hidden unless needed)
+        self.hls_video_widget = QVideoWidget(self.main_widget)
+        self.hls_video_widget.hide()
+        self.hls_audio_output = QAudioOutput(self)
+        self.hls_audio_output.setVolume(1.0)
+        self.hls_player = QMediaPlayer(self)
+        self.hls_player.setAudioOutput(self.hls_audio_output)
+        self.hls_player.setVideoOutput(self.hls_video_widget)
+
         # Timers
         self.slideshow_timer = QTimer(self)
         self.slideshow_timer.timeout.connect(self.next_image)
@@ -207,6 +220,9 @@ class DisplayWindow(QMainWindow):
         if self.web_view.isVisible():
             self.web_view.setGeometry(rect)
             self.web_view.lower()
+        if self.hls_video_widget.isVisible():
+            self.hls_video_widget.setGeometry(rect)
+            self.hls_video_widget.lower()
         self.bg_label.lower()
 
         # Position Spotify info label – its text box spans nearly the full screen width.
@@ -418,6 +434,72 @@ class DisplayWindow(QMainWindow):
         # Reposition the Spotify progress bar, if visible
         self._position_spotify_progress_bar(rect, margin)
 
+    def _stop_hls_playback(self) -> None:
+        """Stop and hide the dedicated HLS player."""
+        try:
+            self.hls_player.stop()
+        except Exception:
+            pass
+        self.hls_video_widget.hide()
+
+    def _play_hls_stream(self, url: str) -> None:
+        """Play an HLS stream using the Qt multimedia stack."""
+        if not url:
+            self._stop_hls_playback()
+            return
+        self.web_view.hide()
+        self.hls_video_widget.show()
+        self.hls_player.setSource(QUrl(url))
+        self.hls_player.play()
+
+    def _load_web_url(self, url: str) -> None:
+        """Load a URL (or placeholder) into the embedded browser."""
+        self._stop_hls_playback()
+        if url:
+            self.web_view.load(QUrl(url))
+        else:
+            placeholder = (
+                "<html><body style='background:#000;color:#fff;"
+                "display:flex;align-items:center;justify-content:center;"
+                "font-family:sans-serif;'>No URL configured.</body></html>"
+            )
+            self.web_view.setHtml(placeholder, QUrl("https://echoview.local/placeholder"))
+        self.web_view.show()
+
+    def _build_youtube_embed_url(self, metadata: EmbedMetadata) -> str:
+        """
+        Apply user preferences (autoplay, mute, captions, quality) to the
+        canonical YouTube embed URL derived during detection.
+        """
+        base_url = metadata.canonical_url or metadata.original_url or self.disp_cfg.get("web_url", "")
+        if not base_url:
+            return ""
+        parsed = urlparse(base_url)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+
+        autoplay = "1" if self.disp_cfg.get("youtube_autoplay", True) else "0"
+        mute = "1" if self.disp_cfg.get("youtube_mute", True) else "0"
+        query["autoplay"] = [autoplay]
+        query["mute"] = [mute]
+        if self.disp_cfg.get("youtube_captions", False):
+            query["cc_load_policy"] = ["1"]
+        else:
+            query.pop("cc_load_policy", None)
+
+        quality = self.disp_cfg.get("youtube_quality", "default")
+        if quality and quality != "default":
+            query["vq"] = [quality]
+        else:
+            query.pop("vq", None)
+
+        # Reasonable defaults to keep the player inline without recommended videos.
+        query.setdefault("playsinline", ["1"])
+        query.setdefault("rel", ["0"])
+        query.setdefault("modestbranding", ["1"])
+
+        new_query = urlencode(query, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
+
         if hasattr(self, "overlay_config") and self.clock_label.isVisible():
             pos = self.overlay_config.get("clock_position", "bottom-center")
             self._place_overlay_label(self.clock_label, pos, rect, 0)
@@ -487,6 +569,9 @@ class DisplayWindow(QMainWindow):
     def reload_settings(self):
         self.stop_current_video()
         self.cfg = load_config()
+        displays = self.cfg.get("displays", {})
+        if self.disp_name in displays:
+            self.disp_cfg = displays[self.disp_name]
         if "overlay" in self.disp_cfg:
             over = self.disp_cfg["overlay"]
         else:
@@ -540,6 +625,7 @@ class DisplayWindow(QMainWindow):
         interval_s = self.disp_cfg.get("image_interval", 60)
         self.current_mode = self.disp_cfg.get("mode", "random_image")
         if self.current_mode == "spotify":
+            self._stop_hls_playback()
             interval_s = 5
             if self.disp_cfg.get("spotify_show_progress", False):
                 self.spotify_progress_bar.show()
@@ -576,19 +662,32 @@ class DisplayWindow(QMainWindow):
             self.slideshow_timer.setInterval(interval_s * 1000)
             self.slideshow_timer.start()
         elif self.current_mode == "web_page":
-            url = self.disp_cfg.get("web_url", "")
-            if url:
-                self.web_view.load(QUrl(url))
-            self.web_view.show()
+            metadata = deserialize_embed_metadata(self.disp_cfg.get("embed_metadata"))
+            if metadata and metadata.embed_type == "hls":
+                hls_url = metadata.canonical_url or metadata.original_url or self.disp_cfg.get("web_url", "")
+                self._play_hls_stream(hls_url)
+            else:
+                target_url = ""
+                if metadata and metadata.embed_type == "youtube":
+                    target_url = self._build_youtube_embed_url(metadata)
+                    if not target_url:
+                        target_url = metadata.canonical_url or metadata.original_url or ""
+                elif metadata and metadata.canonical_url:
+                    target_url = metadata.canonical_url
+                if not target_url:
+                    target_url = self.disp_cfg.get("web_url", "")
+                self._load_web_url(target_url)
             self.spotify_progress_bar.hide()
             self.spotify_progress_timer.stop()
             self.slideshow_timer.stop()
         elif self.current_mode == "videos":
+            self._stop_hls_playback()
             self.web_view.hide()
             self.spotify_progress_bar.hide()
             self.spotify_progress_timer.stop()
             self.slideshow_timer.stop()
         else:
+            self._stop_hls_playback()
             self.spotify_progress_bar.hide()
             self.spotify_progress_timer.stop()
             self.web_view.hide()

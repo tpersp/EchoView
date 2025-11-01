@@ -396,3 +396,131 @@ document.addEventListener('click', (e) => {
     });
   }
 });
+
+// ---- Web embed detection ----
+function escapeHtml(str) {
+  if (str === null || str === undefined) {
+    return "";
+  }
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function capitalizeFirst(str) {
+  if (!str) return "";
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function renderEmbedMetadata(container, meta) {
+  if (!container) return;
+  if (!meta) {
+    container.innerHTML = '<div style="font-style:italic;">Enter a URL and refresh metadata.</div>';
+    return;
+  }
+  let html = "";
+  if (meta.title) {
+    html += `<div><strong>${escapeHtml(meta.title)}</strong></div>`;
+  }
+  const provider = escapeHtml(meta.provider || "Unknown provider");
+  const typeStr = meta.content_type ? ` &mdash; ${escapeHtml(capitalizeFirst(meta.content_type))}` : "";
+  html += `<div>${provider}${typeStr}</div>`;
+  if (meta.thumbnail_url) {
+    const safeThumb = encodeURI(meta.thumbnail_url);
+    html += `<div style="margin-top:6px;"><img src="${safeThumb}" alt="thumbnail" style="max-width:200px; border-radius:4px;"></div>`;
+  }
+  if (meta.canonical_url) {
+    html += `<div style="margin-top:6px;"><code style="font-size:0.85em;">${escapeHtml(meta.canonical_url)}</code></div>`;
+  }
+  container.innerHTML = html;
+}
+
+function toggleYoutubeOptions(display, embedType) {
+  const container = document.getElementById(`${display}_youtube_controls`);
+  if (!container) return;
+  container.style.display = embedType === "youtube" ? "flex" : "none";
+  if (embedType === "youtube") {
+    container.style.flexWrap = "wrap";
+    container.style.justifyContent = "center";
+    container.style.gap = "10px";
+  }
+}
+
+function setEmbedStatus(display, message, isError = false) {
+  const statusEl = document.getElementById(`${display}_embed_status`);
+  const errorEl = document.getElementById(`${display}_embed_error`);
+  if (statusEl) {
+    statusEl.textContent = message;
+  }
+  if (errorEl) {
+    errorEl.textContent = isError ? message : "";
+    if (!isError) {
+      errorEl.textContent = "";
+    }
+  }
+}
+
+function refreshEmbedMetadata(display, url) {
+  const metaContainer = document.getElementById(`${display}_embed_metadata`);
+  if (!url) {
+    renderEmbedMetadata(metaContainer, null);
+    toggleYoutubeOptions(display, "iframe");
+    setEmbedStatus(display, "No URL provided");
+    return;
+  }
+  setEmbedStatus(display, "Detecting…");
+  fetch("/embed/refresh", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ display, url })
+  })
+    .then(resp => resp.json())
+    .then(data => {
+      if (!data.ok) {
+        setEmbedStatus(display, "Detection failed", true);
+        toggleYoutubeOptions(display, "iframe");
+        if (metaContainer) {
+          metaContainer.innerHTML = "<div style='font-style:italic;color:#ff6666;'>Detection failed.</div>";
+        }
+        return;
+      }
+      const embedType = data.embed_type || "iframe";
+      setEmbedStatus(display, `${embedType.charAt(0).toUpperCase()}${embedType.slice(1)} detected`);
+      renderEmbedMetadata(metaContainer, data.metadata);
+      toggleYoutubeOptions(display, embedType);
+    })
+    .catch(err => {
+      console.error("Embed detection error", err);
+      setEmbedStatus(display, "Detection failed", true);
+      if (metaContainer) {
+        metaContainer.innerHTML = "<div style='font-style:italic;color:#ff6666;'>Detection failed.</div>";
+      }
+      toggleYoutubeOptions(display, "iframe");
+    });
+}
+
+function initWebEmbedControls() {
+  document.querySelectorAll(".web-url-input").forEach(input => {
+    const display = input.dataset.display;
+    if (!display) return;
+    const button = document.querySelector(`.refresh-embed-btn[data-display="${display}"]`);
+    const runRefresh = (force = false) => {
+      const currentUrl = input.value.trim();
+      if (!force && input.dataset.lastUrl === currentUrl) {
+        return;
+      }
+      input.dataset.lastUrl = currentUrl;
+      refreshEmbedMetadata(display, currentUrl);
+    };
+    if (button) {
+      button.addEventListener("click", () => runRefresh(true));
+    }
+    input.addEventListener("change", () => runRefresh(false));
+    input.addEventListener("blur", () => runRefresh(false));
+    input.dataset.lastUrl = input.value.trim();
+  });
+}
+document.addEventListener("DOMContentLoaded", initWebEmbedControls);

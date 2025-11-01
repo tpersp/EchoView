@@ -24,6 +24,7 @@ from echoview.utils import (
     get_storage_stats, format_bytes,
     CONFIG_PATH
 )
+from echoview import embed_utils
 
 # Supported media file extensions for the upload/file-manager features.
 VALID_MEDIA_EXT = (
@@ -178,6 +179,62 @@ def list_monitors():
 @main_bp.route("/list_folders")
 def list_folders():
     return jsonify(get_subfolders())
+
+
+@main_bp.route("/embed/refresh", methods=["POST"])
+def refresh_embed():
+    payload = request.get_json(silent=True) or {}
+    display = payload.get("display")
+    url = (payload.get("url") or "").strip()
+    cfg = load_config()
+
+    if not display:
+        return jsonify({"ok": False, "error": "missing_display"}), 400
+    displays = cfg.get("displays", {})
+    if display not in displays:
+        return jsonify({"ok": False, "error": "unknown_display"}), 404
+
+    metadata = None
+    if url:
+        try:
+            metadata = embed_utils.classify_url(url)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            log_message(f"Embed classification failed for {url}: {exc}")
+            return jsonify({"ok": False, "error": "classification_failed"}), 500
+
+    display_cfg = displays[display]
+    display_cfg["web_url"] = url
+    display_cfg["embed_metadata"] = embed_utils.serialize_embed_metadata(metadata)
+
+    if url and cfg.get("saved_websites"):
+        enriched = None
+        if metadata:
+            enriched = {
+                "url": url,
+                "title": metadata.title,
+                "provider": metadata.provider,
+                "embed_type": metadata.embed_type,
+                "metadata": embed_utils.serialize_embed_metadata(metadata),
+            }
+        for idx, entry in enumerate(cfg["saved_websites"]):
+            if (entry == url) or (isinstance(entry, dict) and entry.get("url") == url):
+                cfg["saved_websites"][idx] = enriched if enriched else url
+                break
+
+    save_config(cfg)
+
+    response = {
+        "ok": True,
+        "embed_type": metadata.embed_type if metadata else "iframe",
+        "metadata": display_cfg["embed_metadata"],
+        "options": {
+            "youtube_autoplay": display_cfg.get("youtube_autoplay", True),
+            "youtube_mute": display_cfg.get("youtube_mute", True),
+            "youtube_captions": display_cfg.get("youtube_captions", False),
+            "youtube_quality": display_cfg.get("youtube_quality", "default"),
+        },
+    }
+    return jsonify(response)
 
 @main_bp.route("/images/<path:filename>")
 def serve_image(filename):
@@ -685,18 +742,54 @@ def index():
                 except:
                     new_rotate = 0
 
+                old_url = dcfg.get("web_url", "").strip()
+                new_url = request.form.get(pre + "web_url", dcfg.get("web_url", ""))
+
                 dcfg["mode"] = new_mode
                 dcfg["image_interval"] = new_interval
                 dcfg["image_category"] = new_cat
                 dcfg["shuffle_mode"] = (shuffle_val == "yes")
                 dcfg["specific_image"] = new_spec
                 dcfg["rotate"] = new_rotate
-                dcfg["web_url"] = request.form.get(pre + "web_url", dcfg.get("web_url", ""))
+                dcfg["web_url"] = new_url
+                dcfg["youtube_autoplay"] = True if request.form.get(pre + "youtube_autoplay") else False
+                dcfg["youtube_mute"] = True if request.form.get(pre + "youtube_mute") else False
+                dcfg["youtube_captions"] = True if request.form.get(pre + "youtube_captions") else False
+                dcfg["youtube_quality"] = request.form.get(pre + "youtube_quality", dcfg.get("youtube_quality", "default")) or "default"
+
+                url_stripped = new_url.strip()
+                metadata_obj = None
+                needs_refresh = url_stripped != old_url or not dcfg.get("embed_metadata")
+                if needs_refresh:
+                    if url_stripped:
+                        try:
+                            metadata_obj = embed_utils.classify_url(url_stripped)
+                        except Exception as exc:  # pragma: no cover
+                            log_message(f"Embed classification failed during save for {url_stripped}: {exc}")
+                            metadata_obj = None
+                    dcfg["embed_metadata"] = embed_utils.serialize_embed_metadata(metadata_obj)
+                else:
+                    metadata_obj = embed_utils.deserialize_embed_metadata(dcfg.get("embed_metadata"))
+
                 if request.form.get(pre + "save_web"):
                     cfg.setdefault("saved_websites", [])
-                    url = dcfg["web_url"].strip()
-                    if url and url not in cfg["saved_websites"]:
-                        cfg["saved_websites"].append(url)
+                    if url_stripped:
+                        existing_entries = cfg["saved_websites"]
+                        already_present = any(
+                            (entry == url_stripped)
+                            or (isinstance(entry, dict) and entry.get("url") == url_stripped)
+                            for entry in existing_entries
+                        )
+                        if not already_present:
+                            entry = {"url": url_stripped}
+                            if metadata_obj:
+                                entry.update({
+                                    "title": metadata_obj.title,
+                                    "provider": metadata_obj.provider,
+                                    "embed_type": metadata_obj.embed_type,
+                                    "metadata": embed_utils.serialize_embed_metadata(metadata_obj),
+                                })
+                            existing_entries.append(entry if entry.get("metadata") else url_stripped)
 
                 # If Spotify, store extras
                 if new_mode == "spotify":

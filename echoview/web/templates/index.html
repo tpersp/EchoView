@@ -243,6 +243,8 @@
               box below to remember the URL for future use.
             #}
             <input type="text"
+                   class="web-url-input"
+                   data-display="{{ dname }}"
                    name="{{ dname }}_web_url"
                    list="{{ dname }}_saved_sites"
                    value="{{ dcfg.web_url|default('') }}"
@@ -250,11 +252,97 @@
             <datalist id="{{ dname }}_saved_sites">
               {% if cfg.saved_websites is defined %}
                 {% for site in cfg.saved_websites %}
-                  <option value="{{ site }}">{{ site }}</option>
+                  {% if site is string %}
+                    <option value="{{ site }}">{{ site }}</option>
+                  {% elif site.url is defined %}
+                    {% set label = site.title or site.provider or site.url %}
+                    <option value="{{ site.url }}">{{ label }}</option>
+                  {% else %}
+                    {% set fallback_url = site.get('url', '') %}
+                    {% set label = site.get('title', site.get('provider', fallback_url)) %}
+                    <option value="{{ fallback_url }}">{{ label }}</option>
+                  {% endif %}
                 {% endfor %}
               {% endif %}
             </datalist>
-            <label style="display:block; margin-top:8px; color: var(--text-normal);">
+            <div style="margin-top:8px; display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap;">
+              <button type="button"
+                      class="button small refresh-embed-btn"
+                      data-display="{{ dname }}">Refresh Metadata</button>
+              <span id="{{ dname }}_embed_status" class="embed-status">
+                {% set meta = dcfg.embed_metadata %}
+                {% if meta %}
+                  {{ meta.embed_type|default('iframe')|capitalize }} detected
+                {% else %}
+                  No metadata cached
+                {% endif %}
+              </span>
+              <span id="{{ dname }}_embed_error" class="embed-error" style="color:#ff6666;"></span>
+            </div>
+            <div id="{{ dname }}_embed_metadata" class="embed-metadata" style="margin-top:10px; color: var(--text-normal);">
+              {% if meta %}
+                {% if meta.title %}
+                  <div><strong>{{ meta.title }}</strong></div>
+                {% endif %}
+                <div>
+                  {{ meta.provider|default('Unknown provider') }}
+                  {% if meta.content_type %} &mdash; {{ meta.content_type|capitalize }}{% endif %}
+                </div>
+                {% if meta.thumbnail_url %}
+                  <div style="margin-top:6px;">
+                    <img src="{{ meta.thumbnail_url }}" alt="thumbnail" style="max-width:200px; border-radius:4px;">
+                  </div>
+                {% endif %}
+                {% if meta.canonical_url %}
+                  <div style="margin-top:6px;"><code style="font-size:0.85em;">{{ meta.canonical_url }}</code></div>
+                {% endif %}
+              {% else %}
+                <div style="font-style:italic;">Enter a URL and refresh metadata.</div>
+              {% endif %}
+            </div>
+            <div id="{{ dname }}_youtube_controls"
+                 class="youtube-options"
+                 data-display="{{ dname }}"
+                 style="margin-top:12px; {% if meta and meta.embed_type == 'youtube' %}display:flex; flex-wrap:wrap; justify-content:center; gap:10px;{% else %}display:none;{% endif %}">
+              <div style="font-weight:bold; margin-bottom:6px;">YouTube Playback Options</div>
+              <label style="margin-right:12px;">
+                <input type="checkbox"
+                       name="{{ dname }}_youtube_autoplay"
+                       {% if dcfg.youtube_autoplay %}checked{% endif %}>
+                Autoplay
+              </label>
+              <label style="margin-right:12px;">
+                <input type="checkbox"
+                       name="{{ dname }}_youtube_mute"
+                       {% if dcfg.youtube_mute %}checked{% endif %}>
+                Mute on load
+              </label>
+              <label style="margin-right:12px;">
+                <input type="checkbox"
+                       name="{{ dname }}_youtube_captions"
+                       {% if dcfg.youtube_captions %}checked{% endif %}>
+                Closed captions
+              </label>
+              <label style="margin-right:12px;">
+                Quality:
+                <select name="{{ dname }}_youtube_quality">
+                  {% set qual = dcfg.youtube_quality|default('default') %}
+                  {% set options = [
+                    ('default', 'Default'),
+                    ('small', '144p'),
+                    ('medium', '360p'),
+                    ('large', '480p'),
+                    ('hd720', '720p'),
+                    ('hd1080', '1080p'),
+                    ('highres', 'Highest available')
+                  ] %}
+                  {% for qvalue, qlabel in options %}
+                    <option value="{{ qvalue }}" {% if qual == qvalue %}selected{% endif %}>{{ qlabel }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <label style="display:block; margin-top:10px; color: var(--text-normal);">
               <input type="checkbox" name="{{ dname }}_save_web" value="1"> Save this URL
             </label>
             <small style="display:block; margin-top:5px; color: var(--text-normal);">

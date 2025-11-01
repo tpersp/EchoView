@@ -3,22 +3,32 @@ REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "echoview"))
 import types
-flask = types.ModuleType("flask")
-class DummyBlueprint:
-    def __init__(self, *a, **k): pass
-    def route(self, *a, **k):
-        def decorator(f):
-            return f
-        return decorator
-flask.Blueprint = DummyBlueprint
-flask.request = object()
-flask.redirect = lambda *a, **k: None
-flask.url_for = lambda *a, **k: ""
-flask.render_template = lambda *a, **k: ""
-flask.send_from_directory = lambda *a, **k: ""
-flask.send_file = lambda *a, **k: ""
-flask.jsonify = lambda *a, **k: {}
-sys.modules.setdefault("flask", flask)
+
+try:
+    import flask  # noqa: F401
+except ImportError:
+    flask = types.ModuleType("flask")
+
+    class DummyBlueprint:
+        def __init__(self, *a, **k):
+            pass
+
+        def route(self, *a, **k):
+            def decorator(f):
+                return f
+
+            return decorator
+
+    flask.Blueprint = DummyBlueprint
+    flask.request = object()
+    flask.redirect = lambda *a, **k: None
+    flask.url_for = lambda *a, **k: ""
+    flask.render_template = lambda *a, **k: ""
+    flask.send_from_directory = lambda *a, **k: ""
+    flask.send_file = lambda *a, **k: ""
+    flask.jsonify = lambda *a, **k: {}
+    sys.modules.setdefault("flask", flask)
+
 sys.modules.setdefault("requests", types.ModuleType("requests"))
 sys.modules.setdefault("psutil", types.ModuleType("psutil"))
 import pytest
