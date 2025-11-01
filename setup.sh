@@ -114,7 +114,7 @@ apt-get install -y \
   raspi-config \
   openbox \
   picom \
-  conky \
+  conky-all \
   python3-tk \
   git \
   libxcb-cursor0 \
