@@ -1,7 +1,15 @@
 import pathlib
 import sys
 
+import pathlib
+import sys
+from urllib.parse import urlparse, parse_qs
+
 import pytest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -63,7 +71,15 @@ def test_classify_youtube_url_uses_oembed(monkeypatch):
 
     assert meta.embed_type == "youtube"
     assert meta.video_id == "abc123def45"
-    assert meta.canonical_url.startswith("https://www.youtube-nocookie.com/embed/abc123def45")
+    parsed = urlparse(meta.canonical_url)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "www.youtube-nocookie.com"
+    assert parsed.path == "/embed/abc123def45"
+    query = parse_qs(parsed.query)
+    assert query.get("feature") == ["oembed"]
+    assert query.get("enablejsapi") == ["1"]
+    assert query.get("playsinline") == ["1"]
+    assert query.get("origin") == ["https://www.youtube.com"]
     assert meta.provider == "YouTube"
     assert meta.title == "Sample Video"
     assert meta.thumbnail_url.endswith("default.jpg")
