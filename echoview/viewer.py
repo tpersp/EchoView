@@ -10,6 +10,7 @@ import sys
 import os
 import random
 import time
+import html
 import requests
 import spotipy
 import tempfile
@@ -466,6 +467,47 @@ class DisplayWindow(QMainWindow):
             self.web_view.setHtml(placeholder, QUrl("https://echoview.local/placeholder"))
         self.web_view.show()
 
+    def _load_youtube_embed(self, metadata: EmbedMetadata) -> None:
+        """Render a YouTube embed using an iframe wrapper with autoplay allowances."""
+        self._stop_hls_playback()
+        embed_url = self._build_youtube_embed_url(metadata) or metadata.canonical_url or metadata.original_url
+        if not embed_url:
+            self._load_web_url(self.disp_cfg.get("web_url", ""))
+            return
+        escaped_url = html.escape(embed_url, quote=True)
+        html_doc = f"""<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+      html, body {{
+        margin: 0;
+        padding: 0;
+        background-color: #000;
+        height: 100%;
+        overflow: hidden;
+      }}
+      iframe {{
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }}
+    </style>
+  </head>
+  <body>
+    <iframe
+      src="{escaped_url}"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allowfullscreen>
+    </iframe>
+  </body>
+</html>"""
+        self.web_view.setHtml(html_doc, QUrl("https://echoview.local/youtube"))
+        self.web_view.show()
+
     def _build_youtube_embed_url(self, metadata: EmbedMetadata) -> str:
         """
         Apply user preferences (autoplay, mute, captions, quality) to the
@@ -667,16 +709,15 @@ class DisplayWindow(QMainWindow):
                 hls_url = metadata.canonical_url or metadata.original_url or self.disp_cfg.get("web_url", "")
                 self._play_hls_stream(hls_url)
             else:
-                target_url = ""
                 if metadata and metadata.embed_type == "youtube":
-                    target_url = self._build_youtube_embed_url(metadata)
+                    self._load_youtube_embed(metadata)
+                else:
+                    target_url = ""
+                    if metadata and metadata.canonical_url:
+                        target_url = metadata.canonical_url
                     if not target_url:
-                        target_url = metadata.canonical_url or metadata.original_url or ""
-                elif metadata and metadata.canonical_url:
-                    target_url = metadata.canonical_url
-                if not target_url:
-                    target_url = self.disp_cfg.get("web_url", "")
-                self._load_web_url(target_url)
+                        target_url = self.disp_cfg.get("web_url", "")
+                    self._load_web_url(target_url)
             self.spotify_progress_bar.hide()
             self.spotify_progress_timer.stop()
             self.slideshow_timer.stop()
