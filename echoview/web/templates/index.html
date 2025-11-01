@@ -24,7 +24,7 @@
       {% for dname, dcfg in cfg.displays.items() %}
       <div class="col d-flex">
         <div class="card h-100 flex-fill text-center">
-        <h3>{{ dname }} ({{ monitors[dname].resolution }})</h3>
+        <h3>{{ dname }} ({{ monitors.get(dname, {}).get('resolution', 'Unknown') }})</h3>
         <!-- Display Settings for this monitor -->
         <div>
           <!-- Mode -->

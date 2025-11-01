@@ -102,7 +102,8 @@ apt-get install -y \
   lightdm-gtk-greeter \
   accountsservice \
   dbus-x11 \
-  policykit-1 \
+  polkitd \
+  pkexec \
   xorg \
   x11-xserver-utils \
   python3 \

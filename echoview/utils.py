@@ -87,6 +87,20 @@ def init_config():
             }
         }
         save_config(default_cfg)
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            cfg = json.load(f)
+    except Exception:
+        return
+
+    if "displays" in cfg and len(cfg["displays"]) > 1:
+        removed = False
+        for key in list(cfg["displays"].keys()):
+            if key.lower() in ("display0", "default"):
+                del cfg["displays"][key]
+                removed = True
+        if removed:
+            save_config(cfg)
 
 def load_config():
     if not os.path.exists(CONFIG_PATH):
