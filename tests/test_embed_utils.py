@@ -3,7 +3,7 @@ import sys
 
 import pathlib
 import sys
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse
 
 import pytest
 
@@ -75,11 +75,6 @@ def test_classify_youtube_url_uses_oembed(monkeypatch):
     assert parsed.scheme == "https"
     assert parsed.netloc == "www.youtube-nocookie.com"
     assert parsed.path == "/embed/abc123def45"
-    query = parse_qs(parsed.query)
-    assert query.get("feature") == ["oembed"]
-    assert query.get("enablejsapi") == ["1"]
-    assert query.get("playsinline") == ["1"]
-    assert query.get("origin") == ["https://www.youtube.com"]
     assert meta.provider == "YouTube"
     assert meta.title == "Sample Video"
     assert meta.thumbnail_url.endswith("default.jpg")

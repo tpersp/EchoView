@@ -197,10 +197,6 @@ def build_youtube_embed_url(
             params["index"] = max(0, playlist_index)
     if start_seconds:
         params["start"] = max(0, start_seconds)
-    params.setdefault("feature", "oembed")
-    params.setdefault("enablejsapi", "1")
-    params.setdefault("playsinline", "1")
-    params.setdefault("origin", "https://www.youtube.com")
     query = urlencode(params, doseq=True)
     base = f"https://www.youtube-nocookie.com/embed/{video_id}"
     return f"{base}?{query}" if query else base

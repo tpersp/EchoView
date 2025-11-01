@@ -538,6 +538,9 @@ class DisplayWindow(QMainWindow):
         query.setdefault("playsinline", ["1"])
         query.setdefault("rel", ["0"])
         query.setdefault("modestbranding", ["1"])
+        query.setdefault("enablejsapi", ["1"])
+        query.setdefault("feature", ["oembed"])
+        query["origin"] = ["https://echoview.local"]
 
         new_query = urlencode(query, doseq=True)
         return urlunparse(parsed._replace(query=new_query))
