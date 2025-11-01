@@ -198,7 +198,7 @@ def build_youtube_embed_url(
     if start_seconds:
         params["start"] = max(0, start_seconds)
     query = urlencode(params, doseq=True)
-    base = f"https://www.youtube.com/embed/{video_id}"
+    base = f"https://www.youtube-nocookie.com/embed/{video_id}"
     return f"{base}?{query}" if query else base
 
 

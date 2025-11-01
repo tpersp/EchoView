@@ -32,7 +32,7 @@ def test_refresh_embed_updates_config_and_saved_sites(temp_config, monkeypatch):
         return embed_utils.EmbedMetadata(
             embed_type="youtube",
             original_url=url,
-            canonical_url="https://www.youtube.com/embed/demo123",
+            canonical_url="https://www.youtube-nocookie.com/embed/demo123",
             provider="YouTube",
             title="Demo Clip",
             content_type="video",
@@ -68,6 +68,6 @@ def test_refresh_embed_updates_config_and_saved_sites(temp_config, monkeypatch):
     saved_entries = updated["saved_websites"]
     assert isinstance(saved_entries[0], dict)
     assert saved_entries[0]["url"] == test_url
-    assert saved_entries[0]["metadata"]["canonical_url"] == "https://www.youtube.com/embed/demo123"
+    assert saved_entries[0]["metadata"]["canonical_url"] == "https://www.youtube-nocookie.com/embed/demo123"
     embed_meta = updated["displays"][display_name]["embed_metadata"]
     assert embed_meta["embed_type"] == "youtube"

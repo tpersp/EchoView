@@ -63,7 +63,7 @@ def test_classify_youtube_url_uses_oembed(monkeypatch):
 
     assert meta.embed_type == "youtube"
     assert meta.video_id == "abc123def45"
-    assert meta.canonical_url.startswith("https://www.youtube.com/embed/abc123def45")
+    assert meta.canonical_url.startswith("https://www.youtube-nocookie.com/embed/abc123def45")
     assert meta.provider == "YouTube"
     assert meta.title == "Sample Video"
     assert meta.thumbnail_url.endswith("default.jpg")
