@@ -39,7 +39,7 @@ During the setup:
 - **Apt packages** are installed (LightDM, Xorg, Python3, etc.)
 - **WebEngine libs** like `libwebp7`, `libtiff6`, `libxslt1.1`, and `libminizip1t64` are installed,
   with compatibility symlinks created for `libwebp.so.6` and `libtiff.so.5` if needed.
-- **pip packages** from `dependencies.txt` (or `requirements.txt`) are installed
+- **pip packages** from `requirements.txt` are installed inside an isolated virtualenv
 - **Screen blanking** is disabled
 - You’ll be prompted for the user that will auto-login into X, the path for `VIEWER_HOME` and `IMAGE_DIR`.
 - **Optionally** mount a CIFS share at `IMAGE_DIR`, or skip to use a local uploads folder.
@@ -111,8 +111,7 @@ EchoView/
 │       ├── routes.py      # Flask routes
 │       └── __init__.py
 ├── setup.sh               # Automated setup script
-├── dependencies.txt       # Required pip packages
-├── requirements.txt       # Alias to dependencies.txt
+├── requirements.txt       # Required pip packages
 ├── static/
 │   ├── style.css
 │   ├── favicon.png

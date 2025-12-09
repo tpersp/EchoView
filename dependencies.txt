@@ -1,7 +1,0 @@
-# Runtime dependency: mpv (system package, installed via setup.sh)
-Flask==2.2.5
-psutil==5.9.5
-requests>=2.31.0
-spotipy==2.25.1
-PySide6>=6.8.0.2
-Pillow>=10.3.0

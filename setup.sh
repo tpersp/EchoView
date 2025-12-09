@@ -2,8 +2,8 @@
 #
 # setup.sh - "It Just Works" for the new PySide6 + Flask EchoView
 #
-#   1) Installs LightDM (with Xorg), python3, PySide6, etc. (but uses distro's PySide6, not pip)
-#   2) Installs pip dependencies (with --break-system-packages) except PySide6
+#   1) Installs LightDM (with Xorg), python3, PySide6 deps, etc.
+#   2) Creates an isolated virtualenv and installs pip dependencies there
 #   3) Disables screen blanking (via raspi-config)
 #   3b) Disables Wi-Fi power management
 #   4) Prompts for user & paths (unless in --auto-update mode)
@@ -78,7 +78,7 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo
   echo "This script will perform the following tasks:"
   echo "  1) Install lightdm (Xorg), python3, etc. plus system python3-pyside6"
-  echo "  2) pip-install your other dependencies (with --break-system-packages)"
+  echo "  2) Create a Python virtualenv and install dependencies inside it"
   echo "  3) Disable screen blanking"
   echo "  4) Prompt for user & paths"
   echo "  5) Create .env in VIEWER_HOME"
@@ -108,6 +108,7 @@ apt-get install -y \
   x11-xserver-utils \
   python3 \
   python3-pip \
+  python3-venv \
   cifs-utils \
   ffmpeg \
   mpv \
@@ -186,20 +187,38 @@ else
 fi
 
 # -------------------------------------------------------
-# 2) pip install from dependencies.txt
+# 2) Create virtualenv and install Python deps
 # -------------------------------------------------------
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-if [ -f "$SCRIPT_DIR/dependencies.txt" ]; then
-  echo
-  echo "== Step 2: Installing Python dependencies (with --break-system-packages) =="
-  pip3 install --break-system-packages -r "$SCRIPT_DIR/dependencies.txt"
+VENV_DIR="$SCRIPT_DIR/.venv"
+REQ_FILE="$SCRIPT_DIR/requirements.txt"
+
+echo
+echo "== Step 2: Creating/updating Python virtualenv =="
+if [ ! -d "$VENV_DIR" ]; then
+  python3 -m venv "$VENV_DIR"
   if [ $? -ne 0 ]; then
-    echo "Error installing pip packages. Exiting."
+    echo "Error creating virtualenv at $VENV_DIR. Exiting."
     exit 1
   fi
+fi
+
+"$VENV_DIR/bin/python3" -m pip install --upgrade pip
+if [ $? -ne 0 ]; then
+  echo "Failed to upgrade pip inside the virtualenv. Exiting."
+  exit 1
+fi
+
+if [ -f "$REQ_FILE" ]; then
+  echo "Installing dependencies from $REQ_FILE ..."
+  "$VENV_DIR/bin/pip" install -r "$REQ_FILE"
 else
-  echo "== Step 2: No dependencies.txt found, installing core packages by pip =="
-  pip3 install --break-system-packages flask psutil requests spotipy PySide6
+  echo "requirements.txt not found; installing core dependencies ..."
+  "$VENV_DIR/bin/pip" install flask psutil requests spotipy PySide6 Pillow
+fi
+if [ $? -ne 0 ]; then
+  echo "Error installing pip packages inside the virtualenv. Exiting."
+  exit 1
 fi
 
 # -------------------------------------------------------
@@ -372,6 +391,11 @@ echo "Creating $VIEWER_HOME if it doesn't exist..."
 mkdir -p "$VIEWER_HOME"
 chown "$VIEWER_USER:$VIEWER_USER" "$VIEWER_HOME"
 
+# Ensure the virtualenv is owned by the viewer user so upgrades work later
+if [ -d "$VENV_DIR" ]; then
+  chown -R "$VIEWER_USER:$VIEWER_USER" "$VENV_DIR"
+fi
+
 # -------------------------------------------------------
 # 5) Create .env
 # -------------------------------------------------------
@@ -468,9 +492,10 @@ WorkingDirectory=$VIEWER_HOME
 EnvironmentFile=$ENV_FILE
 Environment="DISPLAY=:0"
 Environment="XAUTHORITY=/home/$VIEWER_USER/.Xauthority"
-Environment="QT_QPA_PLATFORM_PLUGIN_PATH=/usr/local/lib/python3.11/dist-packages/PySide6/Qt/plugins/platforms"
+Environment="PATH=$VENV_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONUNBUFFERED=1"
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/bin/python3 -m echoview.viewer
+ExecStart=$VENV_DIR/bin/python3 -m echoview.viewer
 
 Restart=always
 RestartSec=5
@@ -493,13 +518,14 @@ User=$VIEWER_USER
 Group=$VIEWER_USER
 WorkingDirectory=$VIEWER_HOME
 EnvironmentFile=$ENV_FILE
-
 Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$USER_ID/bus"
 Environment="XDG_RUNTIME_DIR=/run/user/$USER_ID"
 Environment="DISPLAY=:0"
 Environment="XAUTHORITY=/home/$VIEWER_USER/.Xauthority"
+Environment="PATH=$VENV_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONUNBUFFERED=1"
 
-ExecStart=/usr/bin/python3 -m echoview.web.app
+ExecStart=$VENV_DIR/bin/python3 -m echoview.web.app
 Restart=always
 RestartSec=5
 Type=simple
