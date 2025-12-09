@@ -22,7 +22,8 @@ from echoview.utils import (
     get_system_stats, get_subfolders, count_files_in_folder,
     get_hostname, get_ip_address, get_pi_model,
     get_storage_stats, format_bytes,
-    CONFIG_PATH
+    CONFIG_PATH,
+    is_ignored_folder,
 )
 from echoview import embed_utils
 
@@ -721,12 +722,16 @@ def index():
                 new_mode = request.form.get(pre + "mode", dcfg["mode"])
                 new_interval_s = request.form.get(pre + "image_interval", str(dcfg["image_interval"]))
                 new_cat = request.form.get(pre + "image_category", dcfg["image_category"])
+                if is_ignored_folder(new_cat):
+                    new_cat = ""
                 shuffle_val = request.form.get(pre + "shuffle_mode", "no")
                 new_spec = request.form.get(pre + "specific_image", dcfg["specific_image"])
                 rotate_str = request.form.get(pre + "rotate", "0")
                 mixed_str = request.form.get(pre + "mixed_order", "")
-                mixed_list = [x for x in mixed_str.split(",") if x]
+                mixed_list = [x for x in mixed_str.split(",") if x and not is_ignored_folder(x)]
                 new_vid_cat = request.form.get(pre + "video_category", dcfg.get("video_category", ""))
+                if is_ignored_folder(new_vid_cat):
+                    new_vid_cat = ""
                 shuffle_videos_val = request.form.get(pre + "shuffle_videos", "no")
                 video_mute_val = request.form.get(pre + "video_mute")
                 video_vol_str = request.form.get(pre + "video_volume", str(dcfg.get("video_volume", 100)))

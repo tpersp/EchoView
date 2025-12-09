@@ -258,3 +258,38 @@ def test_next_image_starts_from_first(monkeypatch):
     dw.next_image()
     assert recorded[-1] == "b.jpg"
     assert dw.index == 1
+
+
+def test_ignored_folder_not_loaded(monkeypatch, tmp_path):
+    # Prepare folders
+    photos = tmp_path / "Photos"
+    photos.mkdir()
+    (photos / "a.jpg").write_text("x")
+    hidden = tmp_path / "_ai_temp"
+    hidden.mkdir()
+    (hidden / "b.jpg").write_text("x")
+
+    monkeypatch.setattr(viewer, "IMAGE_DIR", str(tmp_path))
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.disp_cfg = {
+        "mode": "random_image",
+        "image_category": "_ai_temp",
+        "shuffle_mode": False,
+        "mixed_folders": [],
+        "video_category": "",
+        "shuffle_videos": False,
+    }
+    dw.current_mode = "random_image"
+    dw.image_list = []
+    dw.fallback_image_list = []
+    dw.cache_lock = viewer.threading.Lock()
+
+    # Hidden folder is ignored, leaving no images
+    dw.build_local_image_list()
+    assert dw.image_list == []
+
+    # Mixed folders should filter hidden entries
+    dw.current_mode = "mixed"
+    dw.disp_cfg["mixed_folders"] = ["_ai_temp", "Photos"]
+    dw.build_local_image_list()
+    assert dw.image_list == [str(photos / "a.jpg")]

@@ -19,6 +19,13 @@ from echoview.config import (
     WEB_BG,
 )
 
+def is_ignored_folder(name: str) -> bool:
+    """Return True when the folder should be hidden/ignored (leading underscore)."""
+    if not name:
+        return False
+    base = os.path.basename(str(name))
+    return base.startswith("_")
+
 def init_config():
     if not os.path.exists(CONFIG_PATH):
         default_cfg = {
@@ -192,7 +199,7 @@ def get_subfolders():
     try:
         folders = [
             d for d in os.listdir(IMAGE_DIR)
-            if os.path.isdir(os.path.join(IMAGE_DIR, d))
+            if os.path.isdir(os.path.join(IMAGE_DIR, d)) and not is_ignored_folder(d)
         ]
         folders.sort(key=lambda x: x.lower())
         return folders
@@ -200,7 +207,7 @@ def get_subfolders():
         return []
 
 def count_files_in_folder(folder_path):
-    if not os.path.isdir(folder_path):
+    if not os.path.isdir(folder_path) or is_ignored_folder(folder_path):
         return 0
     cnt = 0
     valid_ext = (

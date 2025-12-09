@@ -33,7 +33,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from spotipy.oauth2 import SpotifyOAuth
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
-from echoview.utils import load_config, save_config, log_message, get_ip_address
+from echoview.utils import load_config, save_config, log_message, get_ip_address, is_ignored_folder
 from echoview.embed_utils import deserialize_embed_metadata, EmbedMetadata
 
 
@@ -790,12 +790,18 @@ class DisplayWindow(QMainWindow):
         mode = self.current_mode
         if mode == "random_image":
             cat = self.disp_cfg.get("image_category", "")
+            if is_ignored_folder(cat):
+                self.image_list = []
+                return
             images = self.gather_images(cat)
             if self.disp_cfg.get("shuffle_mode", False):
                 random.shuffle(images)
             self.image_list = images
         elif mode == "mixed":
-            folder_list = self.disp_cfg.get("mixed_folders", [])
+            folder_list = [
+                folder for folder in self.disp_cfg.get("mixed_folders", [])
+                if not is_ignored_folder(folder)
+            ]
             allimg = []
             for folder in folder_list:
                 allimg += self.gather_images(folder)
@@ -804,6 +810,9 @@ class DisplayWindow(QMainWindow):
             self.image_list = allimg
         elif mode == "specific_image":
             cat = self.disp_cfg.get("image_category", "")
+            if is_ignored_folder(cat):
+                self.image_list = []
+                return
             spec = self.disp_cfg.get("specific_image", "")
             path = os.path.join(IMAGE_DIR, cat, spec)
             if os.path.exists(path):
@@ -813,6 +822,9 @@ class DisplayWindow(QMainWindow):
                 self.image_list = []
         elif mode == "videos":
             cat = self.disp_cfg.get("video_category", "")
+            if is_ignored_folder(cat):
+                self.image_list = []
+                return
             vids = self.gather_videos(cat)
             if self.disp_cfg.get("shuffle_videos", False):
                 random.shuffle(vids)
@@ -820,6 +832,8 @@ class DisplayWindow(QMainWindow):
 
     def gather_images(self, category):
         base = os.path.join(IMAGE_DIR, category) if category else IMAGE_DIR
+        if is_ignored_folder(base) or is_ignored_folder(category):
+            return []
         if not os.path.isdir(base):
             return []
         results = []
@@ -832,6 +846,8 @@ class DisplayWindow(QMainWindow):
 
     def gather_videos(self, category):
         base = os.path.join(IMAGE_DIR, category) if category else IMAGE_DIR
+        if is_ignored_folder(base) or is_ignored_folder(category):
+            return []
         if not os.path.isdir(base):
             return []
         results = []
