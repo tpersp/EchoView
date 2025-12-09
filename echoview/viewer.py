@@ -765,7 +765,10 @@ class DisplayWindow(QMainWindow):
                     else:
                         self._load_youtube_embed(metadata)
                 else:
-                    self._load_youtube_embed(metadata)
+                    # Try mpv first to avoid Qt WebEngine codec issues; fall back to embed.
+                    yt_url = metadata.original_url or metadata.canonical_url or self.disp_cfg.get("web_url", "")
+                    if not self._play_mpv_stream(yt_url):
+                        self._load_youtube_embed(metadata)
             else:
                 target_url = ""
                 if metadata and metadata.canonical_url:
