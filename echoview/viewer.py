@@ -453,6 +453,45 @@ class DisplayWindow(QMainWindow):
         self.hls_player.setSource(QUrl(url))
         self.hls_player.play()
 
+    def _play_mpv_stream(self, url: str) -> bool:
+        """
+        Launch mpv to play a remote stream (e.g., YouTube live) and keep a handle
+        so we can terminate playback on reload or shutdown. Returns True when mpv
+        was started successfully.
+        """
+        if not url or not shutil.which("mpv"):
+            return False
+
+        # Ensure other playback components are stopped/hidden.
+        self._stop_hls_playback()
+        self.web_view.hide()
+        self.spotify_progress_bar.hide()
+        self.spotify_progress_timer.stop()
+
+        # Stop any existing mpv session before starting a new one.
+        self.stop_current_video()
+
+        cmd = self.build_mpv_command(url)
+        try:
+            proc = subprocess.Popen(cmd)
+        except Exception as exc:
+            log_message(f"mpv playback error for stream {url}: {exc}")
+            return False
+
+        self.current_video_proc = proc
+
+        def wait_thread(p):
+            p.wait()
+            QTimer.singleShot(0, lambda: self.stop_current_video(advance=False))
+
+        threading.Thread(target=wait_thread, args=(proc,), daemon=True).start()
+        try:
+            self.mpv_poll_timer.stop()
+            self.mpv_poll_timer.start()
+        except Exception:
+            pass
+        return True
+
     def _load_web_url(self, url: str) -> None:
         """Load a URL (or placeholder) into the embedded browser."""
         self._stop_hls_playback()
@@ -719,9 +758,22 @@ class DisplayWindow(QMainWindow):
             if metadata and metadata.embed_type == "hls":
                 hls_url = metadata.canonical_url or metadata.original_url or self.disp_cfg.get("web_url", "")
                 self._play_hls_stream(hls_url)
+            elif metadata and metadata.embed_type == "mpv":
+                stream_url = metadata.canonical_url or metadata.original_url or self.disp_cfg.get("web_url", "")
+                if not self._play_mpv_stream(stream_url):
+                    fallback = metadata.canonical_url or metadata.original_url or self.disp_cfg.get("web_url", "")
+                    self._load_web_url(fallback)
             else:
                 if metadata and metadata.embed_type == "youtube":
-                    self._load_youtube_embed(metadata)
+                    if (metadata.content_type or "").lower() == "live":
+                        stream_url = metadata.canonical_url or metadata.original_url
+                        if stream_url and self._play_mpv_stream(stream_url):
+                            # Successfully using mpv; nothing else to do.
+                            pass
+                        else:
+                            self._load_youtube_embed(metadata)
+                    else:
+                        self._load_youtube_embed(metadata)
                 else:
                     target_url = ""
                     if metadata and metadata.canonical_url:
@@ -729,6 +781,34 @@ class DisplayWindow(QMainWindow):
                     if not target_url:
                         target_url = self.disp_cfg.get("web_url", "")
                     self._load_web_url(target_url)
+            self.spotify_progress_bar.hide()
+            self.spotify_progress_timer.stop()
+            self.slideshow_timer.stop()
+        elif self.current_mode == "videos":
+            self._stop_hls_playback()
+            self.web_view.hide()
+            self.spotify_progress_bar.hide()
+            self.spotify_progress_timer.stop()
+            self.slideshow_timer.stop()
+        else:
+            self._stop_hls_playback()
+            self.spotify_progress_bar.hide()
+            self.spotify_progress_timer.stop()
+            self.web_view.hide()
+            self.slideshow_timer.setInterval(interval_s * 1000)
+            self.slideshow_timer.start()
+
+        self.image_list = []
+        self.index = 0
+        # Reset cached fallback list whenever settings reload so that any
+        # changes to folders or shuffle options are picked up next time we
+        # need to display fallback images.
+        self.fallback_image_list = []
+        self.fallback_index = -1
+        if self.current_mode in ("random_image", "mixed", "specific_image", "videos"):
+            self.build_local_image_list()
+        if self.current_mode == "spotify":
+            self.next_image(force=True)
             self.spotify_progress_bar.hide()
             self.spotify_progress_timer.stop()
             self.slideshow_timer.stop()

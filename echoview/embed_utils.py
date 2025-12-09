@@ -226,9 +226,9 @@ def build_youtube_live_embed_url(channel_id: str) -> str:
     return f"https://www.youtube.com/embed/live_stream?channel={channel_id}"
 
 
-def _extract_youtube_live_hls(url: str, video_id: Optional[str]) -> Optional[str]:
+def _extract_youtube_hls(url: str, video_id: Optional[str]) -> Optional[str]:
     """
-    Attempt to resolve a direct HLS manifest for a live YouTube broadcast.
+    Attempt to resolve a direct HLS manifest for a YouTube broadcast (live or VOD).
     Returns the best .m3u8 URL when available.
     """
     if not _YT_DLP_AVAILABLE:
@@ -376,7 +376,7 @@ def classify_url(url: str) -> EmbedMetadata:
         canonical: str
         embed_type = "youtube"
         if content_type == "live":
-            hls_url = _extract_youtube_live_hls(normalized, yt_details["video_id"])
+            hls_url = _extract_youtube_hls(normalized, yt_details["video_id"])
             if hls_url:
                 return EmbedMetadata(
                     embed_type="hls",
@@ -391,14 +391,12 @@ def classify_url(url: str) -> EmbedMetadata:
                     start_seconds=None,
                     thumbnail_url=thumbnail,
                 )
-            if channel_id:
-                canonical = build_youtube_live_embed_url(channel_id)
-            else:
-                canonical = f"https://www.youtube.com/embed/{yt_details['video_id']}"
-                logger.warning(
-                    "Live YouTube embed without channel_id; falling back to video embed for %s",
-                    normalized,
-                )
+            embed_type = "mpv"
+            canonical = normalized
+            logger.warning(
+                "Unable to resolve HLS manifest for live YouTube stream %s; falling back to mpv playback.",
+                normalized,
+            )
         else:
             canonical = build_youtube_embed_url(
                 yt_details["video_id"],

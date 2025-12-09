@@ -77,7 +77,8 @@ Browse to `http://<PI-IP>:8080` to access the interface. You’ll see:
 
 - Make sure the YouTube channel you embed has the **Live Streaming** and **Embed Live Streams** permissions enabled; YouTube currently requires account verification and at least 1,000 subscribers before granting these features.
 - Only public or unlisted streams can be embedded. Private broadcasts will refuse to load inside EchoView (or any external player).
-- EchoView automatically uses `https://www.youtube.com/embed/live_stream?channel=CHANNEL_ID` for live events when a channel ID can be determined, and falls back to the standard video embed otherwise.
+- EchoView first tries to extract the channel’s live HLS manifest using `yt_dlp`; when successful it plays the `.m3u8` feed directly through Qt Multimedia.
+- If no manifest is available, EchoView launches `mpv` with the original YouTube URL. Make sure both `yt_dlp` and `mpv` are installed on the host so this fallback works seamlessly.
 
 ### Spotify Integration
 

@@ -172,6 +172,6 @@ def test_classify_youtube_live_without_channel_falls_back(monkeypatch):
     meta = embed_utils.classify_url(url)
 
     assert meta.content_type == "live"
-    assert meta.embed_type == "youtube"
+    assert meta.embed_type == "mpv"
     assert meta.channel_id is None
-    assert meta.canonical_url == "https://www.youtube.com/embed/livefallback00"
+    assert meta.canonical_url == url.strip()
