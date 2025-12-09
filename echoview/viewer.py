@@ -592,23 +592,6 @@ class DisplayWindow(QMainWindow):
         new_query = urlencode(query, doseq=True)
         return urlunparse(parsed._replace(query=new_query))
 
-        if hasattr(self, "overlay_config") and self.clock_label.isVisible():
-            pos = self.overlay_config.get("clock_position", "bottom-center")
-            self._place_overlay_label(self.clock_label, pos, rect, 0)
-
-        # Refresh the background from the last image/GIF frame
-        if self.current_pixmap and not self.handling_gif_frames:
-            self.updateForegroundScaled()
-            if self.last_displayed_path:
-                blurred = self.make_background(self.current_pixmap)
-                self.bg_label.setPixmap(blurred if blurred else QPixmap())
-        elif self.current_movie and self.handling_gif_frames:
-            frm = self.current_movie.currentImage()
-            if not frm.isNull() and self.last_displayed_path:
-                pm = QPixmap.fromImage(frm)
-                blurred = self.make_background(pm)
-                self.bg_label.setPixmap(blurred if blurred else QPixmap())
-
     def _place_overlay_label(self, lbl, position: str, container_rect, y_offset: int = 0) -> int:
         """Position an overlay label like the clock within *container_rect*.
 
@@ -664,11 +647,8 @@ class DisplayWindow(QMainWindow):
         displays = self.cfg.get("displays", {})
         if self.disp_name in displays:
             self.disp_cfg = displays[self.disp_name]
-        if "overlay" in self.disp_cfg:
-            over = self.disp_cfg["overlay"]
-        else:
-            over = self.cfg.get("overlay", {})
 
+        over = self.disp_cfg.get("overlay", self.cfg.get("overlay", {}))
         if over.get("clock_enabled", False):
             self.clock_label.show()
         else:
@@ -714,11 +694,29 @@ class DisplayWindow(QMainWindow):
             while len(self.image_cache) > self.cache_capacity:
                 self.image_cache.popitem(last=False)
 
-        interval_s = self.disp_cfg.get("image_interval", 60)
         self.current_mode = self.disp_cfg.get("mode", "random_image")
+        interval_s = self.disp_cfg.get("image_interval", 60)
         if self.current_mode == "spotify":
-            self._stop_hls_playback()
             interval_s = 5
+
+        # Reset cached lists and indexes before rebuilding state.
+        self.image_list = []
+        self.fallback_image_list = []
+        self.fallback_index = -1
+        # Use -1 so the first next_image call shows the first item instead of skipping it.
+        self.index = -1 if self.current_mode != "videos" else 0
+        self.last_displayed_path = None
+
+        if self.current_mode in ("random_image", "mixed", "specific_image", "videos"):
+            self.build_local_image_list()
+
+        # Stop any existing playback/embeds before reconfiguring.
+        self._stop_hls_playback()
+        self.web_view.hide()
+        self.spotify_progress_bar.hide()
+        self.spotify_progress_timer.stop()
+
+        if self.current_mode == "spotify":
             if self.disp_cfg.get("spotify_show_progress", False):
                 self.spotify_progress_bar.show()
                 upd_int = self.disp_cfg.get("spotify_progress_update_interval", 200)
@@ -747,10 +745,6 @@ class DisplayWindow(QMainWindow):
                     )
                 else:
                     self.spotify_progress_bar.setStyleSheet("")
-            else:
-                self.spotify_progress_bar.hide()
-                self.spotify_progress_timer.stop()
-            self.web_view.hide()
             self.slideshow_timer.setInterval(interval_s * 1000)
             self.slideshow_timer.start()
         elif self.current_mode == "web_page":
@@ -763,80 +757,28 @@ class DisplayWindow(QMainWindow):
                 if not self._play_mpv_stream(stream_url):
                     fallback = metadata.canonical_url or metadata.original_url or self.disp_cfg.get("web_url", "")
                     self._load_web_url(fallback)
-            else:
-                if metadata and metadata.embed_type == "youtube":
-                    if (metadata.content_type or "").lower() == "live":
-                        stream_url = metadata.canonical_url or metadata.original_url
-                        if stream_url and self._play_mpv_stream(stream_url):
-                            # Successfully using mpv; nothing else to do.
-                            pass
-                        else:
-                            self._load_youtube_embed(metadata)
+            elif metadata and metadata.embed_type == "youtube":
+                if (metadata.content_type or "").lower() == "live":
+                    stream_url = metadata.canonical_url or metadata.original_url
+                    if stream_url and self._play_mpv_stream(stream_url):
+                        pass
                     else:
                         self._load_youtube_embed(metadata)
                 else:
-                    target_url = ""
-                    if metadata and metadata.canonical_url:
-                        target_url = metadata.canonical_url
-                    if not target_url:
-                        target_url = self.disp_cfg.get("web_url", "")
-                    self._load_web_url(target_url)
-            self.spotify_progress_bar.hide()
-            self.spotify_progress_timer.stop()
+                    self._load_youtube_embed(metadata)
+            else:
+                target_url = ""
+                if metadata and metadata.canonical_url:
+                    target_url = metadata.canonical_url
+                if not target_url:
+                    target_url = self.disp_cfg.get("web_url", "")
+                self._load_web_url(target_url)
             self.slideshow_timer.stop()
         elif self.current_mode == "videos":
-            self._stop_hls_playback()
-            self.web_view.hide()
-            self.spotify_progress_bar.hide()
-            self.spotify_progress_timer.stop()
             self.slideshow_timer.stop()
         else:
-            self._stop_hls_playback()
-            self.spotify_progress_bar.hide()
-            self.spotify_progress_timer.stop()
-            self.web_view.hide()
             self.slideshow_timer.setInterval(interval_s * 1000)
             self.slideshow_timer.start()
-
-        self.image_list = []
-        self.index = 0
-        # Reset cached fallback list whenever settings reload so that any
-        # changes to folders or shuffle options are picked up next time we
-        # need to display fallback images.
-        self.fallback_image_list = []
-        self.fallback_index = -1
-        if self.current_mode in ("random_image", "mixed", "specific_image", "videos"):
-            self.build_local_image_list()
-        if self.current_mode == "spotify":
-            self.next_image(force=True)
-            self.spotify_progress_bar.hide()
-            self.spotify_progress_timer.stop()
-            self.slideshow_timer.stop()
-        elif self.current_mode == "videos":
-            self._stop_hls_playback()
-            self.web_view.hide()
-            self.spotify_progress_bar.hide()
-            self.spotify_progress_timer.stop()
-            self.slideshow_timer.stop()
-        else:
-            self._stop_hls_playback()
-            self.spotify_progress_bar.hide()
-            self.spotify_progress_timer.stop()
-            self.web_view.hide()
-            self.slideshow_timer.setInterval(interval_s * 1000)
-            self.slideshow_timer.start()
-
-        self.image_list = []
-        self.index = 0
-        # Reset cached fallback list whenever settings reload so that any
-        # changes to folders or shuffle options are picked up next time we
-        # need to display fallback images.
-        self.fallback_image_list = []
-        self.fallback_index = -1
-        if self.current_mode in ("random_image", "mixed", "specific_image", "videos"):
-            self.build_local_image_list()
-        if self.current_mode == "spotify":
-            self.next_image(force=True)
 
         # Ensure overlay elements are repositioned based on updated settings
         self.setup_layout()
@@ -1032,9 +974,10 @@ class DisplayWindow(QMainWindow):
         if self.last_displayed_path and self.last_displayed_path in self.image_cache:
             del self.image_cache[self.last_displayed_path]
 
-        self.index += 1
-        if self.index >= len(self.image_list):
+        if force and self.index < 0:
             self.index = 0
+        else:
+            self.index = (self.index + 1) % len(self.image_list)
         new_path = self.image_list[self.index]
         self.last_displayed_path = new_path
 

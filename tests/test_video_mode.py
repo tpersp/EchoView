@@ -232,3 +232,29 @@ def test_stop_current_video_advances(monkeypatch):
     dw.bg_label = types.SimpleNamespace(setPixmap=lambda *a, **k: None)
     DisplayWindow.stop_current_video(dw, advance=True)
     assert advanced == ["next"]
+
+
+def test_next_image_starts_from_first(monkeypatch):
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.running = True
+    dw.current_mode = "random_image"
+    dw.image_list = ["a.jpg", "b.jpg", "c.jpg"]
+    dw.index = -1
+    dw.image_cache = {}
+    dw.last_displayed_path = None
+    dw.overlay_config = {}
+    dw.fallback_image_list = []
+    dw.fallback_index = -1
+    recorded = []
+    dw.show_foreground_image = lambda path, is_spotify=False: recorded.append(path)
+    dw.prefetch_next_image = lambda: None
+    dw.clock_label = types.SimpleNamespace(update=lambda: None)
+
+    dw.next_image(force=True)
+    assert recorded == ["a.jpg"]
+    assert dw.index == 0
+    assert dw.last_displayed_path == "a.jpg"
+
+    dw.next_image()
+    assert recorded[-1] == "b.jpg"
+    assert dw.index == 1
