@@ -26,7 +26,7 @@
     <p>
       After creation, note down your <strong>Client ID</strong> and <strong>Client Secret</strong>.
       In your app settings, set the <strong>Redirect URI</strong> to something like
-      <code>http://localhost:8080/callback</code> (or your Pi's IP).
+      <code>http://127.0.0.1:8080/callback</code> (or your Pi's IP).
     </p>
   </div>
 
@@ -42,8 +42,11 @@
   <div class="collapsible-content">
     <p>
       Click <strong>Authorize Spotify</strong> to begin the OAuth flow.
-      Once authorized, your token is cached at the path in
-      <code>SPOTIFY_CACHE_PATH</code> (created automatically if it doesn't
+      Once Spotify redirects you back to <code>http://127.0.0.1:8080/callback</code>,
+      replace <code>127.0.0.1</code> in the address bar with your Pi’s IP (e.g.
+      <code>http://192.168.x.x:8080/callback?code=…</code>) and press Enter so EchoView
+      can receive the token. After authorization, the token is cached at the
+      path in <code>SPOTIFY_CACHE_PATH</code> (created automatically if it doesn't
       exist), and EchoView can fetch your currently playing track’s album art.
 
     </p>
@@ -61,7 +64,7 @@
     </div>
     <div style="margin-bottom:10px;">
       <label>Redirect URI:</label><br>
-      <input type="text" name="redirect_uri" value="{{ spotify.redirect_uri|default('http://localhost:8080/callback') }}" required>
+      <input type="text" name="redirect_uri" value="{{ spotify.redirect_uri|default('http://127.0.0.1:8080/callback') }}" required>
     </div>
     <div style="margin-bottom:10px;">
       <label>Scope:</label><br>

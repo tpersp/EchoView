@@ -560,10 +560,11 @@ def spotify_auth():
     # Ensure the cache directory exists before spotipy writes the token
     os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
 
+    redirect_uri = ruri or "http://127.0.0.1:8080/callback"
     sp_oauth = SpotifyOAuth(
         client_id=cid,
         client_secret=csec,
-        redirect_uri=ruri,
+        redirect_uri=redirect_uri,
         scope=scope,
         cache_path=SPOTIFY_CACHE_PATH,
     )
@@ -583,10 +584,11 @@ def callback():
     # Ensure the cache directory exists before spotipy writes the token
     os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
 
+    redirect_uri = ruri or "http://127.0.0.1:8080/callback"
     sp_oauth = SpotifyOAuth(
         client_id=cid,
         client_secret=csec,
-        redirect_uri=ruri,
+        redirect_uri=redirect_uri,
         scope=scope,
         cache_path=SPOTIFY_CACHE_PATH,
     )
