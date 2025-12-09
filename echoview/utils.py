@@ -19,12 +19,90 @@ from echoview.config import (
     WEB_BG,
 )
 
+ASPECT_LABELS = {
+    "square": 1.0,
+    "landscape": 16.0 / 9.0,
+    "portrait": 9.0 / 16.0,
+}
+
 def is_ignored_folder(name: str) -> bool:
     """Return True when the folder should be hidden/ignored (leading underscore)."""
     if not name:
         return False
     base = os.path.basename(str(name))
     return base.startswith("_")
+
+
+def _classify_ratio(ratio: float) -> str:
+    """
+    Return the closest aspect bucket among square, landscape, portrait.
+    When ratio is zero/invalid, return "unknown".
+    """
+    if ratio <= 0:
+        return "unknown"
+    best = None
+    best_diff = 1e9
+    for label, target in ASPECT_LABELS.items():
+        diff = abs(ratio - target)
+        if diff < best_diff:
+            best_diff = diff
+            best = label
+    return best or "unknown"
+
+
+def _video_dimensions_ffprobe(path: str) -> tuple[int, int] | tuple[()]:
+    """Use ffprobe (if available) to fetch video width/height."""
+    if not shutil.which("ffprobe"):
+        return ()
+    try:
+        out = subprocess.check_output(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "csv=s=x:p=0",
+                path,
+            ]
+        ).decode().strip()
+        if "x" in out:
+            w_str, h_str = out.split("x", 1)
+            return int(w_str), int(h_str)
+    except Exception:
+        return ()
+    return ()
+
+
+def media_aspect_label(path: str) -> str:
+    """
+    Return "square", "landscape", "portrait", or "unknown" for a media file.
+    Images/GIFs are inspected with Pillow; videos use ffprobe when available.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"):
+        try:
+            from PIL import Image  # Lazy import to avoid overhead during module load
+
+            with Image.open(path) as img:
+                w, h = img.size
+        except Exception:
+            return "unknown"
+    elif ext in (".mp4", ".mov", ".avi", ".mkv", ".webm"):
+        dims = _video_dimensions_ffprobe(path)
+        if not dims:
+            return "unknown"
+        w, h = dims
+    else:
+        return "unknown"
+
+    if w <= 0 or h <= 0:
+        return "unknown"
+    ratio = float(w) / float(h)
+    return _classify_ratio(ratio)
 
 def init_config():
     if not os.path.exists(CONFIG_PATH):
@@ -58,7 +136,8 @@ def init_config():
                     "video_mute": True,
                     "video_volume": 100,
                     "video_play_to_end": True,
-                    "video_max_seconds": 120
+                    "video_max_seconds": 120,
+                    "aspect_filter": "any",
                 }
             },
             "overlay": {
@@ -242,5 +321,8 @@ def upgrade_config(cfg):
             changed = True
         if "youtube_quality" not in dcfg:
             dcfg["youtube_quality"] = "default"
+            changed = True
+        if "aspect_filter" not in dcfg:
+            dcfg["aspect_filter"] = "any"
             changed = True
     return changed

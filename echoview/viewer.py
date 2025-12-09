@@ -33,7 +33,14 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from spotipy.oauth2 import SpotifyOAuth
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
-from echoview.utils import load_config, save_config, log_message, get_ip_address, is_ignored_folder
+from echoview.utils import (
+    load_config,
+    save_config,
+    log_message,
+    get_ip_address,
+    is_ignored_folder,
+    media_aspect_label,
+)
 from echoview.embed_utils import deserialize_embed_metadata, EmbedMetadata
 
 
@@ -99,6 +106,7 @@ class DisplayWindow(QMainWindow):
         self.cache_capacity = 15
         self.cache_lock = threading.Lock()
         self.preload_count = 1
+        self.aspect_cache = {}
 
         self.last_displayed_path = None
         self.current_pixmap = None
@@ -796,7 +804,7 @@ class DisplayWindow(QMainWindow):
             images = self.gather_images(cat)
             if self.disp_cfg.get("shuffle_mode", False):
                 random.shuffle(images)
-            self.image_list = images
+            self.image_list = self._filter_by_aspect(images)
         elif mode == "mixed":
             folder_list = [
                 folder for folder in self.disp_cfg.get("mixed_folders", [])
@@ -807,7 +815,7 @@ class DisplayWindow(QMainWindow):
                 allimg += self.gather_images(folder)
             if self.disp_cfg.get("shuffle_mode", False):
                 random.shuffle(allimg)
-            self.image_list = allimg
+            self.image_list = self._filter_by_aspect(allimg)
         elif mode == "specific_image":
             cat = self.disp_cfg.get("image_category", "")
             if is_ignored_folder(cat):
@@ -820,6 +828,7 @@ class DisplayWindow(QMainWindow):
             else:
                 log_message(f"Specific image not found: {path}")
                 self.image_list = []
+            self.image_list = self._filter_by_aspect(self.image_list)
         elif mode == "videos":
             cat = self.disp_cfg.get("video_category", "")
             if is_ignored_folder(cat):
@@ -828,7 +837,7 @@ class DisplayWindow(QMainWindow):
             vids = self.gather_videos(cat)
             if self.disp_cfg.get("shuffle_videos", False):
                 random.shuffle(vids)
-            self.image_list = vids
+            self.image_list = self._filter_by_aspect(vids)
 
     def gather_images(self, category):
         base = os.path.join(IMAGE_DIR, category) if category else IMAGE_DIR
@@ -857,6 +866,21 @@ class DisplayWindow(QMainWindow):
                 results.append(os.path.join(base, fname))
         results.sort()
         return results
+
+    def _filter_by_aspect(self, paths):
+        """Filter media by the configured aspect bucket (any/square/landscape/portrait)."""
+        target = self.disp_cfg.get("aspect_filter", "any")
+        if not paths or target in ("", "any", None):
+            return paths
+        filtered = []
+        for p in paths:
+            label = self.aspect_cache.get(p)
+            if label is None:
+                label = media_aspect_label(p)
+                self.aspect_cache[p] = label
+            if label == target:
+                filtered.append(p)
+        return filtered
 
     def load_and_cache_image(self, fullpath):
         ext = os.path.splitext(fullpath)[1].lower()

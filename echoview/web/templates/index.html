@@ -128,6 +128,16 @@
           <input type="number" name="{{ dname }}_rotate" value="{{ dcfg.rotate|default(0) }}">
           <br><br>
 
+          <!-- Aspect Filter -->
+          <label>Aspect Filter:</label><br>
+          <select name="{{ dname }}_aspect_filter">
+            <option value="any" {% if dcfg.aspect_filter is not defined or dcfg.aspect_filter=='any' %}selected{% endif %}>Any</option>
+            <option value="square" {% if dcfg.aspect_filter=='square' %}selected{% endif %}>1:1 (Square)</option>
+            <option value="landscape" {% if dcfg.aspect_filter=='landscape' %}selected{% endif %}>16:9 (Landscape)</option>
+            <option value="portrait" {% if dcfg.aspect_filter=='portrait' %}selected{% endif %}>9:16 (Portrait)</option>
+          </select>
+          <br><br>
+
           <!-- Category selection for Random/Specific -->
           <div id="{{ dname }}_category_section" class="mode-section">
             <label>Category (subfolder):</label><br>

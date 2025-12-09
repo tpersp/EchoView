@@ -24,6 +24,7 @@ from echoview.utils import (
     get_storage_stats, format_bytes,
     CONFIG_PATH,
     is_ignored_folder,
+    media_aspect_label,
 )
 from echoview import embed_utils
 
@@ -693,6 +694,7 @@ def index():
                 "video_volume": 100,
                 "video_play_to_end": True,
                 "video_max_seconds": 120,
+                "aspect_filter": "any",
                 "rotate": 0,
                 "screen_name": f"{mon_name}: {minfo['current_mode']}",
                 "chosen_mode": minfo["current_mode"],
@@ -724,6 +726,9 @@ def index():
                 new_cat = request.form.get(pre + "image_category", dcfg["image_category"])
                 if is_ignored_folder(new_cat):
                     new_cat = ""
+                aspect_filter = request.form.get(pre + "aspect_filter", dcfg.get("aspect_filter", "any"))
+                if aspect_filter not in ("any", "square", "landscape", "portrait"):
+                    aspect_filter = "any"
                 shuffle_val = request.form.get(pre + "shuffle_mode", "no")
                 new_spec = request.form.get(pre + "specific_image", dcfg["specific_image"])
                 rotate_str = request.form.get(pre + "rotate", "0")
@@ -756,6 +761,7 @@ def index():
                 dcfg["shuffle_mode"] = (shuffle_val == "yes")
                 dcfg["specific_image"] = new_spec
                 dcfg["rotate"] = new_rotate
+                dcfg["aspect_filter"] = aspect_filter
                 dcfg["web_url"] = new_url
                 dcfg["youtube_autoplay"] = True if request.form.get(pre + "youtube_autoplay") else False
                 dcfg["youtube_mute"] = True if request.form.get(pre + "youtube_mute") else False
@@ -863,6 +869,20 @@ def index():
                     rel_path = fname
                     img_list.append(os.path.join(cat, rel_path) if cat else rel_path)
         img_list.sort()
+        aspect_pref = dcfg.get("aspect_filter", "any")
+        if aspect_pref not in ("", None, "any"):
+            filtered = []
+            for rel_path in img_list:
+                full_path = os.path.join(IMAGE_DIR, rel_path)
+                if not os.path.exists(full_path):
+                    continue
+                try:
+                    label = media_aspect_label(full_path)
+                except Exception:
+                    label = "unknown"
+                if label == aspect_pref:
+                    filtered.append(rel_path)
+            img_list = filtered
         display_images[dname] = img_list
 
     cpu, mem_used_mb, mem_total_mb, load1, temp = get_system_stats()
