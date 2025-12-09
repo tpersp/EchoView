@@ -91,6 +91,13 @@ function showModeSection(dname, mode) {
   if (mode === 'spotify') {
     showSpotifyFallbackSections(dname);
   }
+
+  // Aspect filter is only relevant for media modes, not web_page
+  const aspectBox = document.getElementById(`${dname}_aspect_container`);
+  if (aspectBox) {
+    const showAspect = ['random_image','specific_image','mixed','videos','spotify'].includes(mode);
+    aspectBox.style.display = showAspect ? 'block' : 'none';
+  }
 }
 
 function initModeHandlers() {
