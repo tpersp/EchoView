@@ -169,6 +169,60 @@ If a `.env` file already exists in your `VIEWER_HOME`, its `VIEWER_HOME` and
   are installed and that symlinks exist for `libwebp.so.6` and `libtiff.so.5`.
 - **Check logs**: Look at `echoview.log` (in your `VIEWER_HOME`) or `journalctl -u echoview.service`.
 
+### View the attached monitors remotely (x11vnc)
+
+If you need to see exactly what the Pi is displaying on its connected screens, you can expose the running X session over VNC with `x11vnc`.
+
+1) Install:
+
+```bash
+sudo apt update
+sudo apt install -y x11vnc
+```
+
+2) Manual test (run while the monitors are on and LightDM is running):
+
+```bash
+x11vnc -display :0 -auth guess -forever -shared
+```
+
+Then connect from a VNC client (e.g., MobaXterm):
+- Protocol: VNC
+- Host: `pi-ip`
+- Port: `5900`
+
+You should see the live output from the attached monitors. If this works, stop here unless you want it to start automatically.
+
+3) Optional: auto-start with systemd (only after the manual test succeeds):
+
+```bash
+sudo nano /etc/systemd/system/x11vnc.service
+```
+
+Paste:
+
+```ini
+[Unit]
+Description=Start x11vnc at startup
+After=display-manager.service
+Requires=display-manager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/x11vnc -display :0 -auth guess -forever -shared
+Restart=on-failure
+
+[Install]
+WantedBy=graphical.target
+```
+
+Enable it:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now x11vnc
+```
+
 ## Contributing
 
 Feel free to open pull requests or issues. Any improvements to multi-monitor detection, new overlay features, or theming are welcome.
