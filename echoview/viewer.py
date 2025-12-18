@@ -21,6 +21,16 @@ from datetime import datetime
 from collections import OrderedDict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
+
+DEFAULT_CHROMIUM_FLAGS = (
+    "--no-sandbox --disable-gpu --autoplay-policy=no-user-gesture-required "
+    "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", DEFAULT_CHROMIUM_FLAGS)
+
 from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl
 from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
 from PySide6.QtWidgets import (
@@ -29,10 +39,10 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from spotipy.oauth2 import SpotifyOAuth
-from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
 from echoview.utils import (
     load_config,
     save_config,
@@ -42,6 +52,11 @@ from echoview.utils import (
     media_aspect_label,
 )
 from echoview.embed_utils import deserialize_embed_metadata, EmbedMetadata
+
+QWebEngineSettings.globalSettings().setAttribute(
+    QWebEngineSettings.PlaybackRequiresUserGesture,
+    False
+)
 
 
 # --- Custom label for negative (difference) text drawing ---

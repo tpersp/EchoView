@@ -32,6 +32,8 @@ if [[ "$1" == "--auto-update" ]]; then
   AUTO_UPDATE="true"
 fi
 
+QTWEBENGINE_FLAGS="--no-sandbox --disable-gpu --autoplay-policy=no-user-gesture-required --user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
 # -------------------------------------------------------
 # Display fancy reminder about X11 vs Wayland
 # -------------------------------------------------------
@@ -386,6 +388,10 @@ else
   fi
 fi
 
+if [ -n "${QTWEBENGINE_CHROMIUM_FLAGS:-}" ]; then
+  QTWEBENGINE_FLAGS="$QTWEBENGINE_CHROMIUM_FLAGS"
+fi
+
 echo
 echo "Creating $VIEWER_HOME if it doesn't exist..."
 mkdir -p "$VIEWER_HOME"
@@ -401,10 +407,12 @@ fi
 # -------------------------------------------------------
 ENV_FILE="$VIEWER_HOME/.env"
 if [[ "$AUTO_UPDATE" == "false" || ! -f "$ENV_FILE" ]]; then
-  echo "Creating $ENV_FILE with VIEWER_HOME + IMAGE_DIR..."
+  echo "Creating $ENV_FILE with VIEWER_HOME + IMAGE_DIR + WebEngine defaults..."
   cat <<EOF > "$ENV_FILE"
 VIEWER_HOME=$VIEWER_HOME
 IMAGE_DIR=$IMAGE_DIR
+QTWEBENGINE_DISABLE_SANDBOX=1
+QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_FLAGS"
 EOF
   chown "$VIEWER_USER:$VIEWER_USER" "$ENV_FILE"
 fi
@@ -457,10 +465,12 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
     mkdir -p "$IMAGE_DIR"
     chown $VIEWER_USER:$VIEWER_USER "$IMAGE_DIR"
     echo "Local uploads folder created at $IMAGE_DIR."
-    echo "Updating .env file with new IMAGE_DIR..."
+    echo "Updating .env file with new IMAGE_DIR and WebEngine defaults..."
     cat <<EOF > "$ENV_FILE"
 VIEWER_HOME=$VIEWER_HOME
 IMAGE_DIR=$IMAGE_DIR
+QTWEBENGINE_DISABLE_SANDBOX=1
+QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_FLAGS"
 EOF
     chown "$VIEWER_USER:$VIEWER_USER" "$ENV_FILE"
     echo "Updated .env file:"
@@ -492,6 +502,8 @@ WorkingDirectory=$VIEWER_HOME
 EnvironmentFile=$ENV_FILE
 Environment="DISPLAY=:0"
 Environment="XAUTHORITY=/home/$VIEWER_USER/.Xauthority"
+Environment="QTWEBENGINE_DISABLE_SANDBOX=1"
+Environment="QTWEBENGINE_CHROMIUM_FLAGS=$QTWEBENGINE_FLAGS"
 Environment="PATH=$VENV_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 ExecStartPre=/bin/sleep 5

@@ -19,6 +19,9 @@ def load_env():
                     continue
                 if "=" in line:
                     key, val = line.split("=", 1)
+                    val = val.strip()
+                    if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                        val = val[1:-1]
                     os.environ.setdefault(key, val)
 
 load_env()

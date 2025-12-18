@@ -81,6 +81,13 @@ Browse to `http://<PI-IP>:8080` to access the interface. You’ll see:
 - EchoView first tries to extract the channel’s live HLS manifest using `yt_dlp`; when successful it plays the `.m3u8` feed directly through Qt Multimedia.
 - If no manifest is available, EchoView launches `mpv` with the original YouTube URL. Make sure both `yt_dlp` and `mpv` are installed on the host so this fallback works seamlessly.
 
+### WebEngine autoplay flags (YouTube embeds)
+
+- EchoView now ships with the recommended Qt WebEngine flags baked into `.env` and `echoview.service` so YouTube embeds run without sandbox issues and can autoplay.
+- The default flags are: `QTWEBENGINE_DISABLE_SANDBOX=1` and `QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu --autoplay-policy=no-user-gesture-required --user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"`.
+- If you launch manually instead of via systemd, export the two variables above before running `python3 -m echoview.viewer`.
+- YouTube aggressively gates autoplay/embeds on older user-agents; keeping the modern UA string above avoids most “video won’t start” issues.
+
 ### Spotify Integration
 
 In `Configure Spotify`, provide your **Client ID**, **Client Secret**, and **Redirect URI** from the Spotify Developer Dashboard. Then click **Authorize Spotify** to store the OAuth token. You can set one or more displays to `spotify` mode.
