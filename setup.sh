@@ -710,7 +710,9 @@ WorkingDirectory=$VIEWER_HOME
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+# The watchdog script and config live under $VIEWER_HOME (e.g. /home/pi/EchoView),
+# so ProtectHome must be disabled to avoid 203/EXEC failures.
+ProtectHome=false
 ReadWritePaths=$VIEWER_HOME
 ProtectKernelTunables=true
 ProtectKernelModules=true
