@@ -18,6 +18,7 @@ import threading
 import subprocess
 import shutil
 import signal
+import re
 from typing import Optional, List
 from datetime import datetime
 from collections import OrderedDict
@@ -140,6 +141,7 @@ class DisplayWindow(QMainWindow):
         self.current_video_proc = None
         self.external_browser_proc = None
         self.external_browser_url = None
+        self.external_browser_log_thread = None
 
         # Cached list and index used when spotify mode falls back to
         # displaying local images.  Building the image list for every
@@ -541,6 +543,7 @@ class DisplayWindow(QMainWindow):
                     pass
         self.external_browser_proc = None
         self.external_browser_url = None
+        self.external_browser_log_thread = None
 
     def _should_use_external_browser(self, urls) -> bool:
         for url in urls:
@@ -560,6 +563,20 @@ class DisplayWindow(QMainWindow):
                 return path
         return None
 
+    def _chromium_user_data_dir(self) -> str:
+        parts = [self.disp_name]
+        screen = self.assigned_screen or self.screen()
+        if screen and hasattr(screen, "name"):
+            try:
+                parts.append(screen.name())
+            except Exception:
+                pass
+        raw = "-".join([p for p in parts if p])
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw)
+        if not safe:
+            safe = f"display-{abs(id(self))}"
+        return f"/tmp/echoview-chromium-{safe}"
+
     def _chromium_window_flags(self) -> List[str]:
         screen = self.assigned_screen or self.screen()
         if not screen:
@@ -576,13 +593,17 @@ class DisplayWindow(QMainWindow):
         binary = self._find_chromium_binary()
         if not binary:
             return None
+        user_dir = self._chromium_user_data_dir()
         cmd = [
             binary,
             "--kiosk",
+            "--new-window",
+            "--no-first-run",
+            "--no-default-browser-check",
             "--autoplay-policy=no-user-gesture-required",
             "--disable-gpu",
             "--disable-software-rasterizer",
-            "--user-data-dir=/tmp/echoview-chromium",
+            f"--user-data-dir={user_dir}",
         ]
         cmd += self._chromium_window_flags()
         cmd.append(url)
@@ -604,12 +625,22 @@ class DisplayWindow(QMainWindow):
         env["DISPLAY"] = ":0"
         env["XAUTHORITY"] = "/home/pi/.Xauthority"
         try:
-            proc = subprocess.Popen(cmd, env=env, start_new_session=True)
+            proc = subprocess.Popen(
+                cmd,
+                env=env,
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
         except Exception as exc:
             log_message(f"Chromium launch error for {url}: {exc}")
+            self._show_external_browser_error("Chromium failed to start.")
             return False
         self.external_browser_proc = proc
         self.external_browser_url = url
+        self._start_external_browser_log_thread(proc)
+        self.foreground_label.setText("")
+        QTimer.singleShot(800, lambda: self._check_external_browser_start(url))
         return True
 
     def _maybe_launch_external_browser(self, raw_url: str, metadata: Optional[EmbedMetadata]) -> bool:
@@ -628,6 +659,47 @@ class DisplayWindow(QMainWindow):
         self.web_view.hide()
         self.stop_current_video()
         return self._ensure_external_browser(target_url)
+
+    def _start_external_browser_log_thread(self, proc: subprocess.Popen) -> None:
+        if not proc.stderr:
+            return
+
+        def worker():
+            try:
+                for raw in iter(proc.stderr.readline, b""):
+                    line = raw.decode(errors="replace").strip()
+                    if line:
+                        log_message(f"Chromium[{self.disp_name}] stderr: {line}")
+            except Exception:
+                pass
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+        self.external_browser_log_thread = thread
+
+    def _check_external_browser_start(self, url: str) -> None:
+        proc = self.external_browser_proc
+        if not proc or self.external_browser_url != url:
+            return
+        if proc.poll() is None:
+            return
+        log_message(f"Chromium exited early for {url} (code={proc.returncode}).")
+        self._stop_external_browser()
+        self._show_external_browser_error("Chromium failed to start.")
+
+    def _show_external_browser_error(self, message: str) -> None:
+        self._stop_hls_playback()
+        self.web_view.hide()
+        self.stop_current_video()
+        self.foreground_label.setText(message)
+        self.foreground_label.setAlignment(Qt.AlignCenter)
+        font = self.foreground_label.font()
+        screen = self.assigned_screen if self.assigned_screen else self.screen()
+        height = screen.size().height() if screen else 800
+        font.setPointSize(max(24, int(height / 20)))
+        self.foreground_label.setFont(font)
+        self.foreground_label.setStyleSheet("color: white; background-color: black;")
+        self.foreground_label.raise_()
 
     def _load_web_url(self, url: str) -> None:
         """Load a URL (or placeholder) into the embedded browser."""
