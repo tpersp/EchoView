@@ -17,6 +17,8 @@ import tempfile
 import threading
 import subprocess
 import shutil
+import signal
+from typing import Optional, List
 from datetime import datetime
 from collections import OrderedDict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -136,6 +138,8 @@ class DisplayWindow(QMainWindow):
         self.handling_gif_frames = False
         self.last_scaled_foreground_image = None
         self.current_video_proc = None
+        self.external_browser_proc = None
+        self.external_browser_url = None
 
         # Cached list and index used when spotify mode falls back to
         # displaying local images.  Building the image list for every
@@ -522,6 +526,95 @@ class DisplayWindow(QMainWindow):
             pass
         return True
 
+    def _stop_external_browser(self) -> None:
+        proc = self.external_browser_proc
+        if not proc:
+            return
+        if proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+                proc.wait(timeout=3)
+            except Exception:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except Exception:
+                    pass
+        self.external_browser_proc = None
+        self.external_browser_url = None
+
+    def _should_use_external_browser(self, urls) -> bool:
+        for url in urls:
+            if not url:
+                continue
+            lowered = url.lower()
+            if any(token in lowered for token in ("youtube.com", "youtu.be", "youtube-nocookie.com")):
+                return True
+            if "/stream/group/" in lowered or "/stream/live" in lowered:
+                return True
+        return False
+
+    def _find_chromium_binary(self) -> Optional[str]:
+        for candidate in ("chromium", "chromium-browser"):
+            path = shutil.which(candidate)
+            if path:
+                return path
+        return None
+
+    def _build_chromium_command(self, url: str) -> Optional[List[str]]:
+        binary = self._find_chromium_binary()
+        if not binary:
+            return None
+        return [
+            binary,
+            "--kiosk",
+            "--autoplay-policy=no-user-gesture-required",
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--user-data-dir=/tmp/echoview-chromium",
+            url,
+        ]
+
+    def _ensure_external_browser(self, url: str) -> bool:
+        if (
+            self.external_browser_proc
+            and self.external_browser_proc.poll() is None
+            and self.external_browser_url == url
+        ):
+            return True
+        self._stop_external_browser()
+        cmd = self._build_chromium_command(url)
+        if not cmd:
+            log_message("Chromium not found; falling back to Qt WebEngine.")
+            return False
+        env = os.environ.copy()
+        env["DISPLAY"] = ":0"
+        env["XAUTHORITY"] = "/home/pi/.Xauthority"
+        try:
+            proc = subprocess.Popen(cmd, env=env, start_new_session=True)
+        except Exception as exc:
+            log_message(f"Chromium launch error for {url}: {exc}")
+            return False
+        self.external_browser_proc = proc
+        self.external_browser_url = url
+        return True
+
+    def _maybe_launch_external_browser(self, raw_url: str, metadata: Optional[EmbedMetadata]) -> bool:
+        candidates = [raw_url]
+        if metadata:
+            candidates.append(metadata.original_url or "")
+            candidates.append(metadata.canonical_url or "")
+        if not self._should_use_external_browser(candidates):
+            self._stop_external_browser()
+            return False
+        target_url = raw_url or (metadata.original_url if metadata else "") or (metadata.canonical_url if metadata else "")
+        if not target_url:
+            self._stop_external_browser()
+            return False
+        self._stop_hls_playback()
+        self.web_view.hide()
+        self.stop_current_video()
+        return self._ensure_external_browser(target_url)
+
     def _load_web_url(self, url: str) -> None:
         """Load a URL (or placeholder) into the embedded browser."""
         self._stop_hls_playback()
@@ -670,6 +763,13 @@ class DisplayWindow(QMainWindow):
         super().resizeEvent(event)
         self.setup_layout()
 
+    def closeEvent(self, event):
+        self.running = False
+        self._stop_external_browser()
+        self._stop_hls_playback()
+        self.stop_current_video()
+        super().closeEvent(event)
+
     @Slot()
     def reload_settings(self):
         self.stop_current_video()
@@ -725,6 +825,8 @@ class DisplayWindow(QMainWindow):
                 self.image_cache.popitem(last=False)
 
         self.current_mode = self.disp_cfg.get("mode", "random_image")
+        if self.current_mode != "web_page":
+            self._stop_external_browser()
         interval_s = self.disp_cfg.get("image_interval", 60)
         if self.current_mode == "spotify":
             interval_s = 5
@@ -779,13 +881,16 @@ class DisplayWindow(QMainWindow):
             self.slideshow_timer.start()
         elif self.current_mode == "web_page":
             metadata = deserialize_embed_metadata(self.disp_cfg.get("embed_metadata"))
-            if metadata and metadata.embed_type == "hls":
-                hls_url = metadata.canonical_url or metadata.original_url or self.disp_cfg.get("web_url", "")
+            raw_url = (self.disp_cfg.get("web_url", "") or "").strip()
+            if self._maybe_launch_external_browser(raw_url, metadata):
+                pass
+            elif metadata and metadata.embed_type == "hls":
+                hls_url = metadata.canonical_url or metadata.original_url or raw_url
                 self._play_hls_stream(hls_url)
             elif metadata and metadata.embed_type == "mpv":
-                stream_url = metadata.canonical_url or metadata.original_url or self.disp_cfg.get("web_url", "")
+                stream_url = metadata.canonical_url or metadata.original_url or raw_url
                 if not self._play_mpv_stream(stream_url):
-                    fallback = metadata.canonical_url or metadata.original_url or self.disp_cfg.get("web_url", "")
+                    fallback = metadata.canonical_url or metadata.original_url or raw_url
                     self._load_web_url(fallback)
             elif metadata and metadata.embed_type == "youtube":
                 if (metadata.content_type or "").lower() == "live":
@@ -796,7 +901,7 @@ class DisplayWindow(QMainWindow):
                         self._load_youtube_embed(metadata)
                 else:
                     # Try mpv first to avoid Qt WebEngine codec issues; fall back to embed.
-                    yt_url = metadata.original_url or metadata.canonical_url or self.disp_cfg.get("web_url", "")
+                    yt_url = metadata.original_url or metadata.canonical_url or raw_url
                     if not self._play_mpv_stream(yt_url):
                         self._load_youtube_embed(metadata)
             else:
@@ -804,7 +909,7 @@ class DisplayWindow(QMainWindow):
                 if metadata and metadata.canonical_url:
                     target_url = metadata.canonical_url
                 if not target_url:
-                    target_url = self.disp_cfg.get("web_url", "")
+                    target_url = raw_url
                 self._load_web_url(target_url)
             self.slideshow_timer.stop()
         elif self.current_mode == "videos":
