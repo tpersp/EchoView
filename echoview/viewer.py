@@ -53,10 +53,17 @@ from echoview.utils import (
 )
 from echoview.embed_utils import deserialize_embed_metadata, EmbedMetadata
 
-QWebEngineSettings.globalSettings().setAttribute(
-    QWebEngineSettings.PlaybackRequiresUserGesture,
-    False
-)
+def _get_webengine_settings():
+    """Return a settings object across Qt versions."""
+    if hasattr(QWebEngineSettings, "defaultSettings"):
+        return QWebEngineSettings.defaultSettings()
+    if hasattr(QWebEngineSettings, "globalSettings"):
+        return QWebEngineSettings.globalSettings()
+    return None
+
+_settings = _get_webengine_settings()
+if _settings:
+    _settings.setAttribute(QWebEngineSettings.PlaybackRequiresUserGesture, False)
 
 
 # --- Custom label for negative (difference) text drawing ---
