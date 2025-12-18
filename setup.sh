@@ -605,44 +605,179 @@ echo "Done configuring Openbox autologin, Picom configuration, and autostart."
 fi
 
 # -------------------------------------------------------
-# 8b) Ask to enable network watchdog reboot cronjob
+# 8b) Set up systemd-based network watchdog timer
 # -------------------------------------------------------
+cleanup_legacy_watchdog_cron() {
+  local existing filtered
+  existing=$(crontab -l 2>/dev/null || true)
+  if [ -n "$existing" ] && echo "$existing" | grep -q "Network fail, rebooting."; then
+    filtered=$(echo "$existing" | grep -v "Network fail, rebooting.")
+    printf "%s\n" "$filtered" | crontab -
+    echo "Removed legacy cron-based network watchdog entry."
+  fi
+}
+
+detect_watchdog_default_target() {
+  local gateway addr ip o1 o2 o3
+  gateway=$(ip -4 route show default 2>/dev/null | awk '$1=="default"{print $3; exit}')
+  if [ -n "$gateway" ]; then
+    echo "$gateway"
+    return
+  fi
+
+  addr=$(ip -4 addr show scope global up 2>/dev/null | awk '/inet /{print $2; exit}')
+  if [ -n "$addr" ]; then
+    ip=${addr%%/*}
+    IFS='.' read -r o1 o2 o3 _ <<< "$ip"
+    if [ -n "${o1:-}" ] && [ -n "${o2:-}" ] && [ -n "${o3:-}" ]; then
+      echo "${o1}.${o2}.${o3}.1"
+      return
+    fi
+  fi
+
+  echo "1.1.1.1"
+}
+
+install_network_watchdog() {
+  local target="$1"
+  local attempts="$2"
+  local threshold="$3"
+  local watchdog_dir="$VIEWER_HOME/bin"
+  local watchdog_script="$watchdog_dir/network-watchdog.sh"
+  local watchdog_conf="$VIEWER_HOME/network-watchdog.conf"
+  local watchdog_service="/etc/systemd/system/network-watchdog.service"
+  local watchdog_timer="/etc/systemd/system/network-watchdog.timer"
+  local log_path="$VIEWER_HOME/viewer.log"
+  local user_id group_id
+
+  if [[ ! "$attempts" =~ ^[1-9][0-9]*$ ]]; then
+    attempts=5
+  fi
+  if [[ ! "$threshold" =~ ^[1-9][0-9]*$ ]]; then
+    threshold=3
+  fi
+  if (( threshold > attempts )); then
+    threshold="$attempts"
+  fi
+
+  user_id="$(id -u "$VIEWER_USER")"
+  group_id="$(id -g "$VIEWER_USER")"
+
+  mkdir -p "$watchdog_dir"
+  /usr/bin/install -m 0755 "$SCRIPT_DIR/network-watchdog.sh" "$watchdog_script"
+  chown "$VIEWER_USER:$VIEWER_USER" "$watchdog_script"
+
+  touch "$log_path"
+  chown "$VIEWER_USER:$VIEWER_USER" "$log_path"
+
+  cat <<EOF > "$watchdog_conf"
+WATCHDOG_USER=$VIEWER_USER
+WATCHDOG_UID=$user_id
+WATCHDOG_GID=$group_id
+WATCHDOG_LOG=$log_path
+WATCHDOG_TARGET=$target
+WATCHDOG_ATTEMPTS=$attempts
+WATCHDOG_FAIL_THRESHOLD=$threshold
+EOF
+  chown "$VIEWER_USER:$VIEWER_USER" "$watchdog_conf"
+  chmod 644 "$watchdog_conf"
+
+  cat <<EOF > "$watchdog_service"
+[Unit]
+Description=EchoView Network Watchdog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$watchdog_script
+EnvironmentFile=-$watchdog_conf
+User=root
+Group=root
+WorkingDirectory=$VIEWER_HOME
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$VIEWER_HOME
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  cat <<EOF > "$watchdog_timer"
+[Unit]
+Description=Run EchoView Network Watchdog periodically
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=1min
+RandomizedDelaySec=30s
+Persistent=true
+Unit=network-watchdog.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable --now network-watchdog.timer
+  systemctl restart network-watchdog.service
+
+  echo "Network watchdog installed (target=$target, attempts=$attempts, threshold=$threshold)."
+  echo "Configuration file: $watchdog_conf"
+}
+
+cleanup_legacy_watchdog_cron
+
 if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo
-  echo "== Optional: Network Watchdog Reboot =="
-  echo "If your Pi loses connection (e.g. drops off Wi-Fi), it can auto-reboot after a failed ping."
-  read -p "Enable automatic reboot if Pi goes offline? (y/n): " setup_watchdog
+  echo "== Optional: Network Watchdog (systemd timer) =="
+  echo "This replaces the old cron-based reboot on single ping failure."
+  read -p "Enable network watchdog timer? (y/n): " setup_watchdog
 
   if [[ "$setup_watchdog" =~ ^[Yy]$ ]]; then
-    echo
-    read -p "Enter the host/IP to ping (default: 8.8.8.8): " PING_TARGET
-    PING_TARGET=${PING_TARGET:-8.8.8.8}
+    default_target="$(detect_watchdog_default_target)"
+    read -p "Enter the host/IP to ping (default: $default_target): " PING_TARGET_INPUT
+    PING_TARGET=${PING_TARGET_INPUT:-$default_target}
 
-    LOG_PATH="$VIEWER_HOME/viewer.log"
-    echo "Setting up watchdog to log to: $LOG_PATH"
+    read -p "Attempts per run (default: 5): " WATCHDOG_ATTEMPTS_INPUT
+    WATCHDOG_ATTEMPTS=${WATCHDOG_ATTEMPTS_INPUT:-5}
 
-    # Ensure log file exists and is writable
-    touch "$LOG_PATH"
-    chown "$VIEWER_USER:$VIEWER_USER" "$LOG_PATH"
+    read -p "Consecutive failures before reboot (default: 3): " WATCHDOG_FAIL_THRESHOLD_INPUT
+    WATCHDOG_FAIL_THRESHOLD=${WATCHDOG_FAIL_THRESHOLD_INPUT:-3}
 
-    # Cron line to add
-    CRON_LINE="*/5 * * * * ping -c 1 -W 1 $PING_TARGET || (echo \"\$(date) - Network fail, rebooting.\" | tee -a $LOG_PATH && /sbin/reboot)"
-
-    # Check if it's already in crontab
-    EXISTING_CRON=$(crontab -l 2>/dev/null | grep -F "$PING_TARGET" | grep -F "$LOG_PATH")
-
-    if [[ -z "$EXISTING_CRON" ]]; then
-      (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
-      echo "Watchdog cron job added."
-    else
-      echo "Cron job already exists for $PING_TARGET — skipping."
-    fi
+    install_network_watchdog "$PING_TARGET" "$WATCHDOG_ATTEMPTS" "$WATCHDOG_FAIL_THRESHOLD"
   else
     echo "Skipping watchdog setup."
   fi
 else
   echo
-  echo "== Auto-Update Mode: skipping watchdog cron setup =="
+  echo "== Auto-Update Mode: systemd network watchdog =="
+  WATCHDOG_CONF_FILE="$VIEWER_HOME/network-watchdog.conf"
+
+  if systemctl list-unit-files | grep -q '^network-watchdog.timer'; then
+    echo "Refreshing watchdog script and units..."
+    default_target="$(detect_watchdog_default_target)"
+    existing_target="$default_target"
+    attempts=5
+    threshold=3
+
+    if [ -f "$WATCHDOG_CONF_FILE" ]; then
+      source "$WATCHDOG_CONF_FILE"
+      existing_target="${WATCHDOG_TARGET:-$default_target}"
+      attempts="${WATCHDOG_ATTEMPTS:-$attempts}"
+      threshold="${WATCHDOG_FAIL_THRESHOLD:-$threshold}"
+    fi
+
+    install_network_watchdog "$existing_target" "$attempts" "$threshold"
+  else
+    echo "Timer not previously enabled; skipping watchdog install."
+  fi
 fi
 
 # -------------------------------------------------------
