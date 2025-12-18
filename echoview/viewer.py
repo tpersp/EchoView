@@ -560,19 +560,33 @@ class DisplayWindow(QMainWindow):
                 return path
         return None
 
+    def _chromium_window_flags(self) -> List[str]:
+        screen = self.assigned_screen or self.screen()
+        if not screen:
+            return []
+        geom = screen.geometry()
+        if geom.width() <= 0 or geom.height() <= 0:
+            return []
+        return [
+            f"--window-position={geom.x()},{geom.y()}",
+            f"--window-size={geom.width()},{geom.height()}",
+        ]
+
     def _build_chromium_command(self, url: str) -> Optional[List[str]]:
         binary = self._find_chromium_binary()
         if not binary:
             return None
-        return [
+        cmd = [
             binary,
             "--kiosk",
             "--autoplay-policy=no-user-gesture-required",
             "--disable-gpu",
             "--disable-software-rasterizer",
             "--user-data-dir=/tmp/echoview-chromium",
-            url,
         ]
+        cmd += self._chromium_window_flags()
+        cmd.append(url)
+        return cmd
 
     def _ensure_external_browser(self, url: str) -> bool:
         if (
