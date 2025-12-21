@@ -1068,12 +1068,6 @@ def full_update():
     cfg = load_config()
     log_message(f"Starting update: forced reset to origin/{UPDATE_BRANCH}")
 
-    old_hash = ""
-    try:
-        old_hash = subprocess.check_output(["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME).decode().strip()
-    except Exception as e:
-        log_message(f"Could not get old setup.sh hash: {e}")
-
     try:
         subprocess.check_call(["git", "fetch"], cwd=VIEWER_HOME)
         subprocess.check_call(["git", "checkout", UPDATE_BRANCH], cwd=VIEWER_HOME)
@@ -1082,18 +1076,11 @@ def full_update():
         log_message(f"Git update failed: {e}")
         return "Git update failed. Check logs.", 500
 
-    new_hash = ""
+    log_message("Running setup.sh in --auto-update mode for full update...")
     try:
-        new_hash = subprocess.check_output(["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME).decode().strip()
-    except Exception as e:
-        log_message(f"Could not get new setup.sh hash: {e}")
-
-    if old_hash and new_hash and (old_hash != new_hash):
-        log_message("setup.sh changed. Re-running it in --auto-update mode...")
-        try:
-            subprocess.check_call(["sudo", "bash", "setup.sh", "--auto-update"], cwd=VIEWER_HOME)
-        except subprocess.CalledProcessError as e:
-            log_message(f"Re-running setup.sh failed: {e}")
+        subprocess.check_call(["sudo", "bash", "setup.sh", "--auto-update"], cwd=VIEWER_HOME)
+    except subprocess.CalledProcessError as e:
+        log_message(f"Re-running setup.sh failed: {e}")
 
     log_message("Update completed successfully.")
     subprocess.Popen(["sudo", "reboot"])
