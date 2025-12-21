@@ -557,6 +557,11 @@ class DisplayWindow(QMainWindow):
         return False
 
     def _find_chromium_binary(self) -> Optional[str]:
+        env_bin = os.environ.get("CHROMIUM_BIN")
+        if env_bin:
+            path = shutil.which(env_bin)
+            if path:
+                return path
         for candidate in ("chromium", "chromium-browser"):
             path = shutil.which(candidate)
             if path:

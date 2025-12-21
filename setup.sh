@@ -34,6 +34,39 @@ fi
 
 QTWEBENGINE_FLAGS="--no-sandbox --disable-gpu --autoplay-policy=no-user-gesture-required --user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+ensure_chromium_bin() {
+  if [ -n "${CHROMIUM_BIN:-}" ]; then
+    if command -v "$CHROMIUM_BIN" >/dev/null; then
+      CHROMIUM_BIN="$(command -v "$CHROMIUM_BIN")"
+      return 0
+    fi
+  fi
+  if command -v chromium >/dev/null; then
+    CHROMIUM_BIN="$(command -v chromium)"
+    return 0
+  elif command -v chromium-browser >/dev/null; then
+    CHROMIUM_BIN="$(command -v chromium-browser)"
+    return 0
+  fi
+  echo "ERROR: Chromium not installed (chromium/chromium-browser missing)"
+  exit 1
+}
+
+persist_env_kv() {
+  local key="$1"
+  local val="$2"
+
+  if [ -z "${ENV_FILE:-}" ] || [ ! -f "$ENV_FILE" ]; then
+    return 0
+  fi
+
+  if grep -q "^${key}=" "$ENV_FILE"; then
+    sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
+  else
+    echo "${key}=${val}" >> "$ENV_FILE"
+  fi
+}
+
 # -------------------------------------------------------
 # Display fancy reminder about X11 vs Wayland
 # -------------------------------------------------------
@@ -142,12 +175,17 @@ apt-get install -y \
   libminizip1 \
   libwebp7 \
   libtiff6 \
-  libevent-2.1-7
+  libevent-2.1-7 \
+  chromium \
+  chromium-common \
+  chromium-sandbox
 
 if [ $? -ne 0 ]; then
   echo "Error installing packages via apt. Exiting."
   exit 1
 fi
+
+ensure_chromium_bin
 
 # -------------------------------------------------------
 # Ensure PySide6 WebEngine libraries exist
@@ -391,6 +429,8 @@ fi
 if [ -n "${QTWEBENGINE_CHROMIUM_FLAGS:-}" ]; then
   QTWEBENGINE_FLAGS="$QTWEBENGINE_CHROMIUM_FLAGS"
 fi
+ensure_chromium_bin
+persist_env_kv CHROMIUM_BIN "$CHROMIUM_BIN"
 
 echo
 echo "Creating $VIEWER_HOME if it doesn't exist..."
@@ -411,6 +451,7 @@ if [[ "$AUTO_UPDATE" == "false" || ! -f "$ENV_FILE" ]]; then
   cat <<EOF > "$ENV_FILE"
 VIEWER_HOME=$VIEWER_HOME
 IMAGE_DIR=$IMAGE_DIR
+CHROMIUM_BIN=$CHROMIUM_BIN
 QTWEBENGINE_DISABLE_SANDBOX=1
 QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_FLAGS"
 EOF
@@ -469,6 +510,7 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
     cat <<EOF > "$ENV_FILE"
 VIEWER_HOME=$VIEWER_HOME
 IMAGE_DIR=$IMAGE_DIR
+CHROMIUM_BIN=$CHROMIUM_BIN
 QTWEBENGINE_DISABLE_SANDBOX=1
 QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_FLAGS"
 EOF
