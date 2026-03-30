@@ -120,6 +120,7 @@ def init_config():
                     "mixed_folders": [],
                     "rotate": 0,
                     "web_url": "",
+                    "web_use_external_browser": False,
                     "embed_metadata": None,
                     "youtube_autoplay": True,
                     "youtube_mute": True,
@@ -309,6 +310,9 @@ def upgrade_config(cfg):
     for dcfg in displays.values():
         if "embed_metadata" not in dcfg:
             dcfg["embed_metadata"] = None
+            changed = True
+        if "web_use_external_browser" not in dcfg:
+            dcfg["web_use_external_browser"] = False
             changed = True
         if "youtube_autoplay" not in dcfg:
             dcfg["youtube_autoplay"] = True

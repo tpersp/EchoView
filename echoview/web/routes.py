@@ -700,6 +700,7 @@ def index():
                 "rotate": 0,
                 "screen_name": f"{mon_name}: {minfo['current_mode']}",
                 "chosen_mode": minfo["current_mode"],
+                "web_use_external_browser": False,
                 "spotify_info_position": "bottom-center"
             }
             log_message(f"Detected new monitor {mon_name} with current mode {minfo['current_mode']}")
@@ -765,6 +766,7 @@ def index():
                 dcfg["rotate"] = new_rotate
                 dcfg["aspect_filter"] = aspect_filter
                 dcfg["web_url"] = new_url
+                dcfg["web_use_external_browser"] = True if request.form.get(pre + "web_use_external_browser") else False
                 dcfg["youtube_autoplay"] = True if request.form.get(pre + "youtube_autoplay") else False
                 dcfg["youtube_mute"] = True if request.form.get(pre + "youtube_mute") else False
                 dcfg["youtube_captions"] = True if request.form.get(pre + "youtube_captions") else False

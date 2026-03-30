@@ -291,6 +291,16 @@
               </span>
               <span id="{{ dname }}_embed_error" class="embed-error" style="color:#ff6666;"></span>
             </div>
+            <label style="display:block; margin-top:10px; color: var(--text-normal);">
+              <input type="checkbox"
+                     name="{{ dname }}_web_use_external_browser"
+                     value="1"
+                     {% if dcfg.web_use_external_browser %}checked{% endif %}>
+              Open this page in Chromium instead of the built-in web view
+            </label>
+            <small style="display:block; margin-top:5px; color: var(--text-normal);">
+              Helpful for heavier sites or pages that embed YouTube/video content and buffer inside Qt WebEngine.
+            </small>
             <div id="{{ dname }}_embed_metadata" class="embed-metadata" style="margin-top:10px; color: var(--text-normal);">
               {% if meta %}
                 {% if meta.title %}
