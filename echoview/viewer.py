@@ -31,6 +31,10 @@ DEFAULT_CHROMIUM_FLAGS = (
     "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
+STANDALONE_CHROMIUM_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux armv7l) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+)
 os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", DEFAULT_CHROMIUM_FLAGS)
 
@@ -580,7 +584,12 @@ class DisplayWindow(QMainWindow):
         safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw)
         if not safe:
             safe = f"display-{abs(id(self))}"
-        return f"/tmp/echoview-chromium-{safe}"
+        config_home = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+        base_dir = os.environ.get(
+            "ECHOVIEW_CHROMIUM_CONFIG_DIR",
+            os.path.join(config_home, "echoview"),
+        )
+        return os.path.join(base_dir, f"chromium-{safe}")
 
     def _chromium_window_flags(self) -> List[str]:
         screen = self.assigned_screen or self.screen()
@@ -599,6 +608,7 @@ class DisplayWindow(QMainWindow):
         if not binary:
             return None
         user_dir = self._chromium_user_data_dir()
+        os.makedirs(user_dir, exist_ok=True)
         cmd = [
             binary,
             "--kiosk",
@@ -606,8 +616,7 @@ class DisplayWindow(QMainWindow):
             "--no-first-run",
             "--no-default-browser-check",
             "--autoplay-policy=no-user-gesture-required",
-            "--disable-gpu",
-            "--disable-software-rasterizer",
+            f"--user-agent={STANDALONE_CHROMIUM_USER_AGENT}",
             f"--user-data-dir={user_dir}",
         ]
         cmd += self._chromium_window_flags()
