@@ -30,7 +30,7 @@ load_env()
 # Application Version & Paths
 # ------------------------------------------------------------
 
-APP_VERSION = "1.5.1"
+APP_VERSION = "1.5.2"
 
 VIEWER_HOME = os.environ.get("VIEWER_HOME", "/home/pi/EchoView")
 IMAGE_DIR   = os.environ.get("IMAGE_DIR", "/mnt/EchoViews")
