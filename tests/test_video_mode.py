@@ -62,6 +62,19 @@ for name in [
 qtweb = types.ModuleType("PySide6.QtWebEngineWidgets")
 qtweb.QWebEngineView = type("QWebEngineView", (), {})
 
+qtwebcore = types.ModuleType("PySide6.QtWebEngineCore")
+
+
+class _DummyWebEngineSettings:
+    PlaybackRequiresUserGesture = 0
+
+    @staticmethod
+    def defaultSettings():
+        return types.SimpleNamespace(setAttribute=lambda *a, **k: None)
+
+
+qtwebcore.QWebEngineSettings = _DummyWebEngineSettings
+
 qtmultimedia = types.ModuleType("PySide6.QtMultimedia")
 
 
@@ -131,6 +144,7 @@ sys.modules.setdefault("PySide6", types.ModuleType("PySide6"))
 sys.modules.setdefault("PySide6.QtCore", qtcore)
 sys.modules.setdefault("PySide6.QtGui", qtgui)
 sys.modules.setdefault("PySide6.QtWidgets", qtwidgets)
+sys.modules.setdefault("PySide6.QtWebEngineCore", qtwebcore)
 sys.modules.setdefault("PySide6.QtWebEngineWidgets", qtweb)
 sys.modules.setdefault("PySide6.QtMultimedia", qtmultimedia)
 sys.modules.setdefault("PySide6.QtMultimediaWidgets", qtmultimedia_widgets)
@@ -202,7 +216,7 @@ def test_build_chromium_command_uses_browser_like_flags(monkeypatch, tmp_path):
     cmd = DisplayWindow._build_chromium_command(dw, "https://youtube.com/watch?v=test")
 
     assert cmd is not None
-    assert "--disable-gpu" not in cmd
+    assert "--disable-gpu" in cmd
     assert "--disable-software-rasterizer" not in cmd
     assert f"--user-agent={viewer.STANDALONE_CHROMIUM_USER_AGENT}" in cmd
     assert f"--user-data-dir={tmp_path / 'chromium-Display0-HDMI-1'}" in cmd

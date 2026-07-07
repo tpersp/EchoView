@@ -68,6 +68,19 @@ for name in [
 qtweb = types.ModuleType("PySide6.QtWebEngineWidgets")
 qtweb.QWebEngineView = type("QWebEngineView", (), {})
 
+qtwebcore = types.ModuleType("PySide6.QtWebEngineCore")
+
+
+class _DummyWebEngineSettings:
+    PlaybackRequiresUserGesture = 0
+
+    @staticmethod
+    def defaultSettings():
+        return types.SimpleNamespace(setAttribute=lambda *a, **k: None)
+
+
+qtwebcore.QWebEngineSettings = _DummyWebEngineSettings
+
 qtmultimedia = types.ModuleType("PySide6.QtMultimedia")
 qtmultimedia.QAudioOutput = type("QAudioOutput", (), {})
 qtmultimedia.QMediaPlayer = type("QMediaPlayer", (), {})
@@ -85,6 +98,7 @@ sys.modules.setdefault("PySide6", types.ModuleType("PySide6"))
 sys.modules.setdefault("PySide6.QtCore", qtcore)
 sys.modules.setdefault("PySide6.QtGui", qtgui)
 sys.modules.setdefault("PySide6.QtWidgets", qtwidgets)
+sys.modules.setdefault("PySide6.QtWebEngineCore", qtwebcore)
 sys.modules.setdefault("PySide6.QtWebEngineWidgets", qtweb)
 sys.modules.setdefault("PySide6.QtMultimedia", qtmultimedia)
 sys.modules.setdefault("PySide6.QtMultimediaWidgets", qtmultimedia_widgets)

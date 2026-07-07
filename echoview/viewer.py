@@ -616,6 +616,7 @@ class DisplayWindow(QMainWindow):
             "--no-first-run",
             "--no-default-browser-check",
             "--autoplay-policy=no-user-gesture-required",
+            "--disable-gpu",
             f"--user-agent={STANDALONE_CHROMIUM_USER_AGENT}",
             f"--user-data-dir={user_dir}",
         ]
