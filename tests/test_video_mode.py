@@ -192,6 +192,17 @@ def test_build_mpv_command_mute(monkeypatch):
     assert "--keep-open=no" in cmd
 
 
+def test_find_chromium_binary_prefers_direct_debian_binary(monkeypatch):
+    monkeypatch.delenv("CHROMIUM_BIN", raising=False)
+    monkeypatch.setattr(viewer.shutil, "which", lambda candidate: f"/usr/bin/{candidate}")
+    monkeypatch.setattr(viewer.os.path, "exists", lambda path: path == "/usr/lib/chromium/chromium")
+    monkeypatch.setattr(viewer.os, "access", lambda path, mode: path == "/usr/lib/chromium/chromium")
+
+    dw = DisplayWindow.__new__(DisplayWindow)
+
+    assert DisplayWindow._find_chromium_binary(dw) == "/usr/lib/chromium/chromium"
+
+
 def test_chromium_profile_dir_is_persistent(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     dw = DisplayWindow.__new__(DisplayWindow)
