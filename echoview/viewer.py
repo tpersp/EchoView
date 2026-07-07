@@ -566,6 +566,9 @@ class DisplayWindow(QMainWindow):
             path = shutil.which(env_bin)
             if path:
                 return path
+        direct_binary = "/usr/lib/chromium/chromium"
+        if os.path.exists(direct_binary) and os.access(direct_binary, os.X_OK):
+            return direct_binary
         for candidate in ("chromium", "chromium-browser"):
             path = shutil.which(candidate)
             if path:
@@ -616,6 +619,7 @@ class DisplayWindow(QMainWindow):
             "--no-first-run",
             "--no-default-browser-check",
             "--autoplay-policy=no-user-gesture-required",
+            "--disable-gpu",
             f"--user-agent={STANDALONE_CHROMIUM_USER_AGENT}",
             f"--user-data-dir={user_dir}",
         ]
