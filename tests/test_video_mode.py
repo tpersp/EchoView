@@ -324,3 +324,28 @@ def test_ignored_folder_not_loaded(monkeypatch, tmp_path):
     dw.disp_cfg["mixed_folders"] = ["_ai_temp", "Photos"]
     dw.build_local_image_list()
     assert dw.image_list == [str(photos / "a.jpg")]
+
+
+def test_maybe_launch_external_browser_honors_web_toggle():
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.disp_cfg = {"web_use_external_browser": True}
+    events = []
+    dw._stop_hls_playback = lambda: events.append("stop_hls")
+    dw.web_view = types.SimpleNamespace(hide=lambda: events.append("hide_web"))
+    dw.stop_current_video = lambda: events.append("stop_video")
+    dw._ensure_external_browser = lambda url: events.append(("launch", url)) or True
+    dw._stop_external_browser = lambda: events.append("stop_external")
+
+    result = DisplayWindow._maybe_launch_external_browser(
+        dw,
+        "https://example.com/page-with-youtube",
+        None,
+    )
+
+    assert result is True
+    assert events == [
+        "stop_hls",
+        "hide_web",
+        "stop_video",
+        ("launch", "https://example.com/page-with-youtube"),
+    ]

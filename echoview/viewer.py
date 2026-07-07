@@ -658,6 +658,16 @@ class DisplayWindow(QMainWindow):
         return True
 
     def _maybe_launch_external_browser(self, raw_url: str, metadata: Optional[EmbedMetadata]) -> bool:
+        if self.disp_cfg.get("web_use_external_browser", False):
+            target_url = raw_url or (metadata.original_url if metadata else "") or (metadata.canonical_url if metadata else "")
+            if not target_url:
+                self._stop_external_browser()
+                return False
+            self._stop_hls_playback()
+            self.web_view.hide()
+            self.stop_current_video()
+            return self._ensure_external_browser(target_url)
+
         candidates = [raw_url]
         if metadata:
             candidates.append(metadata.original_url or "")
