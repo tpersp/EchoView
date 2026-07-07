@@ -178,6 +178,37 @@ def test_build_mpv_command_mute(monkeypatch):
     assert "--keep-open=no" in cmd
 
 
+def test_chromium_profile_dir_is_persistent(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.disp_name = "Display 1"
+    dw.assigned_screen = types.SimpleNamespace(name=lambda: "HDMI-1")
+
+    user_dir = DisplayWindow._chromium_user_data_dir(dw)
+
+    assert user_dir == str(tmp_path / "echoview" / "chromium-Display_1-HDMI-1")
+    assert not user_dir.startswith("/tmp/echoview-chromium-")
+
+
+def test_build_chromium_command_uses_browser_like_flags(monkeypatch, tmp_path):
+    monkeypatch.setenv("ECHOVIEW_CHROMIUM_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(DisplayWindow, "_find_chromium_binary", lambda self: "/usr/bin/chromium")
+
+    geom = types.SimpleNamespace(x=lambda: 10, y=lambda: 20, width=lambda: 800, height=lambda: 480)
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.disp_name = "Display0"
+    dw.assigned_screen = types.SimpleNamespace(name=lambda: "HDMI-1", geometry=lambda: geom)
+
+    cmd = DisplayWindow._build_chromium_command(dw, "https://youtube.com/watch?v=test")
+
+    assert cmd is not None
+    assert "--disable-gpu" not in cmd
+    assert "--disable-software-rasterizer" not in cmd
+    assert f"--user-agent={viewer.STANDALONE_CHROMIUM_USER_AGENT}" in cmd
+    assert f"--user-data-dir={tmp_path / 'chromium-Display0-HDMI-1'}" in cmd
+    assert os.path.isdir(tmp_path / "chromium-Display0-HDMI-1")
+
+
 def test_play_next_video_sequential(monkeypatch):
     dw = DisplayWindow.__new__(DisplayWindow)
     dw.disp_cfg = {"video_play_to_end": True}
