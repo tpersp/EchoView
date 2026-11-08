@@ -3,13 +3,14 @@
 import json
 import os
 import platform
-import re
 import shutil
 import subprocess
 from importlib import metadata
 from pathlib import Path
 
-PACKAGES = ("Flask", "Werkzeug", "psutil", "requests", "spotipy", "PySide6", "Pillow", "yt-dlp", "yt-dlp-ejs")
+from echoview.displays import parse_xrandr
+
+PACKAGES = ("Flask", "Werkzeug", "psutil", "requests", "spotipy", "PySide6", "Pillow", "yt-dlp", "yt-dlp-ejs", "deno")
 TOOLS = ("xrandr", "chromium", "chromium-browser", "mpv", "ffmpeg", "ffprobe", "yt-dlp", "deno", "node", "systemctl")
 
 
@@ -46,15 +47,11 @@ def display_report():
     if code != 0:
         return report
     report["x11_probe"] = "ok"
-    for line in output.splitlines():
-        match = re.match(r"^([A-Za-z0-9_.-]+) (connected|disconnected)\b(.*)$", line)
-        if not match:
-            continue
-        geometry = re.search(r"\b(\d+x\d+)([+-]\d+)([+-]\d+)", match[3])
+    for name, monitor in parse_xrandr(output).items():
         report["connectors"].append({
-            "name": match[1], "connected": match[2] == "connected",
-            "resolution": geometry[1] if geometry else None,
-            "position": [int(geometry[2]), int(geometry[3])] if geometry else None,
+            "name": name, "connected": monitor["connected"],
+            "resolution": f'{monitor["width"]}x{monitor["height"]}' if monitor["active"] else None,
+            "position": [monitor["x"], monitor["y"]] if monitor["active"] else None,
         })
     return report
 
@@ -80,7 +77,9 @@ def collect_report():
         model = Path("/proc/device-tree/model").read_text().rstrip("\x00\n")
     except OSError:
         model = None
+    from echoview.streaming import capabilities
     return {
+        "streaming": capabilities(),
         "os": os_name, "architecture": platform.machine(),
         "python": platform.python_version(), "pi_model": model,
         "packages": package_versions(),

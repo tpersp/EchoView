@@ -7,7 +7,7 @@ import subprocess
 import requests
 from flask import (
     Blueprint, request, redirect, url_for, render_template,
-    send_from_directory, send_file, jsonify, session, current_app
+    send_from_directory, send_file, jsonify, session, current_app, flash
 )
 from echoview.config import (
     APP_VERSION,
@@ -28,6 +28,9 @@ from echoview.utils import (
     media_aspect_label,
 )
 from echoview.web.spotify_auth import DEFAULT_SCOPE, validate_config, cached_status, oauth_client
+from echoview.presentation import safe_area_settings, RESOURCE_PROFILES, EDGES
+from echoview.displays import (discover_monitors, reconcile_displays, mode_choices,
+                               apply_output_mode, DISPLAY_ASPECTS)
 from echoview import embed_utils
 
 # Supported media file extensions for the upload/file-manager features.
@@ -37,71 +40,14 @@ VALID_MEDIA_EXT = (
 )
 
 def detect_monitors_extended():
-    """
-    Calls xrandr --props to find connected monitors, their preferred/current resolution,
-    plus a list of possible modes, plus a 'monitor name' from EDID if available.
-    We do NOT use these to change resolution.
-    """
-    result = {}
-    try:
-        xout = subprocess.check_output(["xrandr", "--props"], stderr=subprocess.STDOUT).decode("utf-8", "ignore")
-    except Exception as e:
-        log_message(f"Monitor detection error: {e}")
-        return {}
+    return discover_monitors()
 
-    current_monitor = None
-    for line in xout.splitlines():
-        line = line.strip()
-        if " connected " in line:
-            parts = line.split()
-            name = parts[0]
-            if "connected" in line:
-                current_monitor = name
-                result[current_monitor] = {
-                    "model": None,
-                    "connected": True,
-                    "current_mode": None,
-                    "modes": []
-                }
-                for p in parts:
-                    if "x" in p and "+" in p:
-                        mode_part = p.split("+")[0]
-                        result[current_monitor]["current_mode"] = mode_part
-                        break
-
-        elif current_monitor and "Monitor name:" in line:
-            idx = line.find("Monitor name:")
-            name_str = line[idx + len("Monitor name:"):].strip()
-            if name_str:
-                result[current_monitor]["model"] = name_str
-
-        elif current_monitor:
-            tokens = line.split()
-            if tokens:
-                mode_candidate = tokens[0]
-                if "x" in mode_candidate and mode_candidate[0].isdigit():
-                    if mode_candidate not in result[current_monitor]["modes"]:
-                        result[current_monitor]["modes"].append(mode_candidate)
-
-    return result
 
 def get_local_monitors_from_config(cfg):
-    """
-    Return a dict for referencing each monitor's resolution in overlays, etc.
-    """
-    out = {}
-    for dname, dcfg in cfg.get("displays", {}).items():
-        chosen = dcfg.get("chosen_mode")
-        if chosen:
-            out[dname] = {"resolution": chosen}
-        else:
-            sn = dcfg.get("screen_name", "")
-            if sn and ":" in sn:
-                part = sn.split(":")[-1].strip()
-                out[dname] = {"resolution": part if "x" in part else "?"}
-            else:
-                out[dname] = {"resolution": "?"}
-    return out
+    # A saved preference is not evidence that a hardware mode was applied.
+    inventory = discover_monitors()
+    return {name: {"resolution": inventory.get(name, {}).get("current_mode") or "?"}
+            for name in cfg.get("displays", {})}
 
 def compute_overlay_preview(overlay_cfg, monitors_dict):
     """
@@ -178,11 +124,35 @@ def stats_json():
 
 @main_bp.route("/list_monitors")
 def list_monitors():
-    return jsonify({"Display0": {"resolution": "1920x1080", "offset_x": 0, "offset_y": 0}})
+    return jsonify({name: {**monitor, "resolution": monitor["current_mode"],
+                           "offset_x": monitor["x"], "offset_y": monitor["y"],
+                           "available_modes": mode_choices(monitor)}
+                    for name, monitor in discover_monitors().items()})
 
 @main_bp.route("/list_folders")
 def list_folders():
     return jsonify(get_subfolders())
+
+
+@main_bp.route("/player/youtube")
+def youtube_player():
+    cfg = load_config()
+    display = cfg.get("displays", {}).get(request.args.get("display", ""))
+    if not display:
+        return "Unknown display.", 404
+    previous = embed_utils.deserialize_embed_metadata(display.get("embed_metadata"))
+    metadata = embed_utils.classify_url(display.get("web_url") or (previous.original_url if previous else ""))
+    if metadata.embed_type != "youtube" or not (metadata.video_id or metadata.playlist_id or metadata.channel_id):
+        return "A video, playlist or channel ID is needed for embedding. Select the external browser for channel handles.", 400
+    origin = request.url_root.rstrip("/")
+    embed_url = embed_utils.playback_embed_url(metadata, display, origin)
+    return render_template("youtube_player.html", embed_url=embed_url)
+
+
+@main_bp.route("/streaming/status")
+def streaming_status():
+    from echoview.streaming import capabilities
+    return jsonify(capabilities())
 
 
 @main_bp.route("/embed/refresh", methods=["POST"])
@@ -201,7 +171,7 @@ def refresh_embed():
     metadata = None
     if url:
         try:
-            metadata = embed_utils.classify_url(url)
+            metadata = embed_utils.classify_url(url, enrich=True)
         except Exception as exc:  # pragma: no cover - defensive logging
             log_message(f"Embed classification failed for {url}: {exc}")
             return jsonify({"ok": False, "error": "classification_failed"}), 500
@@ -612,10 +582,18 @@ def spotify_check():
 def overlay_config():
     cfg = load_config()
     if request.method == "POST":
+        sizes = {}
+        for monitor in cfg.get("displays", {}):
+            try:
+                sizes[monitor] = int(request.form.get(f"{monitor}_clock_font_size", "26"))
+            except (ValueError, TypeError):
+                return "Clock font size must be an integer from 8 to 512.", 400
+            if not 8 <= sizes[monitor] <= 512:
+                return "Clock font size must be an integer from 8 to 512.", 400
         for monitor in cfg.get("displays", {}):
             new_overlay = {
                 "clock_enabled": (f"{monitor}_clock_enabled" in request.form),
-                "clock_font_size": int(request.form.get(f"{monitor}_clock_font_size", "26")),
+                "clock_font_size": sizes[monitor],
                 "font_color": request.form.get(f"{monitor}_font_color", "#FFFFFF"),
                 "auto_negative_font": (f"{monitor}_auto_negative_font" in request.form),
                 "clock_position": request.form.get(f"{monitor}_clock_position", "bottom-center"),
@@ -643,6 +621,60 @@ def overlay_config():
             monitors=monitors_cfg,
         )
 
+@main_bp.route("/display/presentation", methods=["POST"])
+def configure_presentation():
+    cfg = load_config()
+    name = request.form.get("display", "")
+    if name not in cfg.get("displays", {}):
+        return "Unknown display.", 400
+    display = cfg["displays"][name]
+    profile = request.form.get("resource_profile", display.get("resource_profile", "standard"))
+    if profile not in RESOURCE_PROFILES:
+        return "Invalid resource profile.", 400
+    old = safe_area_settings(display.get("safe_area", {}))
+    try:
+        margins = safe_area_settings({edge: request.form.get("safe_" + edge, old.get(edge, 0)) for edge in EDGES}, strict=True)
+    except ValueError as exc:
+        return str(exc), 400
+    display.update(safe_area=margins, resource_profile=profile)
+    save_config(cfg)
+    try:
+        subprocess.run(["sudo", "systemctl", "restart", "echoview.service"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        flash("Safe area and resource settings saved.")
+    except (OSError, subprocess.SubprocessError):
+        flash("Presentation settings saved; restart the viewer to apply them.")
+    return redirect(url_for("main.index"))
+
+
+@main_bp.route("/display/output", methods=["POST"])
+def configure_output():
+    cfg = load_config()
+    name = request.form.get("display", "")
+    if name not in cfg.get("displays", {}):
+        return "Unknown display.", 400
+    selection = request.form.get("output_mode", "auto")
+    aspect = request.form.get("display_aspect", "auto")
+    if aspect not in DISPLAY_ASPECTS:
+        return "Invalid physical display aspect ratio.", 400
+    try:
+        apply_output_mode(name, selection)
+    except ValueError as exc:
+        return str(exc), 400
+    except RuntimeError as exc:
+        return str(exc), 503
+    cfg["displays"][name]["output_mode"] = selection
+    cfg["displays"][name]["display_aspect"] = aspect
+    save_config(cfg)
+    try:
+        subprocess.run(["sudo", "systemctl", "restart", "echoview.service"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        flash("Display mode applied and settings saved.")
+    except (OSError, subprocess.SubprocessError):
+        flash("Display mode applied and settings saved; restart the viewer to use the new aspect setting.")
+    return redirect(url_for("main.index"))
+
+
 @main_bp.route("/", methods=["GET", "POST"])
 def index():
     cfg = load_config()
@@ -652,53 +684,8 @@ def index():
     if "displays" not in cfg:
         cfg["displays"] = {}
 
-    # Remove old displays that no longer appear
-    to_remove = []
-    for dname in cfg["displays"]:
-        if dname not in ext_mons and dname.startswith("Display"):
-            to_remove.append(dname)
-        elif dname not in ext_mons and dname.startswith("HDMI"):
-            to_remove.append(dname)
-    for dr in to_remove:
-        del cfg["displays"][dr]
-
-    # Update or add each known monitor
-    for mon_name, minfo in ext_mons.items():
-        if mon_name not in cfg["displays"]:
-            cfg["displays"][mon_name] = {
-                "mode": "random_image",
-                "fallback_mode": "random_image",
-                "image_interval": 60,
-                "image_category": "",
-                "specific_image": "",
-                "shuffle_mode": False,
-                "mixed_folders": [],
-                "video_category": "",
-                "shuffle_videos": False,
-                "video_mute": True,
-                "video_volume": 100,
-                "video_play_to_end": True,
-                "video_max_seconds": 120,
-                "aspect_filter": "any",
-                "rotate": 0,
-                "screen_name": f"{mon_name}: {minfo['current_mode']}",
-                "chosen_mode": minfo["current_mode"],
-                "web_use_external_browser": False,
-                "spotify_info_position": "bottom-center"
-            }
-            log_message(f"Detected new monitor {mon_name} with current mode {minfo['current_mode']}")
-        else:
-            dcfg = cfg["displays"][mon_name]
-            dcfg["screen_name"] = f"{mon_name}: {minfo['current_mode']}"
-            if minfo.get("model"):
-                dcfg["monitor_model"] = minfo["model"]
-
-    save_config(cfg)
-
-    flash_msg = (
-      "If you experience lower performance or framerate than expected, "
-      "please consider using a physically lower resolution monitor."
-    )
+    if reconcile_displays(cfg, ext_mons):
+        save_config(cfg)
 
     if request.method == "POST":
         action = request.form.get("action", "")
@@ -886,13 +873,14 @@ def index():
     spotify_status = cached_status(cfg.get("spotify", {}), SPOTIFY_CACHE_PATH)
 
     final_monitors = {}
-    for mon_name, minfo in ext_mons.items():
-        chosen = cfg["displays"][mon_name].get("chosen_mode", minfo["current_mode"])
-        model_name = minfo["model"] or "?"
-        final_monitors[mon_name] = {
-            "resolution": chosen,
-            "available_modes": minfo["modes"],
-            "model_name": model_name
+    for name in cfg["displays"]:
+        monitor = ext_mons.get(name, {})
+        final_monitors[name] = {
+            "resolution": monitor.get("current_mode") or "Unknown",
+            "refresh": monitor.get("current_rate"),
+            "connected": monitor.get("connected", False), "active": monitor.get("active", False),
+            "available_modes": mode_choices(monitor), "model_name": monitor.get("model") or "Unknown",
+            "kind": monitor.get("kind", "unknown"),
         }
 
     return render_template(
@@ -913,282 +901,38 @@ def index():
         version=APP_VERSION,
         sub_info_line=sub_info_line,
         monitors=final_monitors,
-        flash_msg=flash_msg,
+        display_aspects=DISPLAY_ASPECTS,
         spotify_status=spotify_status
     )
 
 
+def _update_response(reboot=False):
+    from echoview.updates import update, UpdateError
+    try:
+        update(VIEWER_HOME, UPDATE_BRANCH, CONFIG_PATH, SPOTIFY_CACHE_PATH, reboot=reboot)
+    except UpdateError as exc:
+        log_message(str(exc))
+        return render_template("maintenance.html", message=str(exc), pending=False), 500
+    message = ("Installation completed. Reboot requested; wait for the device to return."
+               if reboot else "Installation completed and viewer is active. Controller restart queued.")
+    return render_template("maintenance.html", message=message, pending=True), 202
+
+
 @main_bp.route("/update_app", methods=["POST"])
 def update_app():
-    """
-    Perform a soft update by resetting the working tree to the
-    configured branch and optionally re‑running setup.sh if it changed.
-    After the update completes the viewer and controller services are
-    restarted.  Rather than rendering a barebones template this route
-    returns a small themed page similar to the full_update page to
-    provide a more polished experience.  The page automatically
-    redirects back to the home screen after a short delay.
-    """
-    cfg = load_config()
-    log_message(f"Starting soft update to origin/{UPDATE_BRANCH}")
-
-    old_hash = ""
-    try:
-        old_hash = subprocess.check_output(
-            ["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME
-        ).decode().strip()
-    except Exception as e:
-        log_message(f"Could not get old setup.sh hash: {e}")
-
-    try:
-        subprocess.check_call(["git", "fetch"], cwd=VIEWER_HOME)
-        subprocess.check_call(["git", "checkout", UPDATE_BRANCH], cwd=VIEWER_HOME)
-        subprocess.check_call(
-            ["git", "reset", "--hard", f"origin/{UPDATE_BRANCH}"], cwd=VIEWER_HOME
-        )
-    except subprocess.CalledProcessError as e:
-        log_message(f"Git update failed: {e}")
-        return "Git update failed. Check logs.", 500
-
-    new_hash = ""
-    try:
-        new_hash = subprocess.check_output(
-            ["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME
-        ).decode().strip()
-    except Exception as e:
-        log_message(f"Could not get new setup.sh hash: {e}")
-
-    if old_hash and new_hash and (old_hash != new_hash):
-        log_message("setup.sh changed. Re-running it in --auto-update mode...")
-        try:
-            subprocess.check_call(
-                ["sudo", "bash", "setup.sh", "--auto-update"], cwd=VIEWER_HOME
-            )
-        except subprocess.CalledProcessError as e:
-            log_message(f"Re-running setup.sh failed: {e}")
-
-    log_message("Soft update completed successfully.")
-
-    # Restart services without rebooting the whole device.  The Popen
-    # calls allow this route to return immediately without blocking on
-    # service restarts.
-    subprocess.Popen(["sudo", "systemctl", "restart", "echoview.service"])
-    subprocess.Popen(["sudo", "systemctl", "restart", "controller.service"])
-
-    # Render a simple themed status page similar to the full update.
-    theme = cfg.get("theme", "dark")
-    if theme == "dark":
-        page_bg = "#121212"
-        text_color = "#ECECEC"
-        button_bg = "#444"
-        button_color = "#FFF"
-        link_hover_bg = "#666"
-    else:
-        page_bg = "#FFFFFF"
-        text_color = "#222"
-        button_bg = "#ddd"
-        button_color = "#111"
-        link_hover_bg = "#bbb"
-
-    return f"""
-    <html>
-      <head>
-        <meta charset=\"utf-8\"/>
-        <title>EchoView Update</title>
-        <style>
-          body {{
-            background-color: {page_bg};
-            color: {text_color};
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 50px;
-          }}
-          a.button {{
-            display: inline-block;
-            margin-top: 20px;
-            padding: 10px 20px;
-            background-color: {button_bg};
-            color: {button_color};
-            border: none;
-            border-radius: 6px;
-            text-decoration: none;
-            cursor: pointer;
-          }}
-          a.button:hover {{
-            background-color: {link_hover_bg};
-          }}
-        </style>
-      </head>
-      <body>
-        <h2>Soft update complete. Services are restarting…</h2>
-        <p>Please wait a moment. You will be redirected shortly.</p>
-        <p>If you are not redirected automatically, click below
-            <br>
-           <a href=\"/\" class=\"button\">Return to Home Page</a></p>
-        <script>
-          setTimeout(function() {{
-            window.location.href = "/";
-          }}, 10000);
-        </script>
-      </body>
-    </html>
-    """
+    return _update_response()
 
 
 @main_bp.route("/full_update", methods=["POST"])
 def full_update():
-    """Perform a full update and reboot the device."""
-    cfg = load_config()
-    log_message(f"Starting update: forced reset to origin/{UPDATE_BRANCH}")
+    return _update_response(reboot=True)
 
-    try:
-        subprocess.check_call(["git", "fetch"], cwd=VIEWER_HOME)
-        subprocess.check_call(["git", "checkout", UPDATE_BRANCH], cwd=VIEWER_HOME)
-        subprocess.check_call(["git", "reset", "--hard", f"origin/{UPDATE_BRANCH}"], cwd=VIEWER_HOME)
-    except subprocess.CalledProcessError as e:
-        log_message(f"Git update failed: {e}")
-        return "Git update failed. Check logs.", 500
 
-    log_message("Running setup.sh in --auto-update mode for full update...")
-    try:
-        subprocess.check_call(["sudo", "bash", "setup.sh", "--auto-update"], cwd=VIEWER_HOME)
-    except subprocess.CalledProcessError as e:
-        log_message(f"Re-running setup.sh failed: {e}")
-
-    log_message("Update completed successfully.")
-    subprocess.Popen(["sudo", "reboot"])
-
-    theme = cfg.get("theme", "dark")
-    if theme == "dark":
-        page_bg = "#121212"
-        text_color = "#ECECEC"
-        button_bg = "#444"
-        button_color = "#FFF"
-        link_hover_bg = "#666"
-    else:
-        page_bg = "#FFFFFF"
-        text_color = "#222"
-        button_bg = "#ddd"
-        button_color = "#111"
-        link_hover_bg = "#bbb"
-
-    return f"""
-    <html>
-      <head>
-        <meta charset="utf-8"/>
-        <title>EchoView Update</title>
-        <style>
-          body {{
-            background-color: {page_bg};
-            color: {text_color};
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 50px;
-          }}
-          a.button {{
-            display: inline-block;
-            margin-top: 20px;
-            padding: 10px 20px;
-            background-color: {button_bg};
-            color: {button_color};
-            border: none;
-            border-radius: 6px;
-            text-decoration: none;
-            cursor: pointer;
-          }}
-          a.button:hover {{
-            background-color: {link_hover_bg};
-          }}
-        </style>
-      </head>
-      <body>
-        <h2>Update is complete. The system is now rebooting...</h2>
-        <p>Please wait for the device to come back online.</p>
-        <p>If the device does not redirect automatically, click below
-            <br>
-           <a href="/" class="button">Return to Home Page</a></p>
-        <script>
-          setTimeout(function() {{
-            window.location.href = "/";
-          }}, 10000);
-        </script>
-      </body>
-    </html>
-    """
-
-@main_bp.route("/restart_services", methods=["POST", "GET"])
+@main_bp.route("/restart_services", methods=["POST"])
 def restart_services():
-    """
-    Restart the viewer and controller services on demand.  This route
-    returns a themed HTML page similar to the update pages instead of
-    bare HTML.  It also automatically redirects back to the home page
-    after a short delay.
-    """
+    from echoview.updates import restart_services as restart, UpdateError
     try:
-        subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
-        subprocess.check_call(["sudo", "systemctl", "restart", "controller.service"])
-        log_message("Services restarted.")
-    except subprocess.CalledProcessError as e:
-        log_message(f"Failed to restart services: {e}")
-        return "Failed to restart services. Check logs.", 500
-
-    # Determine theme colours for the restart page
-    cfg = load_config()
-    theme = cfg.get("theme", "dark")
-    if theme == "dark":
-        page_bg = "#121212"
-        text_color = "#ECECEC"
-        button_bg = "#444"
-        button_color = "#FFF"
-        link_hover_bg = "#666"
-    else:
-        page_bg = "#FFFFFF"
-        text_color = "#222"
-        button_bg = "#ddd"
-        button_color = "#111"
-        link_hover_bg = "#bbb"
-
-    return f"""
-    <html>
-      <head>
-        <meta charset=\"utf-8\"/>
-        <title>Restarting</title>
-        <style>
-          body {{
-            background-color: {page_bg};
-            color: {text_color};
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 50px;
-          }}
-          a.button {{
-            display: inline-block;
-            margin-top: 20px;
-            padding: 10px 20px;
-            background-color: {button_bg};
-            color: {button_color};
-            border: none;
-            border-radius: 6px;
-            text-decoration: none;
-            cursor: pointer;
-          }}
-          a.button:hover {{
-            background-color: {link_hover_bg};
-          }}
-        </style>
-      </head>
-      <body>
-        <h2>Services restarting…</h2>
-        <p>You will be redirected shortly.</p>
-        <p>If you are not redirected automatically, click below
-           <br>
-           <a href=\"/\" class=\"button\">Return to Home Page</a>
-        </p>
-        <script>
-          setTimeout(function() {{
-            window.location.href = "/";
-          }}, 10000);
-        </script>
-      </body>
-    </html>
-    """
+        restart()
+    except UpdateError as exc:
+        return render_template("maintenance.html", message=str(exc), pending=False), 500
+    return render_template("maintenance.html", message="Viewer is active. Controller restart queued.", pending=True), 202

@@ -139,6 +139,10 @@ def init_config():
                     "video_play_to_end": True,
                     "video_max_seconds": 120,
                     "aspect_filter": "any",
+                    "output_mode": "auto",
+                    "display_aspect": "auto",
+                    "safe_area": {"left": 0, "right": 0, "top": 0, "bottom": 0},
+                    "resource_profile": "standard",
                 }
             },
             "overlay": {
@@ -185,14 +189,6 @@ def init_config():
     except Exception:
         return
 
-    if "displays" in cfg and len(cfg["displays"]) > 1:
-        removed = False
-        for key in list(cfg["displays"].keys()):
-            if key.lower() in ("display0", "default"):
-                del cfg["displays"][key]
-                removed = True
-        if removed:
-            save_config(cfg)
 
 def load_config():
     if not os.path.exists(CONFIG_PATH):
@@ -308,6 +304,17 @@ def upgrade_config(cfg):
     changed = False
     displays = cfg.get("displays", {})
     for dcfg in displays.values():
+        if "safe_area" not in dcfg:
+            dcfg["safe_area"] = {"left": 0, "right": 0, "top": 0, "bottom": 0}
+            changed = True
+        if "resource_profile" not in dcfg:
+            dcfg["resource_profile"] = "standard"
+            changed = True
+        # Legacy chosen_mode was display-only; never activate it on upgrade.
+        for key in ("output_mode", "display_aspect"):
+            if key not in dcfg:
+                dcfg[key] = "auto"
+                changed = True
         if "embed_metadata" not in dcfg:
             dcfg["embed_metadata"] = None
             changed = True

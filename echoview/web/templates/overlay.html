@@ -16,7 +16,7 @@
           </label>
           <br><br>
           <label>Clock Font Size:</label>
-          <input type="number" name="{{ monitor_name }}_clock_font_size"
+          <input type="number" min="8" max="512" name="{{ monitor_name }}_clock_font_size"
                  value="{{ monitor_cfg.overlay.clock_font_size if monitor_cfg.overlay and monitor_cfg.overlay.clock_font_size is defined else 26 }}">
         </div>
 

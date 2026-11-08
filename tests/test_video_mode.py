@@ -177,6 +177,7 @@ def test_build_video_list(tmp_path, monkeypatch):
 
 def test_build_mpv_command_volume(monkeypatch):
     dw = DisplayWindow.__new__(DisplayWindow)
+    dw.disp_name = "HDMI-1"
     dw.disp_cfg = {"video_mute": False, "video_volume": 55}
     cmd = DisplayWindow.build_mpv_command(dw, "/tmp/test.mp4")
     assert "--mute=no" in cmd
@@ -186,6 +187,7 @@ def test_build_mpv_command_volume(monkeypatch):
 
 def test_build_mpv_command_mute(monkeypatch):
     dw = DisplayWindow.__new__(DisplayWindow)
+    dw.disp_name = "HDMI-1"
     dw.disp_cfg = {"video_mute": True, "video_volume": 55}
     cmd = DisplayWindow.build_mpv_command(dw, "/tmp/test.mp4")
     assert "--mute=yes" in cmd
@@ -223,14 +225,15 @@ def test_build_chromium_command_uses_browser_like_flags(monkeypatch, tmp_path):
     geom = types.SimpleNamespace(x=lambda: 10, y=lambda: 20, width=lambda: 800, height=lambda: 480)
     dw = DisplayWindow.__new__(DisplayWindow)
     dw.disp_name = "Display0"
+    dw.disp_cfg = {}
     dw.assigned_screen = types.SimpleNamespace(name=lambda: "HDMI-1", geometry=lambda: geom)
 
     cmd = DisplayWindow._build_chromium_command(dw, "https://youtube.com/watch?v=test")
 
     assert cmd is not None
-    assert "--disable-gpu" in cmd
+    assert "--disable-gpu" not in cmd
     assert "--disable-software-rasterizer" not in cmd
-    assert f"--user-agent={viewer.STANDALONE_CHROMIUM_USER_AGENT}" in cmd
+    assert not any(arg.startswith("--user-agent=") for arg in cmd)
     assert f"--user-data-dir={tmp_path / 'chromium-Display0-HDMI-1'}" in cmd
     assert os.path.isdir(tmp_path / "chromium-Display0-HDMI-1")
 
@@ -238,6 +241,7 @@ def test_build_chromium_command_uses_browser_like_flags(monkeypatch, tmp_path):
 def test_play_next_video_sequential(monkeypatch):
     dw = DisplayWindow.__new__(DisplayWindow)
     dw.disp_cfg = {"video_play_to_end": True}
+    dw.mpv_poll_timer = types.SimpleNamespace(start=lambda: None, stop=lambda: None)
     dw.image_list = ["a.mp4", "b.mp4"]
     dw.index = 0
     dw.current_video_proc = None

@@ -145,7 +145,7 @@ def test_build_youtube_embed_url_applies_user_preferences():
     assert query["modestbranding"] == ["1"]
     assert query["enablejsapi"] == ["1"]
     assert query["feature"] == ["oembed"]
-    assert query["origin"] == ["https://echoview.local"]
+    assert query["origin"] == ["http://127.0.0.1:8080"]
     assert query["start"] == ["90"]
 
 
@@ -180,4 +180,4 @@ def test_build_youtube_embed_url_for_live_strips_playlist_and_start_params():
     assert "start" not in query
     assert "feature" not in query
     assert query["channel"] == ["UC123"]
-    assert query["origin"] == ["https://echoview.local"]
+    assert query["origin"] == ["http://127.0.0.1:8080"]

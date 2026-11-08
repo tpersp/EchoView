@@ -85,11 +85,11 @@
     <form method="POST" action="{{ url_for('main.update_app') }}">
       <button type="submit">Update</button>
     </form>
-    <p style="font-size:smaller; margin-bottom:10px;">Pull latest code and restart services.</p>
+    <p style="font-size:smaller; margin-bottom:10px;">Back up settings, install the selected branch and its dependencies, then restart services.</p>
     <form method="POST" action="{{ url_for('main.full_update') }}">
       <button type="submit">Full Update &amp; Reboot</button>
     </form>
-    <p style="font-size:smaller;">Reset to branch, run setup if needed and reboot the device.</p>
+    <p style="font-size:smaller;">Back up settings, install the selected branch and its dependencies, then request a reboot.</p>
     <hr>
     <p style="margin-top:10px;">
       <a href="{{ url_for('main.download_log') }}"><button>Download Log</button></a>

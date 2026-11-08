@@ -65,10 +65,6 @@ def test_cache_health(tmp_path):
 
 @pytest.fixture
 def web(tmp_path, monkeypatch):
-    # Flask 2.2's test client expects this removed Werkzeug attribute.
-    # Runtime dependency compatibility is tracked separately in plan step 4.
-    import werkzeug
-    monkeypatch.setattr(werkzeug, "__version__", "test", raising=False)
     cfg = {"spotify": config()}
     cache = tmp_path / "token"
     monkeypatch.setattr(routes, "SPOTIFY_CACHE_PATH", str(cache))

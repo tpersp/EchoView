@@ -17,6 +17,61 @@
     {% endif %}
   </div>
 
+  {% for message in get_flashed_messages() %}
+    <div class="flash-message">{{ message }}</div>
+  {% endfor %}
+  <h2>Display output</h2>
+  {% for dname, dcfg in cfg.displays.items() %}
+    {% set output = monitors.get(dname, {}) %}
+    <form method="POST" action="{{ url_for('main.configure_output') }}" class="card" style="margin-bottom:15px; padding:15px;">
+      <h3>{{ dname }} — {{ 'Active' if output.active else ('Connected, inactive' if output.connected else 'Disconnected / unavailable') }}</h3>
+      <p>Actual: {{ output.resolution }}{% if output.refresh %} @ {{ output.refresh }} Hz{% endif %}. Saved preference: {{ dcfg.output_mode|default('auto') }}.</p>
+      <input type="hidden" name="display" value="{{ dname }}">
+      <label>Output resolution and refresh rate:
+        <select name="output_mode">
+          <option value="auto" {% if dcfg.output_mode|default('auto') == 'auto' %}selected{% endif %}>Automatic / preferred mode</option>
+          {% set choices = output.available_modes|default([]) %}
+          {% for choice in choices %}
+            <option value="{{ choice.value }}" {% if dcfg.output_mode == choice.value %}selected{% endif %}>{{ choice.label }}</option>
+          {% endfor %}
+          {% if dcfg.output_mode|default('auto') != 'auto' and dcfg.output_mode not in choices|map(attribute='value')|list %}
+            <option value="{{ dcfg.output_mode }}" selected>{{ dcfg.output_mode }} (not currently advertised)</option>
+          {% endif %}
+        </select>
+      </label>
+      <label>Physical display aspect ratio:
+        <select name="display_aspect">
+          {% for aspect in display_aspects %}
+          <option value="{{ aspect }}" {% if dcfg.display_aspect|default('auto') == aspect %}selected{% endif %}>{{ 'Auto (composite 4:3; otherwise square pixels)' if aspect == 'auto' else aspect }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p>Match the aspect setting to your physical screen. It corrects images, GIFs, Spotify artwork and video; web-page layout follows the output raster.</p>
+      {% if output.kind == 'composite' %}<p>RCA exposes standard-definition modes only. Choose PAL/NTSC with the boot-profile helper; this control cannot create an HDMI resolution on RCA.</p>{% endif %}
+      <button type="submit" {% if not output.connected %}disabled{% endif %}>Apply output settings</button>
+    </form>
+    <form method="POST" action="{{ url_for('main.configure_presentation') }}" class="card" style="margin-bottom:15px; padding:15px;">
+      <h3>{{ dname }} — Safe area and performance</h3>
+      <input type="hidden" name="display" value="{{ dname }}">
+      <p>Inset each edge to keep media, clocks and track information clear of TV overscan. Zero preserves the full output area.</p>
+      {% set margins = dcfg.safe_area if dcfg.safe_area is mapping else {} %}
+      {% for edge in ['left', 'right', 'top', 'bottom'] %}
+      <label>{{ edge|capitalize }} (%):
+        <input type="number" name="safe_{{ edge }}" min="0" max="20" step="any" value="{{ margins.get(edge, 0) }}" required>
+      </label>
+      {% endfor %}
+      <label>Resource profile:
+        <select name="resource_profile">
+          <option value="standard" {% if dcfg.resource_profile|default('standard') == 'standard' %}selected{% endif %}>Standard</option>
+          <option value="pi3" {% if dcfg.resource_profile == 'pi3' %}selected{% endif %}>Pi 3 low resource</option>
+        </select>
+      </label>
+      <p>Pi 3: no background blur or preloading, first frame for GIFs, smaller decoded images and caches, and up to 480p for extracted video streams. Direct streams and local files retain their source resolution.</p>
+      <p>Use Calibration Pattern in the viewer mode selector to check the visible boundary, circles and grid. External browser fullscreen may ignore window insets.</p>
+      <button type="submit">Save presentation settings</button>
+    </form>
+  {% endfor %}
+
   <!-- Multi-monitor: one card per display -->
   <form method="POST">
     <input type="hidden" name="action" value="update_displays">
@@ -36,6 +91,7 @@
             <option value="videos"         {% if dcfg.mode=="videos" %}selected{% endif %}>Videos</option>
             <option value="spotify"        {% if dcfg.mode=="spotify" %}selected{% endif %}>Spotify Now Playing</option>
             <option value="web_page"       {% if dcfg.mode=="web_page" %}selected{% endif %}>Web Page</option>
+            <option value="calibration" {% if dcfg.mode=="calibration" %}selected{% endif %}>Calibration Pattern</option>
           </select>
           <br><br>
 

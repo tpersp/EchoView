@@ -7,3 +7,7 @@ __pycache__/
 .env
 .spotify_cache
 .oauth_state.sqlite3*
+
+.streaming-enabled
+.update.lock
+.update-backups/

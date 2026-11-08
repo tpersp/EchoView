@@ -16,7 +16,10 @@ EchoView is a modern, easy-to-configure slideshow + overlay viewer written in **
 
 ## Installation
 
-These instructions assume you have a clean Raspberry Pi OS image (Lite or Desktop) with **X11**.
+Automated setup targets **Raspberry Pi OS Trixie 64-bit** (Lite or Desktop) with
+**X11**, Python 3.11–3.13 and glibc 2.39+. Pi 3 hardware validation remains
+pending. Bookworm ARM64 and 32-bit images are rejected before setup changes the
+system. See [runtime compatibility](docs/runtime-compatibility.md) before updating an existing device.
 
 1. **Clone the Repository**:
 
@@ -38,8 +41,8 @@ sudo ./setup.sh
 During the setup:
 
 - **Apt packages** are installed (LightDM, Xorg, Python3, etc.)
-- **WebEngine libs** like `libwebp7`, `libtiff6`, `libxslt1.1`, and `libminizip1t64` are installed,
-  with compatibility symlinks created for `libwebp.so.6` and `libtiff.so.5` if needed.
+- **Native Qt/WebEngine dependencies** are installed using Trixie package names.
+  Setup verifies Multimedia and WebEngine imports without creating ABI symlinks.
 - **pip packages** from `requirements.txt` are installed inside an isolated virtualenv
 - **Screen blanking** is disabled
 - You’ll be prompted for the user that will auto-login into X, the path for `VIEWER_HOME` and `IMAGE_DIR`.
@@ -74,19 +77,21 @@ Browse to `http://<PI-IP>:8080` to access the interface. You’ll see:
   - Position, size, and color of the overlay
   - Font sizes, clock toggles, etc.
 
-### YouTube Live Streams
+### YouTube and streaming
 
-- Make sure the YouTube channel you embed has the **Live Streaming** and **Embed Live Streams** permissions enabled; YouTube currently requires account verification and at least 1,000 subscribers before granting these features.
-- Only public or unlisted streams can be embedded. Private broadcasts will refuse to load inside EchoView (or any external player).
-- EchoView first tries to extract the channel’s live HLS manifest using `yt_dlp`; when successful it plays the `.m3u8` feed directly through Qt Multimedia.
-- If no manifest is available, EchoView launches `mpv` with the original YouTube URL. Make sure both `yt_dlp` and `mpv` are installed on the host so this fallback works seamlessly.
+YouTube playback resolves the original URL through mpv and the optional pinned
+streaming stack, including yt-dlp, its JavaScript helpers and Deno. Install with
+`sudo ./setup.sh --with-streaming`. Without that stack, EchoView uses an embedded
+player served by the local controller. External Chromium is an explicit display
+option. Direct HLS continues through Qt Multimedia.
 
-### WebEngine autoplay flags (YouTube embeds)
+Sources are resolved again on retries rather than saving expiring YouTube media
+URLs. Pi 3 mode limits extracted video to 480p. See [streaming setup and recovery](docs/streaming.md)
+for installation checks, fallback behavior and remaining hardware validation.
 
-- EchoView now ships with the recommended Qt WebEngine flags baked into `.env` and `echoview.service` so YouTube embeds run without sandbox issues and can autoplay.
-- The default flags are: `QTWEBENGINE_DISABLE_SANDBOX=1` and `QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu --autoplay-policy=no-user-gesture-required --user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"`.
-- If you launch manually instead of via systemd, export the two variables above before running `python3 -m echoview.viewer`.
-- YouTube aggressively gates autoplay/embeds on older user-agents; keeping the modern UA string above avoids most “video won’t start” issues.
+Qt WebEngine defaults to `--autoplay-policy=no-user-gesture-required`, using its
+actual browser identity and GPU defaults. Custom flags remain configurable through
+`QTWEBENGINE_CHROMIUM_FLAGS` and `ECHOVIEW_CHROMIUM_FLAGS` for external Chromium.
 
 ### Spotify Integration
 
@@ -163,8 +168,10 @@ sudo ./setup.sh --auto-update
 ```
 
 This mode reinstalls dependencies and refreshes the systemd service files.
-If a `.env` file already exists in your `VIEWER_HOME`, its `VIEWER_HOME` and
-`IMAGE_DIR` values are reused and not overwritten.
+Auto-update requires the existing checkout's `.env`; its `VIEWER_HOME`,
+`IMAGE_DIR` and other values are preserved. The viewer user is resolved from
+`VIEWER_USER`, the installed service, or the sudo caller, rather than assuming
+`pi`. Unsupported platforms fail before package/service/boot changes.
 
 ## Troubleshooting
 
@@ -172,8 +179,10 @@ If a `.env` file already exists in your `VIEWER_HOME`, its `VIEWER_HOME` and
 - **Wrong screen**? Confirm you have multiple monitors recognized by X. EchoView uses PySide6’s screen geometry, so make sure your environment is not on Wayland.
 - **Spotify issues**? Check the file specified by `SPOTIFY_CACHE_PATH` for the saved token. Re-authorize if needed.
 - **Overlay not transparent?** You need a compositor (like **picom**) running for real transparency.
-- **Web viewer blank?** Ensure the system libraries `libxslt1.1` and `libminizip1t64`
-  are installed and that symlinks exist for `libwebp.so.6` and `libtiff.so.5`.
+- **Web viewer blank?** Run `.venv/bin/python -m echoview.runtime_check --qt`.
+  Resolve missing native packages using the supported OS image; do not create
+  cross-major library symlinks. Existing manually created symlinks need inspection
+  before removal; setup does not delete system libraries.
 - **Check logs**: Look at `echoview.log` (in your `VIEWER_HOME`) or `journalctl -u echoview.service`.
 
 ### View the attached monitors remotely (x11vnc)
@@ -255,11 +264,11 @@ Service activity is not an application-readiness check; the Qt platform shown is
 the requested backend, not a verified running backend.
 
 The initial hardware validation target is **Raspberry Pi 3 B/B+, Raspberry Pi OS
-Bookworm 64-bit, X11/Openbox with full KMS**, first over HDMI and then composite
+Trixie 64-bit, X11/Openbox with full KMS**, first over HDMI and then composite
 PAL and NTSC. This is a selected test target, not yet a supported configuration:
 Qt wheel/native-library compatibility, real Spotify authorization and RCA output
-remain to be validated on hardware. Newer Pi OS releases and 32-bit images need
-separate validation. The development-host report is in
+remain to be validated on hardware. Bookworm ARM64 cannot use the selected wheels because of glibc requirements;
+32-bit images and other OS versions need a separate packaging approach. The development-host report is in
 `docs/diagnostics-development-host.json`; it is not evidence of Pi compatibility.
 
 ### Spotify authorization from another computer
@@ -316,3 +325,44 @@ stored in a temporary directory cleaned on normal process exit. Interrupted
 or forcibly killed processes may leave their temporary directory behind.
 Repeated failed artwork requests are throttled. The controller's manual
 connection check is a separate process and is not part of viewer polling.
+
+## Composite / RCA video on Raspberry Pi 3
+
+Setup preserves the current output by default. Select `--video-profile hdmi`,
+`composite-pal` or `composite-ntsc` explicitly to change it. Preview first:
+
+```bash
+bash setup.sh --video-profile composite-pal --dry-run
+```
+
+The standalone `python3 -m echoview.boot_profiles` helper can apply or restore
+boot profiles without running installation. Every change saves a verified backup;
+PAL/NTSC output still requires Pi hardware validation. See
+[composite setup and recovery](docs/composite-video.md) for commands, cable
+requirements, offline-card recovery and the current Pi 3 scope.
+
+## Resolution and display aspect
+
+Use **Display output** in the web controller to select an advertised resolution
+and refresh rate, plus the physical screen shape (Auto, 4:3, 16:9, 16:10 or 1:1).
+The page shows the actual mode separately from the saved preference. RCA is
+limited to the SD modes exposed by its current PAL/NTSC profile.
+
+Disconnected outputs retain their settings, and viewer windows follow connector
+names across reconnection. See [display settings](docs/display-settings.md) for
+aspect correction, video/browser limits, mode recovery and pending hardware tests.
+
+## CRT safe area and Pi 3 resource profile
+
+Use **Safe area and performance** to inset each edge by 0–20% without changing
+resolution. Clocks, track text and progress stay inside the visible area, with
+font-width correction for non-square pixels. **Calibration Pattern** mode shows
+a grid, inset marks and a circle for the later TV test.
+
+The optional **Pi 3 low resource** profile disables blur/preloading, uses the
+first GIF frame, and reduces image/cache and extracted-stream limits. Standard
+remains the default. See [presentation settings](docs/presentation-settings.md)
+for the tradeoffs, external-browser limits and development measurements.
+
+Update failure handling, private backups and service startup checks are documented in
+[update and recovery](docs/update-recovery.md).

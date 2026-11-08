@@ -1,0 +1,5 @@
+# Optional: install with setup.sh --with-streaming or pip -r this file.
+-c constraints.txt
+yt-dlp[default]==2026.10.26
+yt-dlp-ejs==0.8.0
+deno==2.9.8

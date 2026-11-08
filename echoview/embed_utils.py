@@ -13,19 +13,11 @@ import logging
 import re
 import threading
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, replace
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import requests
-
-try:
-    import yt_dlp  # type: ignore
-
-    _YT_DLP_AVAILABLE = True
-except Exception:  # pragma: no cover - availability depends on host image
-    yt_dlp = None
-    _YT_DLP_AVAILABLE = False
 
 YOUTUBE_DOMAINS = {
     "youtube.com",
@@ -35,6 +27,8 @@ YOUTUBE_DOMAINS = {
     "gaming.youtube.com",
     "youtu.be",
     "www.youtu.be",
+    "youtube-nocookie.com",
+    "www.youtube-nocookie.com",
 }
 
 OEMBED_ENDPOINT = "https://www.youtube.com/oembed"
@@ -69,7 +63,7 @@ class EmbedMetadata:
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> Optional["EmbedMetadata"]:
         if not data:
             return None
-        return cls(
+        return normalize_metadata(cls(
             embed_type=data.get("embed_type", "iframe"),
             original_url=data.get("original_url", ""),
             canonical_url=data.get("canonical_url", data.get("original_url", "")),
@@ -81,7 +75,7 @@ class EmbedMetadata:
             channel_id=data.get("channel_id"),
             start_seconds=data.get("start_seconds"),
             thumbnail_url=data.get("thumbnail_url"),
-        )
+        ))
 
 
 def _is_youtube_host(netloc: str) -> bool:
@@ -125,10 +119,8 @@ def parse_youtube_url_details(url: str) -> Dict[str, Any]:
     Returns a dictionary with keys: is_youtube, video_id, playlist_id,
     playlist_index, start_seconds.
     """
-    parsed = urlparse(url.strip())
-    if not parsed.scheme:
-        # Assume https scheme if missing
-        parsed = parsed._replace(scheme="https")
+    normalized = url.strip()
+    parsed = urlparse(normalized if "://" in normalized else "https://" + normalized)
     details: Dict[str, Any] = {
         "is_youtube": False,
         "video_id": None,
@@ -137,7 +129,7 @@ def parse_youtube_url_details(url: str) -> Dict[str, Any]:
         "start_seconds": None,
         "channel_id": None,
     }
-    if not parsed.netloc or not _is_youtube_host(parsed.netloc):
+    if not parsed.hostname or not _is_youtube_host(parsed.hostname):
         return details
 
     details["is_youtube"] = True
@@ -152,6 +144,8 @@ def parse_youtube_url_details(url: str) -> Dict[str, Any]:
         video_id = _sanitize_youtube_id(path_parts[0])
     elif "v" in qs:
         video_id = _sanitize_youtube_id(qs["v"][0])
+    elif path_parts[:2] in (["embed", "live_stream"], ["embed", "videoseries"]):
+        pass
     elif path_parts and path_parts[0] in {"embed", "shorts", "live"} and len(path_parts) > 1:
         video_id = _sanitize_youtube_id(path_parts[1])
     elif path_parts and re.match(r"^[0-9A-Za-z_-]{11}$", path_parts[0]):
@@ -226,57 +220,6 @@ def build_youtube_live_embed_url(channel_id: str) -> str:
     return f"https://www.youtube.com/embed/live_stream?channel={channel_id}"
 
 
-def _extract_youtube_hls(url: str, video_id: Optional[str]) -> Optional[str]:
-    """
-    Attempt to resolve a direct HLS manifest for a YouTube broadcast (live or VOD).
-    Returns the best .m3u8 URL when available.
-    """
-    if not _YT_DLP_AVAILABLE:
-        return None
-
-    target = url
-    if video_id:
-        target = f"https://www.youtube.com/watch?v={video_id}"
-
-    opts = {
-        "skip_download": True,
-        "quiet": True,
-        "nocheckcertificate": True,
-        "noplaylist": True,
-    }
-    try:  # pragma: no cover - network-less failures handled in tests via monkeypatch
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(target, download=False)
-    except Exception as exc:  # pragma: no cover - error path verified in tests
-        logger.warning("yt_dlp live extraction failed for %s: %s", target, exc)
-        return None
-
-    def _score(fmt: Dict[str, Any]) -> int:
-        height = fmt.get("height") or 0
-        tbr = fmt.get("tbr") or 0
-        return int(height) * 1000 + int(tbr)
-
-    formats = info.get("formats") or []
-    candidates: list[Tuple[int, str]] = []
-    for fmt in formats:
-        fmt_url = fmt.get("url") or ""
-        if not fmt_url:
-            continue
-        protocol = (fmt.get("protocol") or "").lower()
-        ext = (fmt.get("ext") or "").lower()
-        if "m3u8" in protocol or "m3u8" in fmt_url or ext == "m3u8":
-            candidates.append((_score(fmt), fmt_url))
-
-    if not candidates:
-        fallback_url = info.get("url")
-        if isinstance(fallback_url, str) and "m3u8" in fallback_url:
-            return fallback_url
-        return None
-
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    return candidates[0][1]
-
-
 def youtube_oembed_lookup(url: str) -> Optional[Dict[str, Any]]:
     """
     Retrieve metadata from the YouTube oEmbed endpoint with basic caching.
@@ -303,146 +246,70 @@ def youtube_oembed_lookup(url: str) -> Optional[Dict[str, Any]]:
 
     with _cache_lock:
         _oembed_cache[cache_key] = (now, data)
+        while len(_oembed_cache) > 128:
+            _oembed_cache.pop(next(iter(_oembed_cache)))
     return data
 
 
 def _looks_like_hls(url: str) -> bool:
     lowered = url.lower()
-    if any(token in lowered for token in (".m3u8", "format=m3u8", "playlist.m3u")):
-        return True
-    if not _YT_DLP_AVAILABLE:
-        return False
-    try:  # pragma: no cover - slow path rarely hit in tests
-        ydl_opts = {"skip_download": True, "quiet": True, "nocheckcertificate": True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-        formats = info.get("formats") or []
-        for fmt in formats:
-            protocol = fmt.get("protocol") or ""
-            if "m3u8" in protocol:
-                return True
-            fmt_url = fmt.get("url") or ""
-            if ".m3u8" in fmt_url:
-                return True
-    except Exception:
-        pass
-    return False
+    return any(token in lowered for token in (".m3u8", "format=m3u8", "playlist.m3u"))
 
 
-def classify_url(url: str) -> EmbedMetadata:
-    """
-    Determine how EchoView should embed the given URL. Classification attempts:
-    1. YouTube video/playlist/live
-    2. HLS stream (.m3u8 or detected via yt_dlp)
-    3. Fallback generic iframe
-    """
+def classify_url(url: str, enrich: bool = False) -> EmbedMetadata:
+    """Classify stable sources without extraction; enrichment is explicit/bounded."""
     normalized = url.strip()
-    if not normalized:
-        return EmbedMetadata(
-            embed_type="iframe",
-            original_url=url,
-            canonical_url=url,
-            provider=None,
-            title=None,
-            content_type=None,
-        )
-
-    yt_details = parse_youtube_url_details(normalized)
-    if yt_details["is_youtube"] and yt_details["video_id"]:
-        provider = "YouTube"
-        title = None
-        thumbnail = None
-        content_type = "video"
-        channel_id = yt_details.get("channel_id")
-
-        data = youtube_oembed_lookup(normalized)
-        if data:
-            provider = data.get("provider_name") or provider
-            title = data.get("title") or title
-            thumbnail = data.get("thumbnail_url")
-            html = data.get("html") or ""
-            if "playlist" in html and yt_details.get("playlist_id"):
-                content_type = "playlist"
-            if "live" in html or "is_live" in html:
-                content_type = "live"
-            for key in ("author_url", "provider_url"):
-                candidate = data.get(key)
-                if candidate:
-                    extracted = parse_youtube_url_details(candidate).get("channel_id")
-                    if extracted:
-                        channel_id = channel_id or extracted
-                        break
-
-        canonical: str
-        embed_type = "youtube"
-        if content_type == "live":
-            hls_url = _extract_youtube_hls(normalized, yt_details["video_id"])
-            if hls_url:
-                return EmbedMetadata(
-                    embed_type="hls",
-                    original_url=normalized,
-                    canonical_url=hls_url,
-                    provider=provider,
-                    title=title or yt_details["video_id"],
-                    content_type=content_type,
-                    video_id=yt_details["video_id"],
-                    playlist_id=yt_details.get("playlist_id"),
-                    channel_id=channel_id,
-                    start_seconds=None,
-                    thumbnail_url=thumbnail,
-                )
-            embed_type = "mpv"
-            canonical = normalized
-            logger.warning(
-                "Unable to resolve HLS manifest for live YouTube stream %s; falling back to mpv playback.",
-                normalized,
-            )
+    if normalized and "://" not in normalized:
+        normalized = "https://" + normalized
+    details = parse_youtube_url_details(normalized)
+    path = urlparse(normalized).path
+    live = "/live" in path or "/embed/live_stream" in path
+    if details["is_youtube"] and (details["video_id"] or details["playlist_id"] or details["channel_id"] or live):
+        data = (youtube_oembed_lookup(normalized) or {}) if enrich else {}
+        live = live or "is_live" in data.get("html", "")
+        channel = details["channel_id"]
+        for key in ("author_url", "provider_url"):
+            if data.get(key):
+                channel = channel or parse_youtube_url_details(data[key]).get("channel_id")
+        if details["video_id"]:
+            canonical = build_youtube_embed_url(details["video_id"], details["playlist_id"],
+                                                details["playlist_index"], details["start_seconds"])
+        elif channel:
+            canonical = build_youtube_live_embed_url(channel)
+        elif details["playlist_id"]:
+            canonical = "https://www.youtube-nocookie.com/embed/videoseries?" + urlencode({"list": details["playlist_id"]})
         else:
-            canonical = build_youtube_embed_url(
-                yt_details["video_id"],
-                yt_details.get("playlist_id"),
-                yt_details.get("playlist_index"),
-                yt_details.get("start_seconds"),
-            )
-
+            canonical = normalized
         return EmbedMetadata(
-            embed_type=embed_type,
-            original_url=normalized,
-            canonical_url=canonical,
-            provider=provider,
-            title=title or yt_details["video_id"],
-            content_type=content_type,
-            video_id=yt_details["video_id"],
-            playlist_id=yt_details.get("playlist_id"),
-            channel_id=channel_id,
-            start_seconds=yt_details.get("start_seconds"),
-            thumbnail_url=thumbnail,
+            embed_type="youtube", original_url=normalized, canonical_url=canonical,
+            provider=data.get("provider_name") or "YouTube", title=data.get("title") or details["video_id"],
+            content_type="live" if live else ("playlist" if details["playlist_id"] else "video"),
+            video_id=details["video_id"], playlist_id=details["playlist_id"], channel_id=channel,
+            start_seconds=details["start_seconds"], thumbnail_url=data.get("thumbnail_url"),
         )
-
     if _looks_like_hls(normalized):
-        return EmbedMetadata(
-            embed_type="hls",
-            original_url=normalized,
-            canonical_url=normalized,
-            provider="HLS",
-            title=None,
-            content_type="video",
-        )
+        return EmbedMetadata("hls", normalized, normalized, provider="HLS", content_type="video")
+    return EmbedMetadata("iframe", normalized, normalized, content_type="website")
 
-    return EmbedMetadata(
-        embed_type="iframe",
-        original_url=normalized,
-        canonical_url=normalized,
-        provider=None,
-        title=None,
-        content_type="website",
-    )
+
+def normalize_metadata(metadata: EmbedMetadata) -> EmbedMetadata:
+    """Ignore historical signed YouTube manifests; never persist them again."""
+    details = parse_youtube_url_details(metadata.original_url)
+    if details["is_youtube"] and (metadata.embed_type in ("hls", "mpv")
+            or not _is_youtube_host(urlparse(metadata.canonical_url).hostname or "")
+            or _looks_like_hls(metadata.canonical_url)):
+        stable = classify_url(metadata.original_url)
+        return replace(metadata, embed_type="youtube", canonical_url=stable.canonical_url,
+                       video_id=metadata.video_id or stable.video_id,
+                       playlist_id=metadata.playlist_id or stable.playlist_id,
+                       channel_id=metadata.channel_id or stable.channel_id)
+    return metadata
 
 
 def serialize_embed_metadata(metadata: Optional[EmbedMetadata]) -> Optional[Dict[str, Any]]:
     if metadata is None:
         return None
-    return metadata.to_dict()
+    return normalize_metadata(metadata).to_dict()
 
 
 def deserialize_embed_metadata(data: Optional[Dict[str, Any]]) -> Optional[EmbedMetadata]:
@@ -459,3 +326,45 @@ def dump_oembed_cache() -> Dict[str, Any]:
     """Debug helper returning a shallow copy of the cache state."""
     with _cache_lock:
         return {k: {"timestamp": ts, "data": json.dumps(data)} for k, (ts, data) in _oembed_cache.items()}
+
+
+def playback_embed_url(metadata, settings, origin):
+    base_url = metadata.canonical_url or metadata.original_url or settings.get("web_url", "")
+    if not base_url:
+        return ""
+    parsed = urlparse(base_url)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    is_live = (metadata.content_type or "").lower() == "live"
+
+    if is_live:
+        for param in ("list", "index", "start", "t", "feature"):
+            query.pop(param, None)
+
+    autoplay = "1" if settings.get("youtube_autoplay", True) else "0"
+    mute = "1" if settings.get("youtube_mute", True) else "0"
+    query["autoplay"] = [autoplay]
+    query["mute"] = [mute]
+    if settings.get("youtube_captions", False):
+        query["cc_load_policy"] = ["1"]
+    else:
+        query.pop("cc_load_policy", None)
+
+    quality = settings.get("youtube_quality", "default")
+    if quality and quality != "default":
+        query["vq"] = [quality]
+    else:
+        query.pop("vq", None)
+
+    # Reasonable defaults to keep the player inline without recommended videos.
+    query.setdefault("playsinline", ["1"])
+    query.setdefault("rel", ["0"])
+    query.setdefault("modestbranding", ["1"])
+    query.setdefault("enablejsapi", ["1"])
+    if not is_live:
+        query.setdefault("feature", ["oembed"])
+    else:
+        query.pop("feature", None)
+    query["origin"] = [origin]
+
+    new_query = urlencode(query, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
