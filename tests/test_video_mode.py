@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "echoview"))
 
 # Stub PySide6 modules
 qtcore = types.ModuleType("PySide6.QtCore")
+qtcore.Signal = lambda *args: None
 class DummyQt:
     AlignCenter = 0
     AlignLeft = 0

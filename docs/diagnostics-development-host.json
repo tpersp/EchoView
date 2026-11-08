@@ -1,0 +1,45 @@
+{
+  "os": "Ubuntu 24.04.5 LTS",
+  "architecture": "x86_64",
+  "python": "3.12.3",
+  "pi_model": null,
+  "packages": {
+    "Flask": "2.2.5",
+    "Werkzeug": "3.1.7",
+    "psutil": "5.9.5",
+    "requests": "2.33.1",
+    "spotipy": null,
+    "PySide6": null,
+    "Pillow": "12.1.1",
+    "yt-dlp": null,
+    "yt-dlp-ejs": null
+  },
+  "tools": {
+    "xrandr": false,
+    "chromium": false,
+    "chromium-browser": false,
+    "mpv": false,
+    "ffmpeg": true,
+    "ffprobe": true,
+    "yt-dlp": false,
+    "deno": false,
+    "node": true,
+    "systemctl": true
+  },
+  "display": {
+    "session_type": "tty",
+    "qt_platform_requested": "default",
+    "x11_probe": "unavailable",
+    "connectors": []
+  },
+  "services": {
+    "lightdm.service": "inactive",
+    "echoview.service": "inactive",
+    "controller.service": "inactive"
+  },
+  "notes": [
+    "No credentials, token contents, hostnames, IP addresses or executable paths are collected.",
+    "Qt platform is a requested setting, not a verified running backend; no GUI is launched.",
+    "Service activity does not prove application readiness or successful playback."
+  ]
+}

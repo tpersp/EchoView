@@ -12,6 +12,7 @@ if "psutil" not in sys.modules:
 
 # Stub PySide6/spotipy for headless test environment
 qtcore = types.ModuleType("PySide6.QtCore")
+qtcore.Signal = lambda *args: None
 class DummyQt:
     AlignCenter = 0
     AlignLeft = 0

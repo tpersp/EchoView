@@ -11,9 +11,6 @@ import os
 import random
 import time
 import html
-import requests
-import spotipy
-import tempfile
 import threading
 import subprocess
 import shutil
@@ -24,7 +21,7 @@ from datetime import datetime
 from collections import OrderedDict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
+from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME
 
 DEFAULT_CHROMIUM_FLAGS = (
     "--no-sandbox --disable-gpu --autoplay-policy=no-user-gesture-required "
@@ -38,7 +35,7 @@ STANDALONE_CHROMIUM_USER_AGENT = (
 os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", DEFAULT_CHROMIUM_FLAGS)
 
-from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl
+from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl, Signal
 from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QProgressBar,
@@ -49,7 +46,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
-from spotipy.oauth2 import SpotifyOAuth
+from echoview.spotify_client import Playback, shared_poller
 from echoview.utils import (
     load_config,
     save_config,
@@ -123,6 +120,8 @@ def detect_monitors():
 
 
 class DisplayWindow(QMainWindow):
+    spotify_result = Signal(int, object)
+
     def __init__(self, disp_name, disp_cfg, assigned_screen=None):
         super().__init__()
         self.disp_name = disp_name
@@ -195,6 +194,9 @@ class DisplayWindow(QMainWindow):
 
         # Spotify info (track details) label
         self.spotify_info = None
+        self.spotify_fetch_id = 0
+        self.spotify_fetch_pending = None
+        self.spotify_result.connect(self.handle_spotify_result, Qt.QueuedConnection)
         self.spotify_info_label = NegativeTextLabel(self.main_widget)
         self.spotify_info_label.setAlignment(Qt.AlignCenter)
         self.spotify_info_label.setStyleSheet("background: transparent;")
@@ -879,6 +881,9 @@ class DisplayWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.running = False
+        self.spotify_fetch_id += 1
+        self.slideshow_timer.stop()
+        self.spotify_progress_timer.stop()
         self._stop_external_browser()
         self._stop_hls_playback()
         self.stop_current_video()
@@ -886,6 +891,10 @@ class DisplayWindow(QMainWindow):
 
     @Slot()
     def reload_settings(self):
+        self.spotify_fetch_id += 1
+        self.spotify_info = None
+        self.spotify_art_path = None
+        self.spotify_fallback_due = 0
         self.stop_current_video()
         self.cfg = load_config()
         displays = self.cfg.get("displays", {})
@@ -1178,77 +1187,7 @@ class DisplayWindow(QMainWindow):
             return
 
         if self.current_mode == "spotify":
-            path = self.fetch_spotify_album_art()
-            if path:
-                self.show_foreground_image(path, is_spotify=True)
-                self.spotify_info_label.show()
-                if self.disp_cfg.get("spotify_show_progress", False):
-                    self.spotify_progress_bar.show()
-                    upd_int = self.disp_cfg.get("spotify_progress_update_interval", 200)
-                    self.spotify_progress_timer.setInterval(upd_int)
-                    if not self.spotify_progress_timer.isActive():
-                        self.spotify_progress_timer.start()
-                info_parts = []
-                if self.disp_cfg.get("spotify_show_song", True) and self.spotify_info and self.spotify_info.get("song"):
-                    info_parts.append(self.spotify_info["song"])
-                if self.disp_cfg.get("spotify_show_artist", True) and self.spotify_info and self.spotify_info.get("artist"):
-                    info_parts.append(self.spotify_info["artist"])
-                if self.disp_cfg.get("spotify_show_album", True) and self.spotify_info and self.spotify_info.get("album"):
-                    info_parts.append(self.spotify_info["album"])
-
-                pos = self.disp_cfg.get("spotify_info_position", "bottom-center")
-                if "left" in pos or "right" in pos:
-                    text = "\n".join(info_parts)
-                else:
-                    text = " | ".join(info_parts)
-                self.spotify_info_label.setText(text)
-                font_size = self.disp_cfg.get("spotify_font_size", 18)
-                if self.disp_cfg.get("spotify_negative_font", True):
-                    self.spotify_info_label.useDifference = True
-                    self.spotify_info_label.setStyleSheet("background: transparent;")
-                    font = QFont(self.spotify_info_label.font())
-                    font.setPixelSize(font_size)
-                    self.spotify_info_label.setFont(font)
-                else:
-                    self.spotify_info_label.useDifference = False
-                    color = self.disp_cfg.get("spotify_font_color", "#FFFFFF")
-                    self.spotify_info_label.setStyleSheet(
-                        f"color: {color}; font-size: {font_size}px; background: transparent;"
-                    )
-                self.spotify_info_label.raise_()
-                # When Spotify is active we want to poll frequently for changes
-                if self.slideshow_timer.interval() != 5000:
-                    self.slideshow_timer.setInterval(5000)
-                self.setup_layout()
-            else:
-                self.spotify_progress_bar.hide()
-                self.spotify_progress_timer.stop()
-                fallback_mode = self.disp_cfg.get("fallback_mode", "random_image")
-                if fallback_mode in ("random_image", "mixed", "specific_image"):
-                    if not self.fallback_image_list:
-                        image_list_backup = self.image_list
-                        mode_backup = self.current_mode
-                        self.current_mode = fallback_mode
-                        self.build_local_image_list()
-                        self.fallback_image_list = self.image_list
-                        self.current_mode = mode_backup
-                        self.image_list = image_list_backup
-                        self.fallback_index = -1
-                    if not self.fallback_image_list:
-                        self.clear_foreground_label("No fallback images found")
-                    else:
-                        self.fallback_index = (self.fallback_index + 1) % len(self.fallback_image_list)
-                        new_path = self.fallback_image_list[self.fallback_index]
-                        self.last_displayed_path = new_path
-                        self.show_foreground_image(new_path)
-                        fb_int = self.disp_cfg.get("image_interval", 60)
-                        self.slideshow_timer.setInterval(fb_int * 1000)
-                    self.spotify_info_label.setText("")
-                    self.spotify_info_label.hide()
-                else:
-                    self.clear_foreground_label("No Spotify track info")
-                    self.spotify_info_label.setText("")
-                    self.spotify_info_label.hide()
+            self.start_spotify_fetch()
             return
 
         if not self.image_list:
@@ -1535,104 +1474,138 @@ class DisplayWindow(QMainWindow):
         self.clock_label.setText(now_str)
 
 
-    def fetch_spotify_album_art(self):
-        try:
-            cfg = load_config()
-            sp_cfg = cfg.get("spotify", {})
-            cid = sp_cfg.get("client_id", "")
-            csec = sp_cfg.get("client_secret", "")
-            ruri = sp_cfg.get("redirect_uri", "")
-            scope = sp_cfg.get("scope", "user-read-currently-playing user-read-playback-state")
-            if not (cid and csec and ruri):
-                self.spotify_info = None
-                return None
+    def render_spotify(self, path):
+        if self.spotify_info:
+            if path and path != getattr(self, "spotify_art_path", None):
+                self.show_foreground_image(path, is_spotify=True)
+            elif not path:
+                self.bg_label.clear()
+                self.clear_foreground_label("Artwork unavailable")
+            self.spotify_art_path = path
+            self.spotify_info_label.show()
+            if self.disp_cfg.get("spotify_show_progress", False):
+                self.spotify_progress_bar.show()
+                upd_int = self.disp_cfg.get("spotify_progress_update_interval", 200)
+                self.spotify_progress_timer.setInterval(upd_int)
+                if not self.spotify_progress_timer.isActive():
+                    self.spotify_progress_timer.start()
+            info_parts = []
+            if self.disp_cfg.get("spotify_show_song", True) and self.spotify_info and self.spotify_info.get("song"):
+                info_parts.append(self.spotify_info["song"])
+            if self.disp_cfg.get("spotify_show_artist", True) and self.spotify_info and self.spotify_info.get("artist"):
+                info_parts.append(self.spotify_info["artist"])
+            if self.disp_cfg.get("spotify_show_album", True) and self.spotify_info and self.spotify_info.get("album"):
+                info_parts.append(self.spotify_info["album"])
 
-            # Ensure the cache directory exists so spotipy can write the token
-            os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
+            pos = self.disp_cfg.get("spotify_info_position", "bottom-center")
+            if "left" in pos or "right" in pos:
+                text = "\n".join(info_parts)
+            else:
+                text = " | ".join(info_parts)
+            self.spotify_info_label.setText(text)
+            font_size = self.disp_cfg.get("spotify_font_size", 18)
+            if self.disp_cfg.get("spotify_negative_font", True):
+                self.spotify_info_label.useDifference = True
+                self.spotify_info_label.setStyleSheet("background: transparent;")
+                font = QFont(self.spotify_info_label.font())
+                font.setPixelSize(font_size)
+                self.spotify_info_label.setFont(font)
+            else:
+                self.spotify_info_label.useDifference = False
+                color = self.disp_cfg.get("spotify_font_color", "#FFFFFF")
+                self.spotify_info_label.setStyleSheet(
+                    f"color: {color}; font-size: {font_size}px; background: transparent;"
+                )
+            self.spotify_info_label.raise_()
+            # When Spotify is active we want to poll frequently for changes
+            if self.slideshow_timer.interval() != 5000:
+                self.slideshow_timer.setInterval(5000)
+            self.setup_layout()
+        else:
+            self.spotify_art_path = None
+            self.spotify_info_label.setText("")
+            self.spotify_info_label.hide()
+            self.spotify_progress_bar.hide()
+            self.spotify_progress_timer.stop()
+            if time.monotonic() < getattr(self, "spotify_fallback_due", 0):
+                return
+            fallback_mode = self.disp_cfg.get("fallback_mode", "random_image")
+            if fallback_mode in ("random_image", "mixed", "specific_image"):
+                if not self.fallback_image_list:
+                    image_list_backup = self.image_list
+                    mode_backup = self.current_mode
+                    self.current_mode = fallback_mode
+                    self.build_local_image_list()
+                    self.fallback_image_list = self.image_list
+                    self.current_mode = mode_backup
+                    self.image_list = image_list_backup
+                    self.fallback_index = -1
+                if not self.fallback_image_list:
+                    self.clear_foreground_label("No fallback images found")
+                else:
+                    self.fallback_index = (self.fallback_index + 1) % len(self.fallback_image_list)
+                    new_path = self.fallback_image_list[self.fallback_index]
+                    self.last_displayed_path = new_path
+                    self.show_foreground_image(new_path)
+                    self.spotify_fallback_due = time.monotonic() + max(1, int(self.disp_cfg.get("image_interval", 60)))
+                self.spotify_info_label.setText("")
+                self.spotify_info_label.hide()
+            else:
+                self.clear_foreground_label("No Spotify track info")
+                self.spotify_info_label.setText("")
+                self.spotify_info_label.hide()
+        return
 
-            auth = SpotifyOAuth(
-                client_id=cid,
-                client_secret=csec,
-                redirect_uri=ruri,
-                scope=scope,
-                cache_path=SPOTIFY_CACHE_PATH,
-            )
-            token_info = auth.get_cached_token()
-            if not token_info:
-                self.spotify_info = None
-                return None
-            if auth.is_token_expired(token_info):
-                token_info = auth.refresh_access_token(token_info["refresh_token"])
-            sp = spotipy.Spotify(auth=token_info["access_token"])
-            current = sp.current_playback()
-            if not current or not current.get("item") or not current.get("is_playing", False):
-                self.spotify_info = None
-                return None
-            item = current["item"]
-            track_name = item.get("name", "")
-            artists = ", ".join([a.get("name", "") for a in item.get("artists", [])])
-            album_name = item.get("album", {}).get("name", "")
-            self.spotify_info = {
-                "song": track_name,
-                "artist": artists,
-                "album": album_name
-            }
-            # Capture playback progress info for progress bar updates
-            progress_ms = current.get("progress_ms", 0)
-            duration_ms = item.get("duration_ms", 0)
-            self.spotify_info["progress_ms"] = progress_ms
-            self.spotify_info["duration_ms"] = duration_ms
-            self.spotify_info["fetched_time"] = time.time()
-            album_imgs = item["album"]["images"]
-            if not album_imgs:
-                return None
-            url = album_imgs[0]["url"]
-            resp = requests.get(url, stream=True, timeout=5)
-            if resp.status_code == 200:
-                tmpf = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-                for chunk in resp.iter_content(1024):
-                    tmpf.write(chunk)
-                tmpf.close()
-                return tmpf.name
-        except Exception as e:
-            log_message(f"Spotify error: {e}")
-            self.spotify_info = None
-            return None
-        return None
 
     def update_spotify_progress(self):
-        if not self.spotify_info or "progress_ms" not in self.spotify_info or "duration_ms" not in self.spotify_info or "fetched_time" not in self.spotify_info:
+        if not self.spotify_info:
             self.spotify_progress_bar.setValue(0)
             return
-        progress_ms = self.spotify_info["progress_ms"]
-        duration_ms = self.spotify_info["duration_ms"]
-        fetched_time = self.spotify_info["fetched_time"]
-        elapsed = (time.time() - fetched_time) * 1000  # in ms
-        current_progress = progress_ms + elapsed
-        if duration_ms > 0:
-            percent = min(100, (current_progress / duration_ms) * 100)
-        else:
-            percent = 0
-        self.spotify_progress_bar.setValue(int(percent))
+        duration = self.spotify_info.get("duration_ms", 0)
+        elapsed = max(0, time.monotonic() - self.spotify_info["fetched_time"]) * 1000
+        progress = self.spotify_info.get("progress_ms", 0) + elapsed
+        self.spotify_progress_bar.setValue(int(min(100, max(0, progress / duration * 100))) if duration > 0 else 0)
 
     def start_spotify_fetch(self):
-        """Launch a background thread to fetch album art."""
-        if getattr(self, "spotify_fetch_thread", None) and self.spotify_fetch_thread.is_alive():
+        if self.spotify_fetch_pending is not None:
             return
-        self.spotify_fetch_id = getattr(self, "spotify_fetch_id", 0) + 1
+        self.spotify_fetch_id += 1
         fid = self.spotify_fetch_id
+        self.spotify_fetch_pending = fid
+        emit = self.spotify_result.emit
 
         def worker():
-            result = self.fetch_spotify_album_art()
-            self.handle_spotify_result(fid, result)
+            try:
+                result = shared_poller().fetch()
+            except Exception:
+                result = Playback("offline")
+            try:
+                emit(fid, result)
+            except RuntimeError:
+                pass  # The Qt receiver was destroyed while the request finished.
 
-        self.spotify_fetch_thread = threading.Thread(target=worker, daemon=True)
-        self.spotify_fetch_thread.start()
+        threading.Thread(target=worker, daemon=True).start()
 
-    def handle_spotify_result(self, fid, path):
-        """Placeholder for handling fetched album art result."""
-        if path:
-            log_message(f"Fetched Spotify art {path}")
+    @Slot(int, object)
+    def handle_spotify_result(self, fid, result):
+        if fid == self.spotify_fetch_pending:
+            self.spotify_fetch_pending = None
+        if not self.running or self.current_mode != "spotify" or fid != self.spotify_fetch_id:
+            return
+        previous_status = getattr(self, "spotify_status", None)
+        self.spotify_status = result.status
+        if result.status != previous_status:
+            log_message(f"Spotify status: {result.status}")
+        if result.status == "playing":
+            self.spotify_info = {
+                "song": result.song, "artist": result.artist, "album": result.album,
+                "progress_ms": result.progress_ms, "duration_ms": result.duration_ms,
+                "fetched_time": result.fetched_time,
+            }
+            self.spotify_fallback_due = 0
+        else:
+            self.spotify_info = None
+        self.render_spotify(result.art_path if result.status == "playing" else "")
 
     def pull_displays_from_remote(self, ip):
         pass  # Placeholder if needed

@@ -2,11 +2,12 @@
 # -*- coding: utf-8 -*-
 
 import os
+import secrets
 import subprocess
 import requests
 from flask import (
     Blueprint, request, redirect, url_for, render_template,
-    send_from_directory, send_file, jsonify
+    send_from_directory, send_file, jsonify, session, current_app
 )
 from echoview.config import (
     APP_VERSION,
@@ -26,6 +27,7 @@ from echoview.utils import (
     is_ignored_folder,
     media_aspect_label,
 )
+from echoview.web.spotify_auth import DEFAULT_SCOPE, validate_config, cached_status, oauth_client
 from echoview import embed_utils
 
 # Supported media file extensions for the upload/file-manager features.
@@ -515,115 +517,96 @@ def clear_config():
 @main_bp.route("/configure_spotify", methods=["GET", "POST"])
 def configure_spotify():
     cfg = load_config()
-    if "spotify" not in cfg:
-        cfg["spotify"] = {}
+    cfg.setdefault("spotify", {})
     if request.method == "POST":
-        cid = request.form.get("client_id", "").strip()
-        csec = request.form.get("client_secret", "").strip()
-        ruri = request.form.get("redirect_uri", "").strip()
-        scope = request.form.get("scope", "user-read-currently-playing user-read-playback-state").strip()
-        cfg["spotify"] = {
-            "client_id": cid,
-            "client_secret": csec,
-            "redirect_uri": ruri,
-            "scope": scope
-        }
+        new = {key: request.form.get(key, "").strip()
+               for key in ("client_id", "client_secret", "redirect_uri")}
+        new["scope"] = request.form.get("scope", DEFAULT_SCOPE).strip()
+        try:
+            validate_config(new)
+        except ValueError as exc:
+            return str(exc), 400
+        if new != cfg["spotify"]:
+            # Invalidate before saving: never use another application's cached token.
+            try:
+                os.unlink(SPOTIFY_CACHE_PATH)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                return "Cannot invalidate old Spotify token; check cache permissions.", 500
+            session.pop("spotify_browser", None)
+        cfg["spotify"] = new
         save_config(cfg)
         return redirect(url_for("main.configure_spotify"))
-    else:
-        tok_cached = os.path.exists(SPOTIFY_CACHE_PATH)
-        creds_set = bool(
-            cfg.get("spotify", {}).get("client_id")
-            and cfg.get("spotify", {}).get("client_secret")
-            and cfg.get("spotify", {}).get("redirect_uri")
-        )
-        return render_template(
-            "configure_spotify.html",
-            spotify=cfg["spotify"],
-            theme=cfg.get("theme", "dark"),
-            token_cached=tok_cached,
-            creds_set=creds_set,
-        )
+    return render_template("configure_spotify.html", spotify=cfg["spotify"],
+                           theme=cfg.get("theme", "dark"),
+                           spotify_status=cached_status(cfg["spotify"], SPOTIFY_CACHE_PATH))
+
 
 @main_bp.route("/spotify_auth")
 def spotify_auth():
-    from spotipy.oauth2 import SpotifyOAuth
-    cfg = load_config()
-    sp_cfg = cfg.get("spotify", {})
-    cid = sp_cfg.get("client_id", "")
-    csec = sp_cfg.get("client_secret", "")
-    ruri = sp_cfg.get("redirect_uri", "")
-    scope = sp_cfg.get("scope", "user-read-currently-playing user-read-playback-state")
-    if not (cid and csec and ruri):
-        return "Spotify config incomplete", 400
+    cfg = load_config().get("spotify", {})
+    try:
+        auth = oauth_client(cfg, SPOTIFY_CACHE_PATH)
+        browser = secrets.token_urlsafe(32)
+        session["spotify_browser"] = browser
+        state = current_app.extensions["spotify_states"].issue(browser, cfg)
+        return redirect(auth.get_authorize_url(state=state))
+    except ValueError as exc:
+        return str(exc), 400
+    except Exception:
+        return "Could not start Spotify authorization. Check installation and cache permissions.", 503
 
-    # Ensure the cache directory exists before spotipy writes the token
-    os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
-
-    redirect_uri = ruri or "http://127.0.0.1:8080/callback"
-    sp_oauth = SpotifyOAuth(
-        client_id=cid,
-        client_secret=csec,
-        redirect_uri=redirect_uri,
-        scope=scope,
-        cache_path=SPOTIFY_CACHE_PATH,
-    )
-    auth_url = sp_oauth.get_authorize_url()
-    return redirect(auth_url)
 
 @main_bp.route("/callback")
 def callback():
-    from spotipy.oauth2 import SpotifyOAuth
-    cfg = load_config()
-    sp_cfg = cfg.get("spotify", {})
-    cid = sp_cfg.get("client_id", "")
-    csec = sp_cfg.get("client_secret", "")
-    ruri = sp_cfg.get("redirect_uri", "")
-    scope = sp_cfg.get("scope", "user-read-currently-playing user-read-playback-state")
-
-    # Ensure the cache directory exists before spotipy writes the token
-    os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
-
-    redirect_uri = ruri or "http://127.0.0.1:8080/callback"
-    sp_oauth = SpotifyOAuth(
-        client_id=cid,
-        client_secret=csec,
-        redirect_uri=redirect_uri,
-        scope=scope,
-        cache_path=SPOTIFY_CACHE_PATH,
-    )
+    cfg = load_config().get("spotify", {})
+    state = request.args.get("state", "")
+    browser = session.pop("spotify_browser", None)
+    if not state or not browser or not current_app.extensions["spotify_states"].consume(state, browser, cfg):
+        return "Authorization expired or state did not match. Start authorization again in the same browser and address.", 400
+    if request.args.get("error"):
+        return "Spotify authorization was declined. You can authorize again.", 400
     code = request.args.get("code")
     if not code:
-        return "Authorization failed: no code provided", 400
+        return "Authorization failed: no code provided.", 400
     try:
-        token_info = sp_oauth.get_access_token(code)
-    except Exception as e:
-        log_message(f"Spotify callback error: {e}")
-        return "Spotify callback error", 500
+        token = oauth_client(cfg, SPOTIFY_CACHE_PATH).get_access_token(code, check_cache=False)
+        if not isinstance(token, dict) or not token.get("access_token"):
+            return "Spotify did not return a valid token. Authorize again.", 502
+        if not set(cfg.get("scope", DEFAULT_SCOPE).split()).issubset(str(token.get("scope", "")).split()):
+            try:
+                os.unlink(SPOTIFY_CACHE_PATH)
+            except FileNotFoundError:
+                pass
+            return "Spotify did not grant the required permissions. Authorize again.", 400
+    except Exception:
+        # Provider exceptions may contain authorization codes or credentials.
+        return "Spotify token exchange failed. Check credentials, registered redirect URI and network, then authorize again.", 502
+    return redirect(url_for("main.configure_spotify"))
 
-    # Auto redirect if the callback is coming via localhost
-    if "localhost" in request.host or "127.0.0.1" in request.host:
-        device_ip = get_ip_address()
-        redirect_url = f"http://{device_ip}:8080/configure_spotify"
-        html = f"""
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <meta http-equiv="refresh" content="0; url={redirect_url}">
-            <title>Spotify Authorization Complete</title>
-            <script type="text/javascript">
-              window.location.href = "{redirect_url}";
-            </script>
-          </head>
-          <body>
-            <h2>Spotify Authorization Complete</h2>
-            <p>If you are not redirected automatically, <a href="{redirect_url}">click here</a>.</p>
-          </body>
-        </html>
-        """
-        return html
-    else:
-        return redirect(url_for("main.configure_spotify"))
+
+@main_bp.route("/spotify_check", methods=["POST"])
+def spotify_check():
+    cfg = load_config().get("spotify", {})
+    try:
+        auth = oauth_client(cfg, SPOTIFY_CACHE_PATH)
+        token = auth.get_cached_token()  # Spotipy validates scopes and refreshes expired tokens.
+        if not token:
+            return "No usable Spotify token. Authorize again.", 400
+        import spotipy
+        spotipy.Spotify(auth=token["access_token"], requests_timeout=5,
+                        retries=0, status_retries=0).current_playback()
+        return "Spotify connection verified. No active playback is also a valid result."
+    except Exception as exc:
+        status = getattr(exc, "http_status", None)
+        if status == 401:
+            return "Spotify token rejected. Authorize again.", 401
+        if status == 403:
+            return "Spotify access denied. Check scopes, Developer Dashboard allowed users and app-owner Premium status.", 403
+        if status == 429:
+            return "Spotify rate or quota limit reached. Wait before checking again.", 429
+        return "Spotify connection or refresh failed. Check network and credentials; reauthorize if access was revoked.", 503
 
 @main_bp.route("/overlay_config", methods=["GET", "POST"])
 def overlay_config():
@@ -900,19 +883,7 @@ def index():
 
     sub_info_line = ""
 
-    sp_cfg = cfg.get("spotify", {})
-    if (
-        sp_cfg.get("client_id")
-        and sp_cfg.get("client_secret")
-        and sp_cfg.get("redirect_uri")
-    ):
-        if os.path.exists(SPOTIFY_CACHE_PATH):
-            spotify_status = "Authorized"
-        else:
-            spotify_status = "Credentials set - authorize"
-    else:
-        spotify_status = "Not configured"
-
+    spotify_status = cached_status(cfg.get("spotify", {}), SPOTIFY_CACHE_PATH)
 
     final_monitors = {}
     for mon_name, minfo in ext_mons.items():

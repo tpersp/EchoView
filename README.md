@@ -236,3 +236,83 @@ Feel free to open pull requests or issues. Any improvements to multi-monitor det
 
 **Enjoy EchoView!**
 
+
+## Read-only runtime diagnostics
+
+Run this with the same Python environment as EchoView (normally `.venv`):
+
+```bash
+.venv/bin/python -m echoview.diagnostics
+```
+
+The JSON report includes OS/architecture, Python and installed package versions,
+connector geometry, available browser/media tools and service activity. It does
+not read application configuration, `.env`, Spotify tokens, service environments
+or logs, and omits hostnames, IP addresses and executable paths. Missing tools,
+headless sessions and unavailable systemd checks are reported without failing.
+Each subprocess probe has a five-second timeout. No GUI or playback is started.
+Service activity is not an application-readiness check; the Qt platform shown is
+the requested backend, not a verified running backend.
+
+The initial hardware validation target is **Raspberry Pi 3 B/B+, Raspberry Pi OS
+Bookworm 64-bit, X11/Openbox with full KMS**, first over HDMI and then composite
+PAL and NTSC. This is a selected test target, not yet a supported configuration:
+Qt wheel/native-library compatibility, real Spotify authorization and RCA output
+remain to be validated on hardware. Newer Pi OS releases and 32-bit images need
+separate validation. The development-host report is in
+`docs/diagnostics-development-host.json`; it is not evidence of Pi compatibility.
+
+### Spotify authorization from another computer
+
+Register the exact callback URL in the Spotify Developer Dashboard. EchoView
+requires both `user-read-currently-playing` and `user-read-playback-state`.
+Spotify accepts HTTPS callbacks, or HTTP with an explicit loopback IP such as
+`127.0.0.1` or `[::1]`; `localhost` and HTTP LAN callbacks are not accepted.
+See [Spotify's redirect requirements](https://developer.spotify.com/documentation/web-api/concepts/redirect_uri).
+
+For a laptop browser without an HTTPS controller address:
+
+1. Run `ssh -N -L 8080:127.0.0.1:8080 user@PI-IP` on the laptop.
+2. Open `http://127.0.0.1:8080/configure_spotify` in that browser.
+3. Save `http://127.0.0.1:8080/callback` as the redirect URI, matching the Dashboard.
+4. Start authorization and keep the tunnel open through the callback.
+
+Alternatively access the controller through an HTTPS reverse proxy and register
+its `/callback` URL. Begin and finish on the same controller address and browser;
+do not manually rewrite callback addresses. Authorization attempts expire after
+ten minutes and can only be used once. A new authorization attempt in the same
+browser replaces the previous attempt.
+
+The controller creates a private `.oauth_state.sqlite3` file in `VIEWER_HOME` for
+its persistent signing key and pending authorization states. The service user
+must be able to write there. Removing this file invalidates browser sessions and
+pending attempts, but does not delete the Spotify token cache. Changing Spotify
+credentials, scopes or callback settings deletes the old token cache and requires
+reauthorization.
+
+The status page checks token structure, expiry and scopes without making network
+requests. **Check Connection** additionally validates/refreshes the cached token
+through Spotipy and calls the playback API; no active playback is a successful
+connection result. Revoked tokens, network failures and access/quota errors can
+only be established by this live check. For access denial, check Dashboard allowed
+users, requested scopes and the development app owner's Premium subscription.
+
+### Spotify display polling
+
+All Spotify windows in one viewer process share serialized playback polling and
+token validation/refresh. Requests run on background workers; only queued Qt
+results update widgets. Reloading settings or closing a window invalidates its
+outstanding result. Polling is limited to one API request per five seconds for
+the process, independently of the local progress-bar timer and fallback-image
+interval. Provider rate limits and errors lengthen this delay; `Retry-After` is
+honored, and quota exhaustion uses a minimum five-minute pause. Authorization
+and access failures retry after one minute; network errors use bounded backoff.
+These statuses are logged without provider exception details.
+
+Tracks and episodes can display metadata even when artwork is missing. Paused,
+unavailable and failed playback use the configured fallback. Artwork is reused
+by URL, limited to eight images of at most 4 MiB and 4096×4096 pixels each, and
+stored in a temporary directory cleaned on normal process exit. Interrupted
+or forcibly killed processes may leave their temporary directory behind.
+Repeated failed artwork requests are throttled. The controller's manual
+connection check is a separate process and is not part of viewer polling.

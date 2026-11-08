@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "echoview"))
 
 
 qtcore = types.ModuleType("PySide6.QtCore")
+qtcore.Signal = lambda *args: None
 
 
 class DummyQt:
