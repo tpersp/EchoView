@@ -1,6 +1,6 @@
 # CRT safe areas, text and resource settings
 
-Each display has a **Safe area and performance** form on the controller. It is
+Each display has a **Safe area** form on the controller. It is
 separate from the resolution/aspect form: saving presentation settings never
 requests a different output mode. Settings can also be saved for a disconnected
 output and will be used when it returns.
@@ -39,7 +39,7 @@ Sources: [mpv video margins](https://mpv.io/manual/stable/#options-video-margin-
 
 ## Optional Pi 3 profile
 
-**Standard** remains the default. **Pi 3 low resource** is an explicit per-display
+**Standard** remains the default. **Pi 3 low resource** is an explicit device-wide
 choice, not automatic hardware detection. Switching back restores the standard
 policy without rewriting the saved global effect settings.
 
@@ -99,3 +99,10 @@ on monochrome CRTs. The grid, 5%/10% borders and corrected circle remain present
 A [PAL colour reference capture](assets/echoview-calibration-pal-colour.png) is
 saved alongside the original pattern. These bars aid visual checks; they do not
 replace a calibrated broadcast signal generator.
+
+Resource profile is selected under **Settings → Device performance** and applies
+to all displays. Safe areas, resolution and aspect remain per-display. Existing
+per-display profiles migrate once: if any display used Pi 3, the device adopts Pi 3,
+unless a valid global choice already exists. Old per-display profile keys are
+removed. Saving this setting restarts the viewer; a failed restart preserves the
+saved choice and reports that a manual restart is needed.

@@ -33,6 +33,7 @@ def test_update_always_installs_and_preserves_settings(installation,reboot):
     original = [p.read_bytes() for p in (repo/'.env',config,token)]
     name = updates.update(repo,'dev',config,token,reboot)
     assert ['sudo','-n','bash','setup.sh','--auto-update'] in calls
+    assert ['git','fetch','origin','+refs/heads/dev:refs/remotes/origin/dev'] in calls
     assert [p.read_bytes() for p in (repo/'.env',config,token)] == original
     backup = repo/'.update-backups'/name
     assert (backup/'2-private-token').read_text() == 'secret-refresh-token'
@@ -83,6 +84,7 @@ def test_routes_report_failure_and_pending_truthfully(monkeypatch,endpoint):
     app=Flask(__name__,template_folder=str(Path(routes.__file__).parent/'templates'))
     app.register_blueprint(routes.main_bp)
     monkeypatch.setattr(routes,'log_message',lambda msg:None)
+    monkeypatch.setattr(routes,'load_config',lambda:{})
     def fail(*args,**kwargs): raise updates.UpdateError('Installer failed.')
     name='restart_services' if endpoint=='/restart_services' else 'update'
     monkeypatch.setattr(updates,name,fail)

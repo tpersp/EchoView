@@ -94,3 +94,8 @@ def player_presentation_flags(display):
     if display.get("resource_profile") == "pi3":
         flags += ["--vd-lavc-threads=2", "--ytdl-format=bestvideo[height<=480]+bestaudio/best[height<=480]"]
     return flags
+
+
+def runtime_display_settings(cfg, display):
+    """Combine screen preferences with the device policy without persisting a copy."""
+    return {**display, "resource_profile": cfg.get("resource_profile", "standard")}

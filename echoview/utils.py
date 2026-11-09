@@ -108,6 +108,7 @@ def init_config():
     if not os.path.exists(CONFIG_PATH):
         default_cfg = {
             "theme": "dark",
+            "resource_profile": "standard",
             # displays dictionary for multi-display logic
             "displays": {
                 "Display0": {
@@ -142,7 +143,6 @@ def init_config():
                     "output_mode": "auto",
                     "display_aspect": "auto",
                     "safe_area": {"left": 0, "right": 0, "top": 0, "bottom": 0},
-                    "resource_profile": "standard",
                 }
             },
             "overlay": {
@@ -303,12 +303,15 @@ def upgrade_config(cfg):
     """
     changed = False
     displays = cfg.get("displays", {})
+    if cfg.get("resource_profile") not in ("standard", "pi3"):
+        cfg["resource_profile"] = "pi3" if any(d.get("resource_profile") == "pi3" for d in displays.values()) else "standard"
+        changed = True
     for dcfg in displays.values():
         if "safe_area" not in dcfg:
             dcfg["safe_area"] = {"left": 0, "right": 0, "top": 0, "bottom": 0}
             changed = True
-        if "resource_profile" not in dcfg:
-            dcfg["resource_profile"] = "standard"
+        if "resource_profile" in dcfg:
+            del dcfg["resource_profile"]
             changed = True
         # Legacy chosen_mode was display-only; never activate it on upgrade.
         for key in ("output_mode", "display_aspect"):

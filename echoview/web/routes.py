@@ -32,6 +32,7 @@ from echoview.presentation import safe_area_settings, RESOURCE_PROFILES, EDGES
 from echoview.displays import (discover_monitors, reconcile_displays, mode_choices,
                                apply_output_mode, DISPLAY_ASPECTS)
 from echoview import embed_utils
+from echoview.branches import branch_options, selected_branch, valid_branch
 
 # Supported media file extensions for the upload/file-manager features.
 VALID_MEDIA_EXT = (
@@ -407,7 +408,31 @@ def create_folder():
 def settings():
     cfg = load_config()
     if request.method == "POST":
-        new_theme = request.form.get("theme", "dark")
+        action = request.form.get("action", "appearance")
+        if action == "update_branch":
+            branch = request.form.get("update_branch", "")
+            if not valid_branch(branch):
+                return "Invalid update branch.", 400
+            cfg["update_branch"] = branch
+            save_config(cfg)
+            flash("Update branch saved. Updates will use this branch; no update has been started.")
+            return redirect(url_for("main.settings"))
+        if action == "resource_profile":
+            profile = request.form.get("resource_profile", "")
+            if profile not in RESOURCE_PROFILES:
+                return "Invalid resource profile.", 400
+            cfg["resource_profile"] = profile
+            for display in cfg.get("displays", {}).values():
+                display.pop("resource_profile", None)
+            save_config(cfg)
+            try:
+                subprocess.run(["sudo", "-n", "systemctl", "restart", "echoview.service"], check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=100)
+                flash("Device resource profile saved and applied to all displays.")
+            except (OSError, subprocess.SubprocessError):
+                flash("Device resource profile saved; restart the viewer to apply it.")
+            return redirect(url_for("main.settings"))
+        new_theme = request.form.get("theme", cfg.get("theme", "dark"))
         cfg["theme"] = new_theme
 
         if new_theme == "custom":
@@ -420,17 +445,17 @@ def settings():
         if "gui" not in cfg:
             cfg["gui"] = {}
         try:
-            cfg["gui"]["background_blur_radius"] = int(request.form.get("background_blur_radius", "20"))
+            cfg["gui"]["background_blur_radius"] = int(request.form.get("background_blur_radius", cfg["gui"].get("background_blur_radius", 20)))
         except:
             cfg["gui"]["background_blur_radius"] = 20
 
         try:
-            cfg["gui"]["background_scale_percent"] = int(request.form.get("background_scale_percent", "100"))
+            cfg["gui"]["background_scale_percent"] = int(request.form.get("background_scale_percent", cfg["gui"].get("background_scale_percent", 100)))
         except:
             cfg["gui"]["background_scale_percent"] = 100
 
         try:
-            cfg["gui"]["foreground_scale_percent"] = int(request.form.get("foreground_scale_percent", "100"))
+            cfg["gui"]["foreground_scale_percent"] = int(request.form.get("foreground_scale_percent", cfg["gui"].get("foreground_scale_percent", 100)))
         except:
             cfg["gui"]["foreground_scale_percent"] = 100
 
@@ -455,7 +480,8 @@ def settings():
             "settings.html",
             theme=theme,
             cfg=cfg,
-            update_branch=UPDATE_BRANCH,
+            update_branch=selected_branch(cfg, UPDATE_BRANCH),
+            branches=branch_options(VIEWER_HOME, selected_branch(cfg, UPDATE_BRANCH))["branches"],
             version=APP_VERSION
         )
 
@@ -628,20 +654,17 @@ def configure_presentation():
     if name not in cfg.get("displays", {}):
         return "Unknown display.", 400
     display = cfg["displays"][name]
-    profile = request.form.get("resource_profile", display.get("resource_profile", "standard"))
-    if profile not in RESOURCE_PROFILES:
-        return "Invalid resource profile.", 400
     old = safe_area_settings(display.get("safe_area", {}))
     try:
         margins = safe_area_settings({edge: request.form.get("safe_" + edge, old.get(edge, 0)) for edge in EDGES}, strict=True)
     except ValueError as exc:
         return str(exc), 400
-    display.update(safe_area=margins, resource_profile=profile)
+    display.update(safe_area=margins)
     save_config(cfg)
     try:
         subprocess.run(["sudo", "systemctl", "restart", "echoview.service"], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
-        flash("Safe area and resource settings saved.")
+        flash("Safe-area settings saved.")
     except (OSError, subprocess.SubprocessError):
         flash("Presentation settings saved; restart the viewer to apply them.")
     return redirect(url_for("main.index"))
@@ -909,7 +932,7 @@ def index():
 def _update_response(reboot=False):
     from echoview.updates import update, UpdateError
     try:
-        update(VIEWER_HOME, UPDATE_BRANCH, CONFIG_PATH, SPOTIFY_CACHE_PATH, reboot=reboot)
+        update(VIEWER_HOME, selected_branch(load_config(), UPDATE_BRANCH), CONFIG_PATH, SPOTIFY_CACHE_PATH, reboot=reboot)
     except UpdateError as exc:
         log_message(str(exc))
         return render_template("maintenance.html", message=str(exc), pending=False), 500
@@ -936,3 +959,9 @@ def restart_services():
     except UpdateError as exc:
         return render_template("maintenance.html", message=str(exc), pending=False), 500
     return render_template("maintenance.html", message="Viewer is active. Controller restart queued.", pending=True), 202
+
+
+@main_bp.route("/update_branches", methods=["GET"])
+def update_branches():
+    branch = selected_branch(load_config(), UPDATE_BRANCH)
+    return jsonify(branch_options(VIEWER_HOME, branch, remote=True))

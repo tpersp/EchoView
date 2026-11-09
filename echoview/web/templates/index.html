@@ -51,7 +51,7 @@
       <button type="submit" {% if not output.connected %}disabled{% endif %}>Apply output settings</button>
     </form>
     <form method="POST" action="{{ url_for('main.configure_presentation') }}" class="card" style="margin-bottom:15px; padding:15px;">
-      <h3>{{ dname }} — Safe area and performance</h3>
+      <h3>{{ dname }} — Safe area</h3>
       <input type="hidden" name="display" value="{{ dname }}">
       <p>Inset each edge to keep media, clocks and track information clear of TV overscan. Zero preserves the full output area.</p>
       {% set margins = dcfg.safe_area if dcfg.safe_area is mapping else {} %}
@@ -60,13 +60,7 @@
         <input type="number" name="safe_{{ edge }}" min="0" max="20" step="any" value="{{ margins.get(edge, 0) }}" required>
       </label>
       {% endfor %}
-      <label>Resource profile:
-        <select name="resource_profile">
-          <option value="standard" {% if dcfg.resource_profile|default('standard') == 'standard' %}selected{% endif %}>Standard</option>
-          <option value="pi3" {% if dcfg.resource_profile == 'pi3' %}selected{% endif %}>Pi 3 low resource</option>
-        </select>
-      </label>
-      <p>Pi 3: no background blur or preloading, first frame for GIFs, smaller decoded images and caches, and up to 480p for extracted video streams. Direct streams and local files retain their source resolution.</p>
+      <p>Device performance options are available in <a href="{{ url_for('main.settings') }}">Settings</a>.</p>
       <p>Use Calibration Pattern in the viewer mode selector to check the visible boundary, circles and grid. External browser fullscreen may ignore window insets.</p>
       <button type="submit">Save presentation settings</button>
     </form>

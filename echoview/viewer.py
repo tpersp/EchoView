@@ -51,7 +51,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from echoview.spotify_client import Playback, shared_poller
 from echoview.presentation import (safe_bounds, safe_area_settings, overlay_bounds, text_stretch,
                                    resource_settings, decode_size, trim_image_cache,
-                                   player_presentation_flags, bounded_int)
+                                   player_presentation_flags, bounded_int, runtime_display_settings)
 from echoview.displays import (discover_monitors, reconcile_displays, screen_assignments,
                                apply_output_mode, display_pixel_aspect, fit_dimensions, DISPLAY_ASPECTS)
 from echoview.utils import (
@@ -937,7 +937,7 @@ class DisplayWindow(QMainWindow):
         self.cfg = load_config()
         displays = self.cfg.get("displays", {})
         if self.disp_name in displays:
-            self.disp_cfg = displays[self.disp_name]
+            self.disp_cfg = runtime_display_settings(self.cfg, displays[self.disp_name])
 
         over = self.disp_cfg.get("overlay", self.cfg.get("overlay", {}))
         if over.get("clock_enabled", False):

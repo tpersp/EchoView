@@ -26,6 +26,7 @@ def test_upgrade_config_adds_missing_display_keys_without_overwriting_existing()
 
 def test_upgrade_config_is_noop_when_display_config_is_current():
     cfg = {
+        "resource_profile": "standard",
         "displays": {
             "HDMI-1": {
                 "embed_metadata": {"embed_type": "iframe"},
@@ -38,7 +39,6 @@ def test_upgrade_config_is_noop_when_display_config_is_current():
                 "output_mode": "auto",
                 "display_aspect": "auto",
                 "safe_area": {"left": 0, "right": 0, "top": 0, "bottom": 0},
-                "resource_profile": "standard",
             }
         }
     }

@@ -354,12 +354,12 @@ aspect correction, video/browser limits, mode recovery and pending hardware test
 
 ## CRT safe area and Pi 3 resource profile
 
-Use **Safe area and performance** to inset each edge by 0–20% without changing
+Use **Safe area** to inset each edge by 0–20% without changing
 resolution. Clocks, track text and progress stay inside the visible area, with
 font-width correction for non-square pixels. **Calibration Pattern** mode shows
 a grid, inset marks and a circle for the later TV test.
 
-The optional **Pi 3 low resource** profile disables blur/preloading, uses the
+The device-wide **Pi 3 low resource** profile in **Settings → Device performance** disables blur/preloading, uses the
 first GIF frame, and reduces image/cache and extracted-stream limits. Standard
 remains the default. See [presentation settings](docs/presentation-settings.md)
 for the tradeoffs, external-browser limits and development measurements.

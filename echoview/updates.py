@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+from echoview.branches import valid_branch
 
 
 class UpdateError(RuntimeError):
@@ -27,6 +28,8 @@ def restart_services():
 
 
 def update(repo, branch, config_path, token_path, reboot=False):
+    if not valid_branch(branch):
+        raise UpdateError("Invalid update branch.")
     repo = Path(repo)
     stage = 'Update lock'
     try:
@@ -59,7 +62,7 @@ def update(repo, branch, config_path, token_path, reboot=False):
                     shutil.copyfile(path, target)
                     target.chmod(0o600)
             stage = 'Git fetch'
-            run(['git', 'fetch', 'origin'], cwd=repo, timeout=180)
+            run(['git', 'fetch', 'origin', f'+refs/heads/{branch}:refs/remotes/origin/{branch}'], cwd=repo, timeout=180)
             revision = run(['git', 'rev-parse', '--verify', f'refs/remotes/origin/{branch}^{{commit}}'], cwd=repo).stdout.strip()
             for path in files:
                 if path.is_relative_to(repo):

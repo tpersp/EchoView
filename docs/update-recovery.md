@@ -68,3 +68,27 @@ Readiness confirms X access, not correct HDMI/RCA timing or actual rendering.
 Mocked update/install/restart failures, private backups, settings preservation,
 concurrency and readiness timeout tests pass without invoking real updates or
 systemd. Fresh/upgrade Pi installation, cold boot and recovery tests remain pending.
+
+## Select the update branch
+
+In **Settings → Update from GitHub**, choose a branch and click **Save update
+branch** before running either update action. The saved choice overrides the
+legacy `UPDATE_BRANCH` environment setting; that setting remains the fallback
+until a branch has been saved. Saving never fetches application code or starts
+an installation. Both update actions use the saved selection.
+
+The dropdown initially uses local `origin` refs, the saved branch, and main/dev
+fallbacks. An asynchronous read-only `git ls-remote --heads origin` lookup loads
+available remote branches without delaying the settings page. GitHub is queried
+when it is the checkout's origin; no GitHub account connection is required. Results
+are cached for 60 seconds, network lookup is limited to eight seconds, and offline
+failures preserve the existing choices. Branch names use letters, digits, underscores,
+dots, hyphens and slashes with Git ref restrictions; revision expressions and
+option-like input are rejected. Updates explicitly fetch the selected branch,
+including for checkouts originally cloned with a single-branch refspec. A branch
+deleted upstream remains selected but the update fails at fetch rather than
+silently switching to another branch.
+
+[Git remote branch discovery](https://git-scm.com/docs/git-ls-remote) and
+[ref-name rules](https://git-scm.com/docs/git-check-ref-format) describe the
+underlying Git operations.

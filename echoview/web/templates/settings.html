@@ -1,9 +1,35 @@
 {% extends "base.html" %}
-{% block title %}Settings{% endblock %}
+{% block title %}Settings<script>
+(() => {
+  const select = document.getElementById('update-branch');
+  const status = document.getElementById('branch-status');
+  const button = document.getElementById('refresh-branches');
+  async function refreshBranches() {
+    button.disabled = true;
+    try {
+      const response = await fetch({{ url_for('main.update_branches')|tojson }});
+      if (!response.ok) throw new Error('Branch lookup failed');
+      const data = await response.json();
+      const chosen = select.value;
+      const names = [...new Set([...Array.from(select.options, option => option.value), ...data.branches, chosen])].sort();
+      select.replaceChildren(...names.map(name => new Option(name, name, false, name === chosen)));
+      status.textContent = data.available
+        ? 'Branches loaded. Save your selection before starting an update.'
+        : 'Origin unavailable; showing saved and locally known branches.';
+    } catch (_) {
+      status.textContent = 'Branch lookup unavailable; existing choices remain available.';
+    } finally { button.disabled = false; }
+  }
+  button.addEventListener('click', refreshBranches);
+  refreshBranches();
+})();
+</script>
+{% endblock %}
 {% block content %}
 
 <div class="page-section" style="max-width:1200px;">
   <h2>Settings</h2>
+  {% for message in get_flashed_messages() %}<p role="status">{{ message }}</p>{% endfor %}
 
   <!-- Theme selection card -->
   <div class="card" style="margin-bottom:20px;">
@@ -72,6 +98,20 @@
   </div>
 
 
+  <div class="card" style="margin-top:20px;">
+    <h3>Device performance</h3>
+    <form method="POST">
+      <input type="hidden" name="action" value="resource_profile">
+      <label for="resource-profile">Resource profile (all displays):</label>
+      <select id="resource-profile" name="resource_profile">
+        <option value="standard" {% if cfg.resource_profile|default('standard') == 'standard' %}selected{% endif %}>Standard</option>
+        <option value="pi3" {% if cfg.resource_profile == 'pi3' %}selected{% endif %}>Pi 3 low resource</option>
+      </select>
+      <p>Pi 3: no background blur or preloading, first frame for GIFs, smaller decoded images and caches, and up to 480p for extracted video. Direct streams and local files retain their source resolution.</p>
+      <button type="submit">Save device performance</button>
+    </form>
+  </div>
+
   <!-- New: Application Version Card -->
   <div class="card" style="margin-top:20px;">
     <h3>Application Version</h3>
@@ -81,7 +121,16 @@
   <!-- Update from GitHub, logs, reset config, etc. as a final card -->
   <div class="card" style="margin-top:20px;">
     <p><strong>Update from GitHub</strong></p>
-    <p>Branch: <em>{{ update_branch }}</em></p>
+    <form method="POST">
+      <input type="hidden" name="action" value="update_branch">
+      <label for="update-branch">Update branch:</label>
+      <select id="update-branch" name="update_branch">
+        {% for branch in branches %}<option value="{{ branch }}" {% if branch == update_branch %}selected{% endif %}>{{ branch }}</option>{% endfor %}
+      </select>
+      <button type="submit">Save update branch</button>
+      <button type="button" id="refresh-branches">Refresh branches</button>
+      <p id="branch-status" role="status">Saved branch: {{ update_branch }}. Save a selection before starting an update.</p>
+    </form>
     <form method="POST" action="{{ url_for('main.update_app') }}">
       <button type="submit">Update</button>
     </form>
@@ -105,4 +154,29 @@
   </div>
 </div>
 
+<script>
+(() => {
+  const select = document.getElementById('update-branch');
+  const status = document.getElementById('branch-status');
+  const button = document.getElementById('refresh-branches');
+  async function refreshBranches() {
+    button.disabled = true;
+    try {
+      const response = await fetch({{ url_for('main.update_branches')|tojson }});
+      if (!response.ok) throw new Error('Branch lookup failed');
+      const data = await response.json();
+      const chosen = select.value;
+      const names = [...new Set([...Array.from(select.options, option => option.value), ...data.branches, chosen])].sort();
+      select.replaceChildren(...names.map(name => new Option(name, name, false, name === chosen)));
+      status.textContent = data.available
+        ? 'Branches loaded. Save your selection before starting an update.'
+        : 'Origin unavailable; showing saved and locally known branches.';
+    } catch (_) {
+      status.textContent = 'Branch lookup unavailable; existing choices remain available.';
+    } finally { button.disabled = false; }
+  }
+  button.addEventListener('click', refreshBranches);
+  refreshBranches();
+})();
+</script>
 {% endblock %}

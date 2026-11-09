@@ -105,11 +105,11 @@ def test_presentation_controls_do_not_change_output_mode(controller):
     assert not applied  # Safe-area settings also work while the output is offline.
     result = saved[-1]["displays"]["HDMI-9"]
     assert result["safe_area"] == {"left": 5, "right": 0, "top": 0, "bottom": 7.5}
-    assert result["resource_profile"] == "pi3"
+    assert "resource_profile" not in result
     assert result["output_mode"] == "auto" and result["specific_image"] == "saved.png"
 
 
-@pytest.mark.parametrize("data", [{"safe_top": "nan"}, {"safe_right": "-1"}, {"safe_bottom": "21"}, {"resource_profile": "unknown"}])
+@pytest.mark.parametrize("data", [{"safe_top": "nan"}, {"safe_right": "-1"}, {"safe_bottom": "21"}])
 def test_invalid_presentation_input_does_not_save_or_apply(controller, data):
     client, cfg, found, saved, applied = controller
     before = deepcopy(cfg)
@@ -122,7 +122,7 @@ def test_presentation_page_explains_gif_tradeoff_and_calibration(controller):
     client, cfg, found, saved, applied = controller
     response = client.get("/")
     assert response.status_code == 200
-    assert b"first frame for GIFs" in response.data
+    assert b'name="resource_profile"' not in response.data
     assert b"Calibration Pattern" in response.data
     assert b'name="safe_left"' in response.data
 
