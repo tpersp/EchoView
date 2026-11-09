@@ -181,6 +181,7 @@ apt-get install -y \
   lightdm-gtk-greeter \
   accountsservice \
   dbus-x11 \
+  dbus-user-session \
   polkitd \
   pkexec \
   xorg \
@@ -234,6 +235,11 @@ if [ $? -ne 0 ]; then
   echo "Error installing packages via apt. Exiting."
   exit 1
 fi
+
+install_audio_runtime || {
+  echo "ERROR: Audio runtime installation failed." >&2
+  exit 1
+}
 
 ensure_chromium_bin
 
@@ -521,6 +527,8 @@ Environment="XAUTHORITY=${XAUTHORITY:-$(getent passwd "$VIEWER_USER" | cut -d: -
 Environment="QTWEBENGINE_CHROMIUM_FLAGS=$QTWEBENGINE_FLAGS"
 Environment="PATH=$VENV_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="PYTHONUNBUFFERED=1"
+Environment="XDG_RUNTIME_DIR=/run/user/$USER_ID"
+Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$USER_ID/bus"
 ExecStartPre=/bin/bash "$SCRIPT_DIR/scripts/wait-for-display.sh"
 TimeoutStartSec=130
 ExecStart=$VENV_DIR/bin/python3 -m echoview.viewer
@@ -562,6 +570,11 @@ Type=simple
 WantedBy=multi-user.target
 EOF
 
+
+configure_user_audio "$VIEWER_USER" "$USER_ID" || {
+  echo "ERROR: Audio service setup failed; application services were not started." >&2
+  exit 1
+}
 
 echo "Reloading systemd..."
 systemctl daemon-reload

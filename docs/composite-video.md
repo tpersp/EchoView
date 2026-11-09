@@ -126,8 +126,8 @@ sudo python3 -m echoview.boot_profiles --profile hdmi
 ## Hardware validation still required
 
 Use a Pi-compatible 3.5 mm TRRS AV-to-RCA cable with the correct pinout; generic
-AV cables can differ. Verify the TV's PAL/NTSC support. Composite audio routing
-is separate and unchanged by these video profiles.
+AV cables can differ. Verify the TV's PAL/NTSC support. Composite boot profiles configure video; the installer separately provisions
+user audio services. See [audio setup](audio.md) for output routing and volume.
 
 For both PAL and NTSC: cold-boot a Pi 3 with the TV connected, verify HDMI is
 inactive, inspect the reported connector/mode, test an OS calibration image,

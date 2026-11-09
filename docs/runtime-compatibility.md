@@ -86,5 +86,6 @@ Pi 3 B+ Trixie Lite hardware bring-up identified an additional native requiremen
 `pipewire-bin` supplies `/usr/share/pipewire/client.conf` and pulls in the matching
 PipeWire modules. Having only `libpipewire-0.3-0t64` was insufficient: creating
 Qt audio objects crashed with missing client configuration. Setup now installs
-`pipewire-bin` explicitly. This fixes viewer initialization; a working audio server
-and audible output are separate hardware checks.
+`pipewire-bin` explicitly. It also provisions the audio server and user-session
+access described in [audio setup](audio.md); importing libraries alone does not
+prove playback readiness.

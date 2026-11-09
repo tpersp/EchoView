@@ -366,3 +366,6 @@ for the tradeoffs, external-browser limits and development measurements.
 
 Update failure handling, private backups and service startup checks are documented in
 [update and recovery](docs/update-recovery.md).
+
+Audio services, output selection and silent-playback troubleshooting are covered
+in [audio setup](docs/audio.md).

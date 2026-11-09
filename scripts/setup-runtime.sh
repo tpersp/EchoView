@@ -56,3 +56,77 @@ install_streaming_runtime() {
   PATH="$stream_venv/bin:$PATH" "$stream_venv/bin/python3" "$stream_repo/echoview/streaming.py" --check || return 1
   printf '%s\n' 'Optional streaming stack enabled; preserve on updates.' > "$stream_repo/.streaming-enabled"
 }
+
+# Keep an installed PulseAudio server instead of replacing an existing stack.
+audio_uses_pulseaudio() {
+  [[ "$(dpkg-query -W -f='${Status}' pulseaudio 2>/dev/null)" == 'install ok installed' ]]
+}
+
+install_audio_runtime() {
+  if audio_uses_pulseaudio; then
+    apt-get install -y rtkit || return 1
+  else
+    apt-get install -y pipewire pipewire-pulse wireplumber rtkit || return 1
+  fi
+}
+
+audio_session_ready() {
+  [[ -S "/run/user/$1/bus" ]]
+}
+
+configure_user_audio() {
+  local audio_user="$1" audio_uid="$2"
+  local audio_home audio_config audio_group
+  local -a audio_enable audio_start audio_command
+  audio_home="$(getent passwd "$audio_user" | cut -d: -f6)"
+  if [[ "$audio_home" != /* || ! "$audio_uid" =~ ^[0-9]+$ || "$audio_uid" == 0 ]]; then
+    echo 'ERROR: Audio setup requires a valid non-root viewer account.' >&2
+    return 1
+  fi
+  audio_command=(runuser -u "$audio_user" -- env
+    "XDG_RUNTIME_DIR=/run/user/$audio_uid"
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$audio_uid/bus")
+  if audio_uses_pulseaudio; then
+    audio_enable=(pulseaudio.socket)
+    audio_start=(pulseaudio.socket)
+  else
+    audio_enable=(pipewire.socket pipewire-pulse.socket wireplumber.service)
+    audio_start=(pipewire.service pipewire-pulse.service wireplumber.service)
+    audio_config="$audio_home/.config/wireplumber/wireplumber.conf.d/60-echoview-audio.conf"
+    # Only sets the fallback for routes with no stored volume. Never reset
+    # WirePlumber state or force an output device/volume during an upgrade.
+    if [[ ! -e "$audio_config" && ! -L "$audio_config" ]]; then
+      "${audio_command[@]}" mkdir -p "$(dirname "$audio_config")" || return 1
+      (
+        umask 022
+        set -o noclobber
+        cat > "$audio_config" <<'AUDIO_CONFIG'
+# Default for new outputs only; saved per-route volumes take precedence.
+wireplumber.settings = {
+  device.routes.default-sink-volume = 1.0
+}
+AUDIO_CONFIG
+      ) || return 1
+      audio_group="$(id -gn "$audio_user")" || return 1
+      chown "$audio_user:$audio_group" "$audio_config" || return 1
+    fi
+  fi
+  # A new account may not have logged in yet. Start its user manager rather
+  # than assuming systemctl --user can enable units without a session bus.
+  if ! audio_session_ready "$audio_uid"; then
+    systemctl start "user@$audio_uid.service" || return 1
+    local audio_attempt
+    for audio_attempt in {1..10}; do
+      audio_session_ready "$audio_uid" && break
+      sleep 1
+    done
+    if ! audio_session_ready "$audio_uid"; then
+      echo 'ERROR: Viewer user audio bus is unavailable; check user@UID.service and dbus-user-session.' >&2
+      return 1
+    fi
+  fi
+  "${audio_command[@]}" systemctl --user daemon-reload || return 1
+  "${audio_command[@]}" systemctl --user enable "${audio_enable[@]}" || return 1
+  "${audio_command[@]}" systemctl --user start "${audio_start[@]}" || return 1
+  "${audio_command[@]}" systemctl --user is-active --quiet "${audio_start[@]}" || return 1
+}
