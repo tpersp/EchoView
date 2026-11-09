@@ -86,7 +86,7 @@ player served by the local controller. External Chromium is an explicit display
 option. Direct HLS continues through Qt Multimedia.
 
 Sources are resolved again on retries rather than saving expiring YouTube media
-URLs. Pi 3 mode limits extracted video to 480p. See [streaming setup and recovery](docs/streaming.md)
+URLs. Video quality follows the selected display setting in every resource profile. See [streaming setup and recovery](docs/streaming.md)
 for installation checks, fallback behavior and remaining hardware validation.
 
 Qt WebEngine defaults to `--autoplay-policy=no-user-gesture-required`, using its
@@ -359,8 +359,8 @@ resolution. Clocks, track text and progress stay inside the visible area, with
 font-width correction for non-square pixels. **Calibration Pattern** mode shows
 a grid, inset marks and a circle for the later TV test.
 
-The device-wide **Pi 3 low resource** profile in **Settings → Device performance** disables blur/preloading, uses the
-first GIF frame, and reduces image/cache and extracted-stream limits. Standard
+The device-wide **Pi 3 low resource** profile in **Settings → Device performance** disables blur/preloading and reduces
+image/cache budgets while preserving GIF animation and normal video playback. Standard
 remains the default. See [presentation settings](docs/presentation-settings.md)
 for the tradeoffs, external-browser limits and development measurements.
 

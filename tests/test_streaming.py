@@ -12,7 +12,7 @@ def test_retry_budget_is_finite():
 
 
 def test_formats_remain_bounded_and_respect_profile_and_quality():
-    assert streaming.stream_height({"resource_profile": "pi3", "youtube_quality": "highres"}) == 480
+    assert streaming.stream_height({"resource_profile": "pi3", "youtube_quality": "highres"}) == 2160
     assert streaming.stream_height({"youtube_quality": "default"}, 720) == 720
     assert streaming.stream_height({"youtube_quality": "medium"}, 1080) == 360
     for alternative in streaming.format_selector(480).split("/"):
@@ -125,3 +125,11 @@ def test_player_events_require_the_exact_observer_prefix():
     assert streaming.parse_player_event("[mpv_observer] ECHOVIEW_PLAYBACK_STARTED|10.5\n") == "playing"
     assert streaming.parse_player_event("[mpv_observer] ECHOVIEW_PLAYBACK_STARTED|N/A\n") == "playing_live"
     assert streaming.parse_player_event("[cplayer] command --term-playing-msg=ECHOVIEW_PLAYBACK_STARTED|1") is None
+
+
+@pytest.mark.parametrize("quality", ["default", "medium", "large", "hd720", "hd1080", "highres"])
+def test_resource_profile_never_changes_stream_quality_or_playback_options(quality):
+    options = {"youtube_quality": quality, "youtube_mute": False, "youtube_autoplay": True, "youtube_captions": True}
+    normal = streaming.stream_flags(dict(options, resource_profile="standard"), True, 1080)
+    low = streaming.stream_flags(dict(options, resource_profile="pi3"), True, 1080)
+    assert low == normal

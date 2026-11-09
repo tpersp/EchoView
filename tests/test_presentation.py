@@ -35,12 +35,11 @@ def test_pixel_aspect_text_width_correction():
 def test_pi3_profile_is_opt_in_and_does_not_mutate_global_settings():
     cfg = {"gui": {"background_blur_radius": 20}, "preload_count": 1, "cache_capacity": 15}
     normal, low = ui.resource_settings("standard", cfg), ui.resource_settings("pi3", cfg)
-    assert normal["blur_radius"] == 20 and normal["animate_gifs"]
+    assert normal["blur_radius"] == 20
     assert normal["cache_capacity"] == 15 and normal["preload_count"] == 1
     assert low["blur_radius"] == low["preload_count"] == 0
-    assert not low["animate_gifs"]
     assert low["cache_budget"] == 32 * 1024 * 1024
-    assert low["cache_capacity"] == 4 and low["max_stream_height"] == 480
+    assert low["cache_capacity"] == 4
     assert cfg["gui"]["background_blur_radius"] == 20
 
 
@@ -69,5 +68,5 @@ def test_external_video_safe_area_and_low_resource_options():
     assert "--video-margin-ratio-left=0.05" in flags
     assert "--video-margin-ratio-bottom=0.1" in flags
     assert "--vd-lavc-threads=2" in flags
-    assert any("height<=480" in flag for flag in flags)
+    assert not any(flag.startswith("--ytdl-format=") for flag in flags)
     assert ui.player_presentation_flags({}) == []

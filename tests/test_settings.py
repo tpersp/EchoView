@@ -28,7 +28,7 @@ def test_settings_places_device_policy_and_branch_controls_together(settings_cli
     response=client.get('/settings')
     assert response.status_code==200
     assert b'name="resource_profile"' in response.data
-    assert b'first frame for GIFs' in response.data
+    assert b'GIFs and videos play normally' in response.data
     assert b'name="update_branch"' in response.data
     assert b'Refresh branches' in response.data
     assert not saves

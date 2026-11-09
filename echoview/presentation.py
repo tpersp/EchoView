@@ -65,9 +65,7 @@ def resource_settings(profile, cfg):
         "decode_pixels": 1280 * 720 if low else 16 * 1024 * 1024,
         "decode_side": 1920 if low else 8192,
         "preload_count": 0 if low else bounded_int(cfg.get("preload_count", 1), 1, 0, 2),
-        "animate_gifs": not low,
         "progress_interval": 500 if low else 50,
-        "max_stream_height": 480 if low else None,
     }
 
 
@@ -92,7 +90,7 @@ def player_presentation_flags(display):
         if value:
             flags.append(f"--video-margin-ratio-{edge}={value / 100:g}")
     if display.get("resource_profile") == "pi3":
-        flags += ["--vd-lavc-threads=2", "--ytdl-format=bestvideo[height<=480]+bestaudio/best[height<=480]"]
+        flags += ["--vd-lavc-threads=2"]
     return flags
 
 

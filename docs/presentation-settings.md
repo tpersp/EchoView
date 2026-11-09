@@ -50,16 +50,15 @@ policy without rewriting the saved global effect settings.
 | Cache entry count | Saved count, bounded to 100; default 15 | At most 4 |
 | Cached decoded-image bytes | At most 128 MiB per display | At most 32 MiB per display |
 | Decoded image pixel budget | 16,777,216 pixels, side at most 8192 | 921,600 pixels, side at most 1920 |
-| GIFs | Animated | First frame only |
+| GIFs | Animated | Animated |
 | Spotify progress repaint interval | At least 50 ms; default 200 ms | At least 500 ms |
-| Extracted video format request | Existing selection | At most 480p |
+| Extracted video format request | Display quality selection | Display quality selection |
 | External video decoder threads | Existing default | 2 |
 
-The extracted-video request applies to mpv's youtube-dl/yt-dlp path. Local files
-and direct HLS streams retain their source resolution; this profile does not
-transcode them. Extraction prerequisites and broader stream-format selection
-remain plan step 8. It does not guarantee successful playback or a target FPS on
-an actual Pi 3.
+All resource profiles retain GIF animation, normal video playback and the chosen
+stream quality. Local files and direct HLS streams retain their source resolution;
+this profile does not transcode them. See [streaming](streaming.md) for extraction
+prerequisites. Actual playback performance still depends on the media and hardware.
 
 Cache limits count stored decoded QImages, not total application memory. The
 currently displayed pixmap, render buffers, decoder temporary allocations, Qt,
@@ -84,8 +83,8 @@ Real offscreen Qt checks passed for PAL safe bounds, pixel-correct clock fonts,
 large/difference-mode clock text, wrapped track text with a separate progress bar,
 inset embedded video, calibration rendering and standard animated GIF playback.
 A 6000×4000 JPEG produced 67,094,016 decoded-cache bytes under Standard and
-3,680,100 under Pi 3, with the same source retained on disk. Pi 3 GIF playback used
-the first frame without constructing an animation player.
+3,680,100 under Pi 3, with the same source retained on disk. Both profiles use
+the normal GIF animation player; cache savings do not disable playback.
 
 These are x86_64 development observations. CPU usage, whole-process memory,
 GPU/audio behavior, external-player/window-manager placement, CRT overscan and
@@ -106,3 +105,15 @@ per-display profiles migrate once: if any display used Pi 3, the device adopts P
 unless a valid global choice already exists. Old per-display profile keys are
 removed. Saving this setting restarts the viewer; a failed restart preserves the
 saved choice and reports that a manual restart is needed.
+
+To verify real GIF decoding and animation independently of the headless unit-test
+stubs, install the full runtime and run:
+
+```bash
+QT_QPA_PLATFORM=offscreen python tests/native/check_gif_playback.py
+```
+
+This uses generated temporary media/configuration and checks looping frames at
+normal playback speed under both profiles, including rotation/scaling. Each case
+runs in its own Qt process. Restricted development containers may need an explicit
+Qt WebEngine sandbox override; that override is not required by this profile.

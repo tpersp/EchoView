@@ -1139,7 +1139,7 @@ class DisplayWindow(QMainWindow):
         if width > 0 and height > 0:
             reader.setScaledSize(QSize(width, height))
         image = reader.read()
-        gif = fullpath.lower().endswith(".gif") and policy["animate_gifs"]
+        gif = fullpath.lower().endswith(".gif")
         return {"type": "gif" if gif else "static", "path": fullpath,
                 "first_frame": image, "image": image, "bytes": int(image.sizeInBytes())}
 

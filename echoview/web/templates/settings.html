@@ -107,7 +107,7 @@
         <option value="standard" {% if cfg.resource_profile|default('standard') == 'standard' %}selected{% endif %}>Standard</option>
         <option value="pi3" {% if cfg.resource_profile == 'pi3' %}selected{% endif %}>Pi 3 low resource</option>
       </select>
-      <p>Pi 3: no background blur or preloading, first frame for GIFs, smaller decoded images and caches, and up to 480p for extracted video. Direct streams and local files retain their source resolution.</p>
+      <p>Pi 3: no background blur or preloading, smaller decoded images and caches, and fewer video decoder threads. GIFs and videos play normally. Video quality follows the display’s chosen setting.</p>
       <button type="submit">Save device performance</button>
     </form>
   </div>

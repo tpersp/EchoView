@@ -59,7 +59,7 @@ def stream_height(display, output_height=None):
     height = heights.get(quality, 1080)
     if output_height and quality == "default":
         height = min(height, max(144, int(output_height)))
-    return min(height, 480) if display.get("resource_profile") == "pi3" else height
+    return height
 
 
 def format_selector(height):

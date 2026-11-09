@@ -45,8 +45,9 @@ a provider's expired direct URL must be refreshed by its owner. No transcoding
 or provider authentication is added.
 
 Extracted YouTube formats prefer H.264/AAC and enforce the chosen quality height.
-Default quality follows output height up to 1080p; Pi 3 caps every format fallback
-at 480p. Quality availability and playback remain dependent on the source.
+Default quality follows output height up to 1080p. Resource profiles do not
+override the chosen video quality or disable playback. Quality availability and
+playback remain dependent on the source.
 
 ## Browser fallback
 
