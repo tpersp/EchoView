@@ -92,3 +92,10 @@ GPU/audio behavior, external-player/window-manager placement, CRT overscan and
 PAL/NTSC signal quality still need the deferred Pi hardware session. Calibration
 adds no boot edits or reboot. Presentation saving restarts only the viewer;
 restart failure is reported separately from successful settings persistence.
+
+Calibration Pattern also includes seven nominal 75% RGB colour bars and an
+independent eight-step white-to-black grayscale ramp. The latter remains useful
+on monochrome CRTs. The grid, 5%/10% borders and corrected circle remain present.
+A [PAL colour reference capture](assets/echoview-calibration-pal-colour.png) is
+saved alongside the original pattern. These bars aid visual checks; they do not
+replace a calibrated broadcast signal generator.

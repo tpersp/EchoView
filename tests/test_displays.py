@@ -144,3 +144,21 @@ def test_exact_screen_identity_is_reserved_before_aliases():
     screen = SimpleNamespace(name=lambda: "HDMI-1")
     cfg = {"displays": {"HDMI-A-1": {}, "HDMI-1": {}}}
     assert displays.screen_assignments(cfg, [screen]) == [("HDMI-1", screen)]
+
+
+def test_unknown_connection_with_active_pal_output_is_available():
+    found = displays.parse_xrandr('''HDMI-1 disconnected primary (normal left inverted right x axis y axis)
+Composite-1 unknown connection 720x576+0+0 (normal left inverted right x axis y axis) 0mm x 0mm
+   720x576i     50.00*+
+   720x480i     59.94
+Writeback-1 unknown connection (normal left inverted right x axis y axis)
+''')
+    assert found['Composite-1']['connected'] and found['Composite-1']['active']
+    assert found['Composite-1']['current_mode'] == '720x576i'
+    assert found['Composite-1']['current_rate'] == '50.00'
+    assert not found['HDMI-1']['connected']
+    assert not found['Writeback-1']['connected']
+    cfg = {'displays': {'Display0': {'mode': 'calibration'}}}
+    assert displays.reconcile_displays(cfg, found)
+    assert list(cfg['displays']) == ['Composite-1']
+    assert cfg['displays']['Composite-1']['mode'] == 'calibration'

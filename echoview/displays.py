@@ -48,7 +48,9 @@ def parse_xrandr(text):
             name, state, rest = header.groups()
             geom = re.search(r"\b(\d+)x(\d+)([+-]\d+)([+-]\d+)", rest)
             current = monitors[name] = {
-                "name": name, "connected": state == "connected", "active": geom is not None,
+                # Composite commonly cannot sense a cable. An active CRTC is
+                # sufficient evidence of an available output in that case.
+                "name": name, "connected": state == "connected" or (state == "unknown connection" and geom is not None), "active": geom is not None,
                 "kind": connector_kind(name), "model": None, "current_mode": None,
                 "current_rate": None, "modes": [], "mode_details": [],
                 "width": int(geom[1]) if geom else 0, "height": int(geom[2]) if geom else 0,

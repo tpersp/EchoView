@@ -212,6 +212,7 @@ apt-get install -y \
   libnspr4 \
   libpulse0 \
   libpipewire-0.3-0t64 \
+  pipewire-bin \
   libxi6 \
   libxcomposite1 \
   libxdamage1 \

@@ -135,3 +135,24 @@ then test EchoView images/GIFs and video. Check for colour, stable sync and
 cropping. Repeat setup/update with the default `keep` profile, restore the
 backup, and verify HDMI after a cold boot. These checks are pending; fixture
 and recovery tests prove file handling, not the electrical video signal.
+
+An active composite connector may report `unknown connection` rather than
+`connected`, since the hardware cannot sense the cable. EchoView accepts that
+status when Xrandr reports active output geometry, while leaving inactive unknown
+connectors unavailable. A Pi 3 B+ PAL bring-up verified `Composite-1` at 720x576i,
+50 Hz; absence of a positive cable-detection status alone is not a boot failure.
+
+If the picture is absent despite an active connector, verify the TRRS cable's
+pinout rather than relying on RCA plug colours. Some cables carry the Pi's video
+on a plug labelled for audio. Check continuity with the cable disconnected:
+video must connect the TRRS sleeve to the video RCA centre, and ground must
+connect the second ring to the RCA outer shells. Audio mapping should be checked
+separately. For an RF modulator or transmitter, select its external AV input and
+match the source video standard; its internal test pattern verifies only the
+modulator-to-TV path, not the source cable.
+
+Basic PAL calibration output has been confirmed on Pi 3 B+ at 720x576i/50.
+This does not establish compatibility with every cable, transmitter or television.
+General playback, audio, colour decoding, cold boot and NTSC checks remain pending.
+A [saved calibration capture](assets/echoview-calibration-pal.png) is included as
+a reference; the live Calibration Pattern mode adapts to each display.

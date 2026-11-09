@@ -81,3 +81,10 @@ upgrade, X11 login/startup, live Spotify exchange and refresh, HDMI playback and
 later composite PAL/NTSC validation. An existing Bookworm device should be backed
 up and migrated deliberately to a compatible image; do not assume auto-update
 will make its glibc compatible.
+
+Pi 3 B+ Trixie Lite hardware bring-up identified an additional native requirement:
+`pipewire-bin` supplies `/usr/share/pipewire/client.conf` and pulls in the matching
+PipeWire modules. Having only `libpipewire-0.3-0t64` was insufficient: creating
+Qt audio objects crashed with missing client configuration. Setup now installs
+`pipewire-bin` explicitly. This fixes viewer initialization; a working audio server
+and audible output are separate hardware checks.

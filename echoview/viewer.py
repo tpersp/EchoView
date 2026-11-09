@@ -166,7 +166,6 @@ class DisplayWindow(QMainWindow):
             if screen:
                 self.setGeometry(screen.geometry())
         self.setWindowFlag(Qt.FramelessWindowHint)
-        self.showFullScreen()
 
         # Central widget and child labels
         self.main_widget = QWidget(self)
@@ -248,6 +247,10 @@ class DisplayWindow(QMainWindow):
         self.stream_loading_timer.setSingleShot(True)
         self.stream_loading_timer.setInterval(30000)
         self.stream_loading_timer.timeout.connect(self._on_stream_timeout)
+
+        # Construct children before showing, so their initial geometry follows
+        # the fullscreen central widget instead of Qt's 100x30 defaults.
+        self.showFullScreen()
 
         # Load config and start
         self.cfg = load_config()
@@ -1485,6 +1488,19 @@ class DisplayWindow(QMainWindow):
         for row in range(1, 10):
             y = round(height * row / 10)
             painter.drawLine(0, y, width - 1, y)
+        # Nominal 75% RGB bars: useful through a PAL encoder, with a
+        # separate grayscale ramp for monochrome displays and contrast checks.
+        from PySide6.QtGui import QColor
+        colours = ((191, 191, 191), (191, 191, 0), (0, 191, 191),
+                   (0, 191, 0), (191, 0, 191), (191, 0, 0), (0, 0, 191))
+        for row, values in ((0.83, colours),
+                            (0.90, tuple((v, v, v) for v in (255, 219, 182, 146, 109, 73, 36, 0)))):
+            left, right = round(width * 0.10), round(width * 0.90)
+            top, bottom = round(height * row), round(height * (row + 0.04))
+            for index, rgb in enumerate(values):
+                x1 = left + round((right - left) * index / len(values))
+                x2 = left + round((right - left) * (index + 1) / len(values))
+                painter.fillRect(QRect(x1, top, x2 - x1, max(1, bottom - top)), QColor(*rgb))
         painter.setPen(Qt.white)
         painter.drawRect(1, 1, max(0, width - 3), max(0, height - 3))
         for inset in (0.05, 0.10):
