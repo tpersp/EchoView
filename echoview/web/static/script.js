@@ -6,9 +6,15 @@
  **************************************************************/
 
 // ---- Global Stats Updater ----
+let statsRequestPending = false;
 function fetchStats() {
+  if (document.hidden || statsRequestPending || !document.getElementById("stat_cpu")) return;
+  statsRequestPending = true;
   fetch("/stats")
-    .then(r => r.json())
+    .then(r => {
+      if (!r.ok) throw new Error(`Stats request failed: ${r.status}`);
+      return r.json();
+    })
     .then(data => {
       const cpuEl = document.getElementById("stat_cpu");
       const memEl = document.getElementById("stat_mem");
@@ -21,11 +27,13 @@ function fetchStats() {
       if (tempEl) tempEl.textContent = data.temp;
       if (diskEl) diskEl.textContent = data.disk_used + "/" + data.disk_total;
     })
-    .catch(e => console.log("Stats fetch error:", e));
+    .catch(e => console.log("Stats fetch error:", e))
+    .finally(() => { statsRequestPending = false; });
 }
 // Poll stats every 10s
 setInterval(fetchStats, 10000);
 window.addEventListener("load", fetchStats);
+document.addEventListener("visibilitychange", fetchStats);
 
 // ---- Collapsible Sections ----
 function initCollapsible() {

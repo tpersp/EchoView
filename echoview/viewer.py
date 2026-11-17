@@ -131,7 +131,6 @@ class DisplayWindow(QMainWindow):
         self.prefetch_pending = set()
         self.cache_lock = threading.Lock()
         self.preload_count = 1
-        self.aspect_cache = {}
 
         self.last_displayed_path = None
         self.current_pixmap = None
@@ -1120,10 +1119,7 @@ class DisplayWindow(QMainWindow):
             return paths
         filtered = []
         for p in paths:
-            label = self.aspect_cache.get(p)
-            if label is None:
-                label = media_aspect_label(p)
-                self.aspect_cache[p] = label
+            label = media_aspect_label(p)
             if label == target:
                 filtered.append(p)
         return filtered

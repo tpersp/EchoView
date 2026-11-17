@@ -8,6 +8,8 @@ import requests
 import random
 import psutil
 import shutil
+import tempfile
+from functools import lru_cache
 from datetime import datetime
 
 from echoview.config import (
@@ -67,7 +69,8 @@ def _video_dimensions_ffprobe(path: str) -> tuple[int, int] | tuple[()]:
                 "-of",
                 "csv=s=x:p=0",
                 path,
-            ]
+            ],
+            timeout=5,
         ).decode().strip()
         if "x" in out:
             w_str, h_str = out.split("x", 1)
@@ -78,6 +81,20 @@ def _video_dimensions_ffprobe(path: str) -> tuple[int, int] | tuple[()]:
 
 
 def media_aspect_label(path: str) -> str:
+    """Classify media, reusing metadata only while the file is unchanged."""
+    path = os.path.abspath(os.fspath(path))
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return "unknown"
+    return _cached_media_aspect_label(
+        path, stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns,
+        stat.st_ctime_ns,
+    )
+
+
+@lru_cache(maxsize=2048)
+def _cached_media_aspect_label(path, device, inode, size, mtime_ns, ctime_ns):
     """
     Return "square", "landscape", "portrait", or "unknown" for a media file.
     Images/GIFs are inspected with Pillow; videos use ffprobe when available.
@@ -200,9 +217,23 @@ def load_config():
     return cfg
 
 def save_config(cfg):
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(cfg, f, indent=2)
+    """Publish a complete config so readers never see a partially written file."""
+    directory = os.path.dirname(os.path.abspath(CONFIG_PATH))
+    os.makedirs(directory, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=directory,
+            prefix=".viewerconfig-", suffix=".tmp", delete=False,
+        ) as f:
+            temp_path = f.name
+            json.dump(cfg, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, CONFIG_PATH)
+    finally:
+        if temp_path is not None and os.path.exists(temp_path):
+            os.unlink(temp_path)
 
 def log_message(msg):
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
