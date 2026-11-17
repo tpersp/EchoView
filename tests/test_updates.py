@@ -17,7 +17,7 @@ def installation(tmp_path, monkeypatch):
     config = repo / 'viewerconfig.json'; config.write_text('{"aspect":"4:3","safe_area":5}')
     token = tmp_path / 'private-token'; token.write_text('secret-refresh-token')
     calls = []
-    def run(args, cwd=None, timeout=60):
+    def run(args, cwd=None, timeout=60, log_path=None):
         calls.append(args)
         value = ''
         if args[:3] == ['git','rev-parse','--verify']: value = 'a'*40
@@ -79,6 +79,58 @@ def test_concurrent_update_rejected(installation):
     assert not calls
 
 
+def test_run_preserves_private_installer_output_on_failure(tmp_path):
+    import sys
+
+    log = tmp_path / 'installer.log'
+    with pytest.raises(subprocess.CalledProcessError) as error:
+        updates.run([sys.executable, '-c',
+                     'import sys; print("installer detail"); '
+                     'print("failure detail", file=sys.stderr); sys.exit(1)'],
+                    log_path=log)
+    assert 'installer detail' in log.read_text()
+    assert 'failure detail' in log.read_text()
+    assert log.stat().st_mode & 0o777 == 0o600
+    assert error.value.stdout is None and error.value.stderr is None
+
+
+def test_installer_failure_reports_private_log_location(installation, monkeypatch):
+    repo, config, token, calls, normal = installation
+    def fail(args, **kwargs):
+        if 'setup.sh' in args:
+            assert kwargs['log_path'].parent.parent == repo / '.update-backups'
+            raise subprocess.CalledProcessError(1, args, stderr='private output')
+        return normal(args, **kwargs)
+    monkeypatch.setattr(updates, 'run', fail)
+    with pytest.raises(updates.UpdateError, match='Installer output: .*installer.log') as error:
+        updates.update(repo, 'dev', config, token)
+    assert 'private output' not in str(error.value)
+
+
+def test_restart_defers_controller_shutdown_until_after_response(monkeypatch):
+    calls = []
+    monkeypatch.setattr(updates, 'run', lambda args, **kw: calls.append(args))
+    updates.restart_services()
+    assert calls[:2] == [
+        ['sudo', '-n', 'systemctl', 'restart', 'echoview.service'],
+        ['sudo', '-n', 'systemctl', 'is-active', '--quiet', 'echoview.service'],
+    ]
+    assert calls[-1] == [
+        'sudo', '-n', 'systemd-run', '--on-active=5s',
+        '--timer-property=AccuracySec=1s', '--collect',
+        '/usr/bin/systemctl', 'restart', 'controller.service',
+    ]
+
+
+def test_failed_restart_schedule_never_reports_success(monkeypatch):
+    def run(args, **kwargs):
+        if 'systemd-run' in args:
+            raise subprocess.CalledProcessError(1, args)
+    monkeypatch.setattr(updates, 'run', run)
+    with pytest.raises(updates.UpdateError, match='Service restart failed'):
+        updates.restart_services()
+
+
 @pytest.mark.parametrize('endpoint',['/update_app','/full_update','/restart_services'])
 def test_routes_report_failure_and_pending_truthfully(monkeypatch,endpoint):
     app=Flask(__name__,template_folder=str(Path(routes.__file__).parent/'templates'))
@@ -91,8 +143,11 @@ def test_routes_report_failure_and_pending_truthfully(monkeypatch,endpoint):
     response=app.test_client().post(endpoint)
     assert response.status_code==500
     assert b'Installer failed.' in response.data
+    assert b'setTimeout(reconnect' not in response.data
     monkeypatch.setattr(updates,name,lambda *a,**kw:'backup')
-    assert app.test_client().post(endpoint).status_code==202
+    pending = app.test_client().post(endpoint)
+    assert pending.status_code==202
+    assert b'setTimeout(reconnect, 10000)' in pending.data
     if endpoint=='/restart_services': assert app.test_client().get(endpoint).status_code==405
 
 

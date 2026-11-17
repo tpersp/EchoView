@@ -12,17 +12,32 @@ class UpdateError(RuntimeError):
     pass
 
 
-def run(args, cwd=None, timeout=60):
-    return subprocess.run(args, cwd=cwd, timeout=timeout, check=True,
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+def run(args, cwd=None, timeout=60, log_path=None):
+    options = dict(cwd=cwd, timeout=timeout, check=True, text=True,
+                   stdin=subprocess.DEVNULL,
+                   env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'})
+    if log_path is not None:
+        # Installer output can include private installation details. Keep it on
+        # the device, outside the web response, with owner-only permissions.
+        fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as log:
+            return subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, **options)
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **options)
+
+
+def schedule_system_action(*args):
+    # Run outside the controller's cgroup, after its HTTP response has time to
+    # reach the browser. --no-block alone can kill the request worker first.
+    run(['sudo', '-n', 'systemd-run', '--on-active=5s',
+         '--timer-property=AccuracySec=1s', '--collect',
+         '/usr/bin/systemctl', *args])
 
 
 def restart_services():
     try:
         run(['sudo', '-n', 'systemctl', 'restart', 'echoview.service'], timeout=100)
         run(['sudo', '-n', 'systemctl', 'is-active', '--quiet', 'echoview.service'])
-        # Never wait for the controller to terminate its own request worker.
-        run(['sudo', '-n', 'systemctl', '--no-block', 'restart', 'controller.service'])
+        schedule_system_action('restart', 'controller.service')
     except (OSError, subprocess.SubprocessError) as exc:
         raise UpdateError('Service restart failed. Inspect the service journal and retry.') from exc
 
@@ -32,6 +47,7 @@ def update(repo, branch, config_path, token_path, reboot=False):
         raise UpdateError("Invalid update branch.")
     repo = Path(repo)
     stage = 'Update lock'
+    backup = None
     try:
         with (repo / '.update.lock').open('a') as lock:
             try:
@@ -74,14 +90,19 @@ def update(repo, branch, config_path, token_path, reboot=False):
             run(['git', 'reset', '--hard', revision], cwd=repo)
             # Always reconcile dependencies: requirements/constraints/helpers can change alone.
             stage = 'Installer'
-            run(['sudo', '-n', 'bash', 'setup.sh', '--auto-update'], cwd=repo, timeout=1800)
+            run(['sudo', '-n', 'bash', 'setup.sh', '--auto-update'], cwd=repo,
+                timeout=1800, log_path=backup / 'installer.log')
             stage = 'Reboot request' if reboot else 'Service restart'
             if reboot:
-                run(['sudo', '-n', 'systemctl', '--no-block', 'reboot'])
+                schedule_system_action('reboot')
             else:
                 restart_services()
             return backup.name
     except UpdateError:
         raise
     except (OSError, subprocess.SubprocessError) as exc:
-        raise UpdateError(f'{stage} failed. No completion was reported; inspect logs and the private .update-backups directory.') from exc
+        details = f' Backup directory: {backup}.' if backup is not None else ''
+        if stage == 'Installer' and backup is not None:
+            details += f' Installer output: {backup / "installer.log"}.'
+        raise UpdateError(f'{stage} failed. No completion was reported.{details} '
+                          'Inspect the device logs before retrying.') from exc

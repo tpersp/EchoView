@@ -1,5 +1,23 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>EchoView maintenance</title></head>
 <body><h1>EchoView maintenance</h1><p>{{ message }}</p>
-{% if pending %}<p>The controller may briefly disconnect. Return after it is available.</p>{% endif %}
+{% if pending %}
+<p id="maintenance-status" role="status">Waiting for EchoView to restart. This page will reconnect automatically.</p>
+<script>
+  async function reconnect() {
+    try {
+      const response = await fetch('/settings', {cache: 'no-store', signal: AbortSignal.timeout(5000)});
+      if (response.ok) {
+        window.location.replace('/settings');
+        return;
+      }
+    } catch (error) {
+      // Temporary disconnection is expected during restart or reboot.
+    }
+    setTimeout(reconnect, 3000);
+  }
+  // The service action is queued for five seconds after installation.
+  setTimeout(reconnect, 10000);
+</script>
+{% endif %}
 <p><a href="/">Return to EchoView</a></p></body></html>
