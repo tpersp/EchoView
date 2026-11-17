@@ -34,7 +34,7 @@ from echoview.displays import (discover_monitors, reconcile_displays, mode_choic
                                apply_output_mode, DISPLAY_ASPECTS)
 from echoview import embed_utils
 from echoview.web.media import folder_page, resolve_folder, resolve_file, parse_folder_order, IMAGE_EXT, SORTS
-from echoview import presets
+from echoview import presets, scheduling
 from echoview.branches import branch_options, selected_branch, valid_branch
 
 # Supported media file extensions for the upload/file-manager features.
@@ -220,6 +220,13 @@ def stats_json():
         "disk_used": used_human,
         "disk_total": total_human
     })
+
+
+@main_bp.route('/schedule/clock')
+def schedule_clock():
+    response = jsonify(scheduling.device_clock())
+    response.cache_control.no_store = True
+    return response
 
 @main_bp.route("/list_monitors")
 def list_monitors():
@@ -810,7 +817,7 @@ def configure_output():
 
 @main_bp.route("/", methods=["GET", "POST"])
 def index():
-    cfg = load_config()
+    cfg = deepcopy(load_config())
 
     # Re-detect extended monitors, just to show their current resolution
     ext_mons = detect_monitors_extended()
@@ -831,6 +838,12 @@ def index():
                     continue
                 dcfg = cfg["displays"][dname]
                 new_mode = request.form.get(pre + "mode", dcfg["mode"])
+                if new_mode == 'scheduled':
+                    try:
+                        entries = json.loads(request.form.get(pre + 'schedule', json.dumps(dcfg.get('schedule', []))))
+                        dcfg['schedule'] = scheduling.normalize_schedule(entries)
+                    except (TypeError, ValueError) as exc:
+                        return f'Cannot save schedule: {exc}', 400
                 new_interval_s = request.form.get(pre + "image_interval", str(dcfg["image_interval"]))
                 new_cat = request.form.get(pre + "image_category", dcfg["image_category"])
                 if is_ignored_folder(new_cat):
@@ -859,6 +872,8 @@ def index():
                     new_interval = int(new_interval_s)
                 except:
                     new_interval = dcfg["image_interval"]
+                if new_mode == 'scheduled' and not 1 <= new_interval <= 86400:
+                    return 'Scheduled image interval must be between 1 and 86400 seconds.', 400
                 try:
                     new_rotate = int(rotate_str)
                 except:
@@ -950,6 +965,7 @@ def index():
                         return 'Invalid video selection.', 400
                     dcfg["specific_video"] = selected_video
                     dcfg["shuffle_videos"] = (shuffle_videos_val == "yes")
+                if new_mode in ('videos', 'scheduled'):
                     dcfg["video_mute"] = True if video_mute_val else False
                     try:
                         dcfg["video_volume"] = int(video_vol_str)
@@ -995,6 +1011,7 @@ def index():
     return render_template(
         "index.html",
         cfg=cfg,
+        schedule_clock=scheduling.device_clock(),
         subfolders=subfolders,
         cpu=cpu,
         mem_line=mem_line,

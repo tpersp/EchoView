@@ -21,6 +21,7 @@ from collections import OrderedDict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME
+from echoview import scheduling
 
 from echoview.browser import qt_flags, chromium_flags
 from echoview.streaming import (capabilities as stream_capabilities, playback_environment,
@@ -229,6 +230,13 @@ class DisplayWindow(QMainWindow):
         # Timers
         self.slideshow_timer = QTimer(self)
         self.slideshow_timer.timeout.connect(self.next_image)
+        self.schedule_source = None
+        self.schedule_entries = []
+        self.schedule_key = None
+        self.schedule_retry_due = 0
+        self.schedule_timer = QTimer(self)
+        self.schedule_timer.setInterval(1000)
+        self.schedule_timer.timeout.connect(self._check_schedule)
         self.clock_timer = QTimer(self)
         self.clock_timer.timeout.connect(self.update_clock)
         self.clock_timer.start(1000)
@@ -919,6 +927,7 @@ class DisplayWindow(QMainWindow):
         self._cancel_stream()
         self.spotify_fetch_id += 1
         self.slideshow_timer.stop()
+        self.schedule_timer.stop()
         self.spotify_progress_timer.stop()
         self._stop_external_browser()
         self._stop_hls_playback()
@@ -926,17 +935,38 @@ class DisplayWindow(QMainWindow):
         super().closeEvent(event)
 
     @Slot()
-    def reload_settings(self):
+    def reload_settings(self, cfg=None):
+        next_cfg = load_config() if cfg is None else cfg
         self._cancel_stream()
         self.spotify_fetch_id += 1
         self.spotify_info = None
         self.spotify_art_path = None
         self.spotify_fallback_due = 0
         self.stop_current_video()
-        self.cfg = load_config()
+        if self.current_movie:
+            self.current_movie.stop()
+            self.foreground_label.setMovie(None)
+            self.current_movie.deleteLater()
+            self.current_movie = None
+            self.handling_gif_frames = False
+        self.cfg = next_cfg
         displays = self.cfg.get("displays", {})
         if self.disp_name in displays:
             self.disp_cfg = runtime_display_settings(self.cfg, displays[self.disp_name])
+        self.schedule_source = None
+        self.schedule_entries = []
+        self.schedule_key = None
+        self.schedule_timer.stop()
+        if self.disp_cfg.get('mode') == 'scheduled':
+            self.schedule_source = dict(self.disp_cfg)
+            try:
+                self.schedule_entries = scheduling.normalize_schedule(self.disp_cfg.get('schedule', []))
+            except ValueError:
+                pass
+            self.disp_cfg, self.schedule_key = scheduling.effective_settings(
+                self.schedule_source, self.schedule_entries, datetime.now())
+            self.schedule_retry_due = time.monotonic() + 30
+            self.schedule_timer.start()
 
         over = self.disp_cfg.get("overlay", self.cfg.get("overlay", {}))
         if over.get("clock_enabled", False):
@@ -1039,6 +1069,21 @@ class DisplayWindow(QMainWindow):
         # Ensure overlay elements are repositioned based on updated settings
         self.setup_layout()
 
+    def _check_schedule(self):
+        if not self.running or self.schedule_source is None:
+            return
+        _, key = scheduling.effective_settings(self.schedule_source, self.schedule_entries, datetime.now())
+        if key != self.schedule_key:
+            # Reuse the existing window and saved config, never restart systemd.
+            self.reload_settings(self.cfg)
+            self.next_image(force=True)
+        elif key is not None and not self.image_list and time.monotonic() >= self.schedule_retry_due:
+            self.schedule_retry_due = time.monotonic() + 30
+            self.build_local_image_list()
+            if self.image_list:
+                self.index = 0 if self.current_mode == 'videos' else -1
+                self.next_image(force=True)
+
     def build_local_image_list(self):
         mode = self.current_mode
         if mode == "random_image":
@@ -1080,7 +1125,11 @@ class DisplayWindow(QMainWindow):
                 self.image_list = []
                 return
             specific = self.disp_cfg.get("specific_video", "")
-            if specific:
+            if '_scheduled_folders' in self.disp_cfg:
+                vids = []
+                for folder in self.disp_cfg['_scheduled_folders']:
+                    vids.extend(self.gather_videos(folder))
+            elif specific:
                 path = os.path.join(IMAGE_DIR, cat, specific)
                 vids = ([path] if os.path.basename(specific) == specific
                         and specific.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".webm"))
@@ -1098,7 +1147,11 @@ class DisplayWindow(QMainWindow):
         if not os.path.isdir(base):
             return []
         results = []
-        for fname in os.listdir(base):
+        try:
+            names = os.listdir(base)
+        except OSError:
+            return []
+        for fname in names:
             lf = fname.lower()
             if lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
                 results.append(os.path.join(base, fname))
@@ -1112,7 +1165,11 @@ class DisplayWindow(QMainWindow):
         if not os.path.isdir(base):
             return []
         results = []
-        for fname in os.listdir(base):
+        try:
+            names = os.listdir(base)
+        except OSError:
+            return []
+        for fname in names:
             lf = fname.lower()
             if lf.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
                 results.append(os.path.join(base, fname))
@@ -1187,6 +1244,9 @@ class DisplayWindow(QMainWindow):
 
     def next_image(self, force=False):
         if not self.running:
+            return
+        if self.current_mode == 'schedule_empty':
+            self.clear_foreground_label('No valid playback schedule')
             return
 
         if self.current_mode == "web_page":

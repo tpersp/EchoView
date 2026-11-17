@@ -111,6 +111,7 @@ def default_display(name):
             "image_category": "", "specific_image": "", "shuffle_mode": False,
             "mixed_folders": [], "rotate": 0, "aspect_filter": "any", "connector": name,
             "specific_video": "",
+            "schedule": [],
             "output_mode": "auto", "display_aspect": "auto",
             "safe_area": {"left": 0, "right": 0, "top": 0, "bottom": 0}}
 

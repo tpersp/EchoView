@@ -4,7 +4,7 @@ from echoview.displays import match_connector
 
 MAX_PRESETS = 20
 PLAYBACK_KEYS = {
-    'mode', 'fallback_mode', 'image_interval', 'image_category', 'specific_image',
+    'mode', 'schedule', 'fallback_mode', 'image_interval', 'image_category', 'specific_image',
     'shuffle_mode', 'mixed_folders', 'rotate', 'aspect_filter', 'web_url',
     'web_use_external_browser', 'embed_metadata', 'youtube_autoplay', 'youtube_mute',
     'youtube_captions', 'youtube_quality', 'video_category', 'specific_video',
@@ -30,6 +30,7 @@ def snapshot(cfg):
         # A preset created before choosing an individual video must clear one
         # selected later, rather than accidentally keeping it on restoration.
         settings.setdefault('specific_video', '')
+        settings.setdefault('schedule', [])
         result[name] = settings
     if not result:
         raise ValueError('Configure a display before saving a preset.')

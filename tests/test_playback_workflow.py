@@ -230,3 +230,53 @@ def test_older_mixed_folder_forms_still_work(workflow):
     client.post('/', data={'action': 'update_displays', 'HDMI-1_mode': 'mixed',
                            'HDMI-1_mixed_order': 'Photos,Videos'})
     assert cfg['displays']['HDMI-1']['mixed_folders'] == ['Photos', 'Videos']
+
+
+def test_schedule_editor_and_device_clock_are_available(workflow):
+    client, cfg, saves, restarts, root = workflow
+    response = client.get('/')
+    assert b'>Scheduled playback</option>' in response.data
+    assert b'class="schedule-editor"' in response.data
+    assert b'06:00 / 14:00 / 18:00' in response.data
+    clock = client.get('/schedule/clock')
+    assert clock.status_code == 200 and 'no-store' in clock.headers['Cache-Control']
+    assert 0 <= clock.json['seconds'] < 86400
+    assert not restarts
+
+
+def test_schedule_save_is_canonical_and_unchanged_apply_is_noop(workflow):
+    import json
+    client, cfg, saves, restarts, root = workflow
+    form = {'action': 'update_displays', 'HDMI-1_mode': 'scheduled', 'HDMI-1_schedule': json.dumps([
+        {'time': '18:00', 'folders': ['Videos'], 'media': 'videos'},
+        {'time': '06:00', 'folders': ['Photos', 'Missing NAS folder'], 'shuffle': True}]),
+        'HDMI-1_video_mute': '1', 'HDMI-1_video_volume': '25'}
+    response = client.post('/', data=form)
+    assert response.status_code == 302
+    assert cfg['displays']['HDMI-1']['mode'] == 'scheduled'
+    assert [entry['time'] for entry in cfg['displays']['HDMI-1']['schedule']] == ['06:00', '18:00']
+    assert cfg['displays']['HDMI-1']['video_volume'] == 25
+    assert cfg['displays']['HDMI-1']['video_category'] == 'Videos'
+    assert cfg['displays']['HDMI-1']['safe_area'] == {'left': 5}
+    assert len(restarts) == 1
+    client.post('/', data=form)
+    assert len(restarts) == 1
+    client.post('/', data={'action': 'update_displays', 'HDMI-1_mode': 'calibration', 'HDMI-1_schedule': 'invalid'})
+    assert len(cfg['displays']['HDMI-1']['schedule']) == 2
+
+
+@pytest.mark.parametrize('value', ['[]', 'invalid', '[{"time":"18:00","folders":[]}]'])
+def test_invalid_schedule_never_saves_or_restarts(workflow, value):
+    client, cfg, saves, restarts, root = workflow
+    before = deepcopy(cfg)
+    response = client.post('/', data={'action': 'update_displays', 'HDMI-1_mode': 'scheduled', 'HDMI-1_schedule': value})
+    assert response.status_code == 400
+    assert not saves and not restarts and cfg == before
+
+
+def test_bad_schedule_on_second_display_does_not_mutate_first(workflow):
+    client, cfg, saves, restarts, root = workflow
+    before = deepcopy(cfg)
+    response = client.post('/', data={'action': 'update_displays', 'HDMI-1_mode': 'calibration',
+                                      'HDMI-2_mode': 'scheduled', 'HDMI-2_schedule': '[]'})
+    assert response.status_code == 400 and cfg == before and not saves and not restarts

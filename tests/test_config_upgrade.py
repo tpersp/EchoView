@@ -23,6 +23,7 @@ def test_upgrade_config_adds_missing_display_keys_without_overwriting_existing()
     assert display["youtube_quality"] == "default"
     assert display["aspect_filter"] == "any"
     assert display["specific_video"] == ""
+    assert display['schedule'] == []
     display['specific_video'] = 'saved.mp4'
     assert not utils.upgrade_config(cfg)
     assert display['specific_video'] == 'saved.mp4'
@@ -41,6 +42,7 @@ def test_upgrade_config_is_noop_when_display_config_is_current():
                 "youtube_quality": "hd1080",
                 "aspect_filter": "portrait",
                 "specific_video": "",
+                "schedule": [],
                 "output_mode": "auto",
                 "display_aspect": "auto",
                 "safe_area": {"left": 0, "right": 0, "top": 0, "bottom": 0},

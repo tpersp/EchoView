@@ -396,3 +396,84 @@ def test_single_video_selection_avoids_directory_scan(monkeypatch, tmp_path):
     clip.unlink()
     window.build_local_image_list()
     assert window.image_list == []
+
+
+def test_schedule_switches_once_on_boundary_without_systemd(monkeypatch):
+    from datetime import datetime
+    from echoview import scheduling
+    class Clock:
+        value = datetime(2026, 11, 18, 5, 59)
+        @classmethod
+        def now(cls): return cls.value
+    monkeypatch.setattr(viewer, 'datetime', Clock)
+    entries = scheduling.normalize_schedule([{'time': '06:00', 'folders': ['Morning']},
+                                              {'time': '18:00', 'folders': ['Evening'], 'media': 'videos'}])
+    window = DisplayWindow.__new__(DisplayWindow)
+    window.running = True
+    window.schedule_source = {'mode': 'scheduled', 'schedule': entries}
+    window.schedule_entries = entries
+    window.cfg = {'displays': {'test': window.schedule_source}}
+    _, window.schedule_key = scheduling.effective_settings(window.schedule_source, entries, Clock.now())
+    window.image_list = ['playing.mp4']
+    events = []
+    def reload(cfg):
+        assert cfg is window.cfg
+        _, window.schedule_key = scheduling.effective_settings(window.schedule_source, entries, Clock.now())
+        events.append('switch')
+    window.reload_settings = reload
+    window.next_image = lambda force=False: events.append(('play', force))
+    monkeypatch.setattr(viewer.subprocess, 'run', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('No system commands during a slot switch')))
+    window._check_schedule()
+    assert events == []
+    Clock.value = datetime(2026, 11, 18, 6)
+    window._check_schedule()
+    window._check_schedule()
+    assert events == ['switch', ('play', True)]
+    Clock.value = datetime(2026, 11, 18, 19)
+    window._check_schedule()
+    assert events == ['switch', ('play', True), 'switch', ('play', True)]
+
+
+def test_schedule_retries_missing_media_at_most_every_30_seconds(monkeypatch):
+    from datetime import datetime
+    from echoview import scheduling
+    class Clock:
+        @staticmethod
+        def now(): return datetime(2026, 11, 18, 7)
+    monkeypatch.setattr(viewer, 'datetime', Clock)
+    elapsed = [0]
+    monkeypatch.setattr(viewer.time, 'monotonic', lambda: elapsed[0])
+    window = DisplayWindow.__new__(DisplayWindow)
+    window.running = True
+    window.schedule_source = {'mode': 'scheduled'}
+    window.schedule_entries = scheduling.normalize_schedule([{'time': '06:00', 'folders': ['Photos']}])
+    _, window.schedule_key = scheduling.effective_settings(window.schedule_source, window.schedule_entries, Clock.now())
+    window.schedule_retry_due = 30
+    window.image_list = []
+    window.current_mode = 'mixed'
+    calls = []
+    available = [False]
+    def build():
+        calls.append('scan')
+        if available[0]: window.image_list = ['back-online.jpg']
+    window.build_local_image_list = build
+    window.next_image = lambda force=False: calls.append(('play', force))
+    window._check_schedule()
+    elapsed[0] = 31
+    window._check_schedule()
+    elapsed[0] = 60
+    window._check_schedule()
+    assert calls == ['scan']
+    available[0] = True
+    elapsed[0] = 62
+    window._check_schedule()
+    assert calls == ['scan', 'scan', ('play', True)] and window.index == -1
+
+
+def test_scheduled_videos_gather_all_selected_folders():
+    window = DisplayWindow.__new__(DisplayWindow)
+    window.current_mode = 'videos'
+    window.disp_cfg = {'_scheduled_folders': ['A', 'B'], 'aspect_filter': 'any', 'specific_video': 'old.mp4'}
+    window.gather_videos = lambda folder: [folder + '/clip.mp4']
+    window.build_local_image_list()
+    assert window.image_list == ['A/clip.mp4', 'B/clip.mp4']

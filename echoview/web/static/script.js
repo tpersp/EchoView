@@ -75,12 +75,13 @@ function showSpotifyFallbackSections(dname) {
 }
 
 function showModeSection(dname, mode) {
-  const all = ['random','category','specific_image','mixed','videos','spotify','web_page'];
+  const all = ['random','category','specific_image','mixed','videos','spotify','web_page','schedule'];
   const map = {
     'random_image': ['random','category'],
     'specific_image': ['category','specific_image'],
     'mixed': ['random','mixed'],
     'videos': ['videos'],
+    'scheduled': ['schedule','random','videos'],
     'spotify': ['spotify'],
     'web_page': ['web_page']
   };
@@ -100,10 +101,15 @@ function showModeSection(dname, mode) {
     showSpotifyFallbackSections(dname);
   }
 
+  ['manual_image_shuffle', 'manual_video_selection'].forEach(suffix => {
+    const element = document.getElementById(`${dname}_${suffix}`);
+    if (element) element.hidden = mode === 'scheduled';
+  });
+
   // Aspect filter is only relevant for media modes, not web_page
   const aspectBox = document.getElementById(`${dname}_aspect_container`);
   if (aspectBox) {
-    const showAspect = ['random_image','specific_image','mixed','videos','spotify'].includes(mode);
+    const showAspect = ['random_image','specific_image','mixed','videos','spotify','scheduled'].includes(mode);
     aspectBox.style.display = showAspect ? 'block' : 'none';
   }
 }

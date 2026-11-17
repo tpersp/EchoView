@@ -152,6 +152,7 @@ def init_config():
                     "spotify_font_color": "#FFFFFF",
                     "video_category": "",
                     "specific_video": "",
+                    "schedule": [],
                     "shuffle_videos": False,
                     "video_mute": True,
                     "video_volume": 100,
@@ -372,5 +373,8 @@ def upgrade_config(cfg):
             changed = True
         if "specific_video" not in dcfg:
             dcfg["specific_video"] = ""
+            changed = True
+        if "schedule" not in dcfg:
+            dcfg["schedule"] = []
             changed = True
     return changed

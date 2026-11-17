@@ -574,3 +574,29 @@ main.content {
 .specific-results img { object-fit: cover; border-radius: 4px; }
 .specific-results .thumb-label:has(input:checked) { outline: 2px solid var(--text-normal); border-radius: 4px; }
 
+.schedule-editor { text-align: left; margin: 16px 0; }
+.schedule-editor p { margin: 8px 0; }
+.schedule-device-clock { color: var(--text-normal); font-variant-numeric: tabular-nums; }
+.schedule-preview { padding: 12px; border-radius: 6px; background: var(--section-bg); }
+.schedule-timeline { display: flex; height: 20px; border-radius: 4px; overflow: hidden; margin: 12px 0; }
+.schedule-timeline span { flex-basis: 0; min-width: 0; }
+.schedule-day { list-style: none; padding: 0; margin: 0; font-size: 0.9rem; }
+.schedule-day li { padding: 5px 8px; overflow-wrap: anywhere; }
+.schedule-day .is-current { background: var(--card-bg); border-radius: 4px; font-weight: bold; }
+.schedule-slot { border: 1px solid var(--border-muted); border-radius: 6px; margin-top: 14px; padding: 12px; }
+.schedule-slot.is-current { border-left: 4px solid #68a98f; }
+.schedule-slot-controls { display: grid; grid-template-columns: 110px minmax(120px, 1fr) minmax(120px, 1fr) auto auto; gap: 12px; align-items: end; }
+.schedule-slot-controls label { display: flex; flex-direction: column; min-width: 0; }
+.schedule-slot-controls input, .schedule-slot-controls select { width: 100%; min-width: 0; }
+.schedule-slot-controls .schedule-shuffle { display: block; align-self: center; white-space: nowrap; }
+.schedule-slot-controls .schedule-shuffle input { width: auto; }
+.schedule-folder-picker > summary { cursor: pointer; padding: 8px 0; overflow-wrap: anywhere; }
+.schedule-folder-picker > input { width: 100%; }
+.schedule-folder-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px; max-height: 240px; overflow-y: auto; }
+.schedule-folder-options label { padding: 5px; overflow-wrap: anywhere; }
+.schedule-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.schedule-error { color: #f2a875; }
+@media (max-width: 1000px) {
+  .schedule-slot-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+

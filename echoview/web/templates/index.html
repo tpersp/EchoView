@@ -57,6 +57,7 @@
             <option value="random_image"   {% if dcfg.mode=="random_image" %}selected{% endif %}>Random Image/GIF</option>
             <option value="specific_image" {% if dcfg.mode=="specific_image" %}selected{% endif %}>Specific Image/GIF</option>
             <option value="mixed"          {% if dcfg.mode=="mixed" %}selected{% endif %}>Mixed (Multiple Folders)</option>
+            <option value="scheduled" {% if dcfg.mode=='scheduled' %}selected{% endif %}>Scheduled playback</option>
             <option value="videos"         {% if dcfg.mode=="videos" %}selected{% endif %}>Videos</option>
             <option value="spotify"        {% if dcfg.mode=="spotify" %}selected{% endif %}>Spotify Now Playing</option>
             <option value="web_page"       {% if dcfg.mode=="web_page" %}selected{% endif %}>Web Page</option>
@@ -136,16 +137,19 @@
           </div>
 
           <!-- Random/Mixed Settings -->
+          {% include 'schedule_editor.html' %}
           <div id="{{ dname }}_random_section" class="mode-section">
             <label>Interval (sec):</label><br>
-            <input type="number" name="{{ dname }}_image_interval" value="{{ dcfg.image_interval }}">
+            <input type="number" name="{{ dname }}_image_interval" value="{{ dcfg.image_interval }}" min="1" max="86400">
             <br><br>
+            <div id="{{ dname }}_manual_image_shuffle">
             <label>Shuffle?</label><br>
             <select name="{{ dname }}_shuffle_mode">
               <option value="yes" {% if dcfg.shuffle_mode %}selected{% endif %}>Yes</option>
               <option value="no"  {% if not dcfg.shuffle_mode %}selected{% endif %}>No</option>
             </select>
             <br><br>
+            </div>
           </div>
 
           <!-- Rotate -->
@@ -210,6 +214,7 @@
 
           <!-- Video Settings -->
           <div id="{{ dname }}_videos_section" class="mode-section">
+            <div id="{{ dname }}_manual_video_selection">
             <label>Video selection:</label><br>
             <select name="{{ dname }}_specific_video">
               <option value="">All videos in folder</option>
@@ -235,6 +240,8 @@
               <option value="no" {% if not dcfg.shuffle_videos %}selected{% endif %}>No</option>
             </select>
             <br><br>
+            </div>
+            <h4>Video playback preferences</h4>
             <label>Mute by Default:</label>
             <input type="checkbox" name="{{ dname }}_video_mute" id="{{ dname }}_video_mute" class="video-mute" value="1" {% if dcfg.video_mute is not defined or dcfg.video_mute %}checked{% endif %}>
             <br><br>
