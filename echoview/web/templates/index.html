@@ -22,6 +22,25 @@
   {% endfor %}
   <h2>Displays</h2>
   <p>Choose what each display plays, then apply your changes.</p>
+  <details class="card display-presets">
+    <summary>Saved display presets</summary>
+    <p>Keep named playback setups and switch between them. Output resolution, safe area, device performance and credentials stay as configured.</p>
+    <form method="post" action="{{ url_for('main.display_presets') }}" id="save-preset-form">
+      <input type="hidden" name="action" value="save">
+      <label>Preset name <input name="name" maxlength="48" required placeholder="Evening slideshow"></label>
+      <button type="submit">Save applied setup</button>
+      <small>Apply any unsaved display changes first.</small>
+    </form>
+    {% if cfg.display_presets %}
+    <form method="post" action="{{ url_for('main.display_presets') }}">
+      <label>Preset <select name="name">
+        {% for name in cfg.display_presets %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+      </select></label>
+      <button type="submit" name="action" value="apply">Apply preset</button>
+      <button type="submit" name="action" value="delete" onclick="return confirm('Delete this preset? Media files and playback will stay unchanged.')">Delete preset</button>
+    </form>
+    {% else %}<p>No presets saved yet.</p>{% endif %}
+  </details>
   <!-- Multi-monitor: one card per display -->
   <form method="POST" id="display-settings-form">
     <input type="hidden" name="action" value="update_displays">
@@ -151,6 +170,9 @@
             <label>Category (subfolder):</label><br>
             <select name="{{ dname }}_image_category">
               <option value="" {% if not dcfg.image_category %}selected{% endif %}>All</option>
+              {% if dcfg.image_category and dcfg.image_category not in subfolders %}
+              <option value="{{ dcfg.image_category }}" selected>{{ dcfg.image_category }} (unavailable)</option>
+              {% endif %}
               {% for sf in subfolders %}
                 <option value="{{ sf }}" {% if dcfg.image_category==sf %}selected{% endif %}>
                   {{ sf }}
@@ -182,15 +204,24 @@
                 {% endfor %}
               </ul>
             </div>
-            <input type="hidden" name="{{ dname }}_mixed_order" id="{{ dname }}_mixed_order" value="{{ ','.join(dcfg.mixed_folders) }}">
+            <input type="hidden" name="{{ dname }}_mixed_order" id="{{ dname }}_mixed_order" value='{{ dcfg.mixed_folders|default([])|tojson }}'>
             <br>
           </div>
 
           <!-- Video Settings -->
           <div id="{{ dname }}_videos_section" class="mode-section">
+            <label>Video selection:</label><br>
+            <select name="{{ dname }}_specific_video">
+              <option value="">All videos in folder</option>
+              {% if dcfg.specific_video %}<option value="{{ dcfg.specific_video }}" selected>{{ dcfg.specific_video }}</option>{% endif %}
+            </select>
+            <p><small>Choose an individual video using “Play on display” in <a href="{{ url_for('main.upload_media') }}">Media</a>.</small></p>
             <label>Video Category (subfolder):</label><br>
             <select name="{{ dname }}_video_category">
               <option value="" {% if not dcfg.video_category %}selected{% endif %}>All</option>
+              {% if dcfg.video_category and dcfg.video_category not in subfolders %}
+              <option value="{{ dcfg.video_category }}" selected>{{ dcfg.video_category }} (unavailable)</option>
+              {% endif %}
               {% for sf in subfolders %}
                 <option value="{{ sf }}" {% if dcfg.video_category==sf %}selected{% endif %}>
                   {{ sf }}

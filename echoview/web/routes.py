@@ -5,6 +5,8 @@ import os
 import secrets
 import subprocess
 import requests
+import json
+from copy import deepcopy
 from flask import (
     Blueprint, request, redirect, url_for, render_template,
     send_from_directory, send_file, jsonify, session, current_app, flash
@@ -31,7 +33,8 @@ from echoview.presentation import safe_area_settings, RESOURCE_PROFILES, EDGES
 from echoview.displays import (discover_monitors, reconcile_displays, mode_choices,
                                apply_output_mode, DISPLAY_ASPECTS)
 from echoview import embed_utils
-from echoview.web.media import folder_page, SORTS
+from echoview.web.media import folder_page, resolve_folder, resolve_file, parse_folder_order, IMAGE_EXT, SORTS
+from echoview import presets
 from echoview.branches import branch_options, selected_branch, valid_branch
 
 # Supported media file extensions for the upload/file-manager features.
@@ -106,6 +109,101 @@ def compute_overlay_preview(overlay_cfg, monitors_dict):
     return (preview_width, preview_height, preview_overlay)
 
 main_bp = Blueprint("main", __name__, static_folder="static")
+
+
+def _save_and_restart(cfg):
+    """Keep successful saves even when applying them fails; report both states."""
+    try:
+        save_config(cfg)
+    except (OSError, TypeError, ValueError):
+        return {'saved': False, 'message': 'Could not save settings. Check free space and configuration permissions. Playback was not changed.'}, 503
+    try:
+        subprocess.run(['sudo', '-n', 'systemctl', 'restart', 'echoview.service'],
+                       check=True, timeout=20, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return {'saved': True, 'message': 'Settings saved, but the viewer restart could not be confirmed. Check the service logs or use Restart Viewer.'}, 503
+    return {'saved': True, 'message': 'Settings saved and viewer restarted.'}, 200
+
+
+def _media_action_response(result, status, folder):
+    if request.accept_mimetypes.best == 'application/json':
+        return jsonify(result), status
+    flash(result['message'])
+    return redirect(url_for('main.upload_media', folder=folder))
+
+
+@main_bp.route('/media/play', methods=['POST'])
+def play_media():
+    cfg = deepcopy(load_config())
+    display = cfg.get('displays', {}).get(request.form.get('display', ''))
+    folder = request.form.get('folder', '')
+    if display is None:
+        return _media_action_response({'saved': False, 'message': 'Choose a configured display.'}, 400, folder)
+    action = request.form.get('selection', '')
+    try:
+        if action == 'file':
+            filename = request.form.get('filename', '')
+            resolve_file(IMAGE_DIR, folder, filename)
+            display['aspect_filter'] = 'any'  # An explicit selection should not silently disappear.
+            if filename.lower().endswith(IMAGE_EXT):
+                display.update(mode='specific_image', image_category=folder, specific_image=filename)
+            else:
+                display.update(mode='videos', video_category=folder, specific_video=filename)
+        elif action in ('folder_images', 'folder_videos'):
+            path = resolve_folder(IMAGE_DIR, folder)
+            if not os.path.isdir(path):
+                raise FileNotFoundError()
+            if action == 'folder_images':
+                display.update(mode='random_image', image_category=folder)
+            else:
+                display.update(mode='videos', video_category=folder, specific_video='')
+        else:
+            raise ValueError('Choose a file or folder to play.')
+    except ValueError as exc:
+        return _media_action_response({'saved': False, 'message': str(exc)}, 400, folder)
+    except OSError:
+        return _media_action_response({'saved': False, 'message': 'Media is unavailable. Check the NAS connection or refresh this folder.'}, 404, folder)
+    result, status = _save_and_restart(cfg)
+    return _media_action_response(result, status, folder)
+
+
+@main_bp.route('/display/presets', methods=['POST'])
+def display_presets():
+    cfg = deepcopy(load_config())
+    try:
+        name = presets.valid_name(request.form.get('name', ''))
+        action = request.form.get('action', '')
+        saved = cfg.setdefault('display_presets', {})
+        if action == 'save':
+            if any(existing.casefold() == name.casefold() for existing in saved):
+                raise ValueError('That preset name already exists. Choose a new name or delete the old preset first.')
+            if len(saved) >= presets.MAX_PRESETS:
+                raise ValueError('You can save up to 20 presets. Delete one before adding another.')
+            saved[name] = presets.snapshot(cfg)
+            save_config(cfg)
+            flash(f'Preset “{name}” saved from the applied display settings.')
+        elif action == 'delete':
+            if name not in saved:
+                raise ValueError('That preset no longer exists. Refresh the page.')
+            del saved[name]
+            save_config(cfg)
+            flash(f'Preset “{name}” deleted. Playback was not changed.')
+        elif action == 'apply':
+            if name not in saved:
+                raise ValueError('That preset no longer exists. Refresh the page.')
+            updated = presets.restore(cfg, saved[name])
+            if updated == cfg:
+                flash(f'Preset “{name}” is already applied.')
+            else:
+                result, status = _save_and_restart(updated)
+                flash(result['message'])
+        else:
+            raise ValueError('Unknown preset action.')
+    except ValueError as exc:
+        flash(str(exc))
+    except OSError:
+        flash('Could not save presets. Playback was not changed.')
+    return redirect(url_for('main.index'))
 
 @main_bp.route("/stats")
 def stats_json():
@@ -323,7 +421,8 @@ def media_folder():
         return 'Invalid media folder.', 400
     except OSError:
         return 'Cannot read this folder. Check the media connection and retry.', 503
-    return render_template('media_folder.html', **result, subfolders=get_subfolders())
+    return render_template('media_folder.html', **result, subfolders=get_subfolders(),
+                           display_names=list(load_config().get('displays', {})))
 
 
 @main_bp.route('/media/images')
@@ -724,9 +823,12 @@ def index():
     if request.method == "POST":
         action = request.form.get("action", "")
         if action == "update_displays":
+            previous = deepcopy(cfg)
             # Update display modes, categories, etc.
             for dname in cfg["displays"]:
                 pre = dname + "_"
+                if pre + "mode" not in request.form:
+                    continue
                 dcfg = cfg["displays"][dname]
                 new_mode = request.form.get(pre + "mode", dcfg["mode"])
                 new_interval_s = request.form.get(pre + "image_interval", str(dcfg["image_interval"]))
@@ -739,8 +841,11 @@ def index():
                 shuffle_val = request.form.get(pre + "shuffle_mode", "no")
                 new_spec = request.form.get(pre + "specific_image", dcfg["specific_image"])
                 rotate_str = request.form.get(pre + "rotate", "0")
-                mixed_str = request.form.get(pre + "mixed_order", "")
-                mixed_list = [x for x in mixed_str.split(",") if x and not is_ignored_folder(x)]
+                mixed_str = request.form.get(pre + "mixed_order", json.dumps(dcfg.get('mixed_folders', [])))
+                try:
+                    mixed_list = parse_folder_order(mixed_str)
+                except ValueError as exc:
+                    return str(exc), 400
                 new_vid_cat = request.form.get(pre + "video_category", dcfg.get("video_category", ""))
                 if is_ignored_folder(new_vid_cat):
                     new_vid_cat = ""
@@ -834,10 +939,16 @@ def index():
 
                 if new_mode == "mixed":
                     dcfg["mixed_folders"] = mixed_list
-                else:
-                    dcfg["mixed_folders"] = []
                 if new_mode == "videos":
+                    old_video_category = dcfg.get("video_category", "")
                     dcfg["video_category"] = new_vid_cat
+                    selected_video = request.form.get(pre + "specific_video", dcfg.get("specific_video", ""))
+                    if new_vid_cat != old_video_category:
+                        selected_video = ''
+                    if selected_video and (os.path.basename(selected_video) != selected_video
+                                           or not selected_video.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".webm"))):
+                        return 'Invalid video selection.', 400
+                    dcfg["specific_video"] = selected_video
                     dcfg["shuffle_videos"] = (shuffle_videos_val == "yes")
                     dcfg["video_mute"] = True if video_mute_val else False
                     try:
@@ -849,14 +960,11 @@ def index():
                         dcfg["video_max_seconds"] = int(video_max_str)
                     except:
                         dcfg["video_max_seconds"] = dcfg.get("video_max_seconds", 120)
-                else:
-                    dcfg["video_category"] = ""
-
-            save_config(cfg)
-            try:
-                subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
-            except:
-                pass
+            if cfg == previous:
+                flash('No changes to apply. Playback was left running.')
+            else:
+                result, status = _save_and_restart(cfg)
+                flash(result['message'])
             return redirect(url_for("main.index"))
 
     # Navigation must not scan every NAS folder or inspect media headers.

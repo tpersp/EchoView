@@ -164,6 +164,7 @@ function initMixedUI(dispName) {
 
   let dragSrcEl = null;
   function handleDragStart(e) {
+    if (this.parentElement !== selList) { e.preventDefault(); return; }
     dragSrcEl = this;
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/html", this.innerHTML);
@@ -179,20 +180,24 @@ function initMixedUI(dispName) {
     this.classList.remove("selected");
   }
   function handleDrop(e) {
-    if (e.stopPropagation) e.stopPropagation();
-    if (dragSrcEl != this) {
-      const oldHTML = dragSrcEl.innerHTML;
-      dragSrcEl.innerHTML = this.innerHTML;
-      this.innerHTML = e.dataTransfer.getData("text/html");
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragSrcEl && dragSrcEl !== this && this.parentElement === selList) {
+      const items = Array.from(selList.children);
+      const after = items.indexOf(dragSrcEl) < items.indexOf(this);
+      selList.insertBefore(dragSrcEl, after ? this.nextSibling : this);
+      updateHiddenOrder();
     }
-    return false;
   }
   function handleDragEnd(e) {
     const items = selList.querySelectorAll("li");
     items.forEach(li => li.classList.remove("selected"));
+    dragSrcEl = null;
     updateHiddenOrder();
   }
   function addDnDHandlers(item) {
+    if (item.dataset.dragReady) return;
+    item.dataset.dragReady = "1";
     item.addEventListener("dragstart", handleDragStart);
     item.addEventListener("dragenter", handleDragEnter);
     item.addEventListener("dragover", handleDragOver);
@@ -226,7 +231,11 @@ function initMixedUI(dispName) {
     const items = selList.querySelectorAll("li");
     const arr = [];
     items.forEach(li => arr.push(li.getAttribute("data-folder")));
-    hiddenOrder.value = arr.join(",");
+    const value = JSON.stringify(arr);
+    if (hiddenOrder.value !== value) {
+      hiddenOrder.value = value;
+      hiddenOrder.dispatchEvent(new Event("change", {bubbles: true}));
+    }
   }
 
   // Initialize

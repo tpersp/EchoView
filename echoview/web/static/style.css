@@ -561,6 +561,11 @@ main.content {
 .media-folder { padding: 16px; }
 .display-advanced { margin-top: 24px; padding: 16px; }
 .display-advanced > summary { cursor: pointer; font-weight: bold; }
+.display-presets { margin: 16px 0; }
+.display-presets > summary, .folder-play > summary { cursor: pointer; font-weight: bold; }
+.media-play { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.media-play select { min-width: 0; max-width: 100%; flex: 1; }
+.media-play .play-status { flex-basis: 100%; font-size: 0.85rem; margin: 0; }
 .folder-search-label, .media-search, .media-pagination { margin: 12px 0; }
 .media-search, .media-pagination { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .folder-content[aria-busy="true"], .specific-picker[aria-busy="true"] { cursor: progress; }

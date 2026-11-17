@@ -1079,7 +1079,14 @@ class DisplayWindow(QMainWindow):
             if is_ignored_folder(cat):
                 self.image_list = []
                 return
-            vids = self.gather_videos(cat)
+            specific = self.disp_cfg.get("specific_video", "")
+            if specific:
+                path = os.path.join(IMAGE_DIR, cat, specific)
+                vids = ([path] if os.path.basename(specific) == specific
+                        and specific.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".webm"))
+                        and os.path.isfile(path) else [])
+            else:
+                vids = self.gather_videos(cat)
             if self.disp_cfg.get("shuffle_videos", False):
                 random.shuffle(vids)
             self.image_list = self._filter_by_aspect(vids)

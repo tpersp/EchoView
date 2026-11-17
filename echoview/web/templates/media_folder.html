@@ -1,4 +1,14 @@
+{% from 'media_play_controls.html' import play_form with context %}
 <p role="status">{{ total }} files{% if query %} matching “{{ query }}”{% endif %}. Page {{ page }} of {{ pages }}.</p>
+{% if display_names %}
+{% if display_names|length > 1 %}<p><small>Applying media restarts the viewer on all displays.</small></p>{% endif %}
+<details class="folder-play">
+  <summary>Play this folder on a display</summary>
+  {{ play_form('folder_images', label='Play images/GIFs') }}
+  {{ play_form('folder_videos', label='Play videos') }}
+  <small>Uses that display’s current playback and audio preferences.</small>
+</details>
+{% endif %}
 <form class="media-search" data-folder-search>
   <label>Find files <input name="q" value="{{ query }}" placeholder="Search this folder" type="search"></label>
   <button type="submit">Search</button>
@@ -46,6 +56,7 @@
           </form>
         </div>
         <div class="filename" style="word-break:break-all;">{{ f }}</div>
+        {{ play_form('file', f) }}
       </div>
       {% endfor %}
       <div class="file-item">

@@ -1,0 +1,14 @@
+{% macro play_form(selection, filename='', label='Play on display') %}
+{% if display_names %}
+<form method="post" action="{{ url_for('main.play_media') }}" class="media-play" data-play-media>
+  <input type="hidden" name="selection" value="{{ selection }}">
+  <input type="hidden" name="folder" value="{{ folder }}">
+  <input type="hidden" name="filename" value="{{ filename }}">
+  <select name="display" aria-label="Target display">
+    {% for display in display_names %}<option value="{{ display }}">{{ display }}</option>{% endfor %}
+  </select>
+  <button type="submit">{{ label }}</button>
+  <p class="play-status" role="status"></p>
+</form>
+{% endif %}
+{% endmacro %}

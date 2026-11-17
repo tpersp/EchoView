@@ -6,6 +6,8 @@ EchoView is a modern, easy-to-configure slideshow + overlay viewer written in **
 
 - **Multiple Monitors**: Launches a PySide6 window per detected monitor, each with its own display mode (Random, Mixed, Spotify, Web Page, etc.).
 - **Web Controller**: A Flask web interface (on port **8080**) lets you manage sub-devices, change the slideshow folder, set intervals, shuffle, or pick a single image.
+- **Direct Media Playback**: Play an image, GIF, individual video or whole folder on a chosen display from Media, without changing the media files.
+- **Display Presets**: Save and restore named playback setups while keeping physical output and device settings. See the [media workflow guide](docs/media-workflows.md).
 - **Aspect Filtering**: Per‑display option to only show square (1:1), landscape (16:9), or portrait (9:16) media.
 - **Systemd Integration**: The `setup.sh` script creates two systemd services:
   - `echoview.service` - runs the PySide6 slideshow windows

@@ -379,3 +379,20 @@ def test_maybe_launch_external_browser_honors_web_toggle():
         "stop_video",
         ("launch", "https://example.com/page-with-youtube"),
     ]
+
+
+def test_single_video_selection_avoids_directory_scan(monkeypatch, tmp_path):
+    clip = tmp_path / 'clip.mp4'
+    clip.touch()
+    monkeypatch.setattr(viewer, 'IMAGE_DIR', str(tmp_path))
+    window = DisplayWindow.__new__(DisplayWindow)
+    window.current_mode = 'videos'
+    window.disp_cfg = {'specific_video': 'clip.mp4', 'aspect_filter': 'any'}
+    def fail(*args):
+        raise AssertionError('Single-video playback must not scan the NAS directory')
+    window.gather_videos = fail
+    window.build_local_image_list()
+    assert window.image_list == [str(clip)]
+    clip.unlink()
+    window.build_local_image_list()
+    assert window.image_list == []

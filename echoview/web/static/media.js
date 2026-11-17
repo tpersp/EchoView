@@ -3,10 +3,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const manager = document.getElementById('file-manager');
   if (manager) initMediaFolders(manager);
   document.querySelectorAll('.specific-picker').forEach(initSpecificPicker);
+  document.querySelectorAll('select[name$="_video_category"]').forEach(category => {
+    category.addEventListener('change', () => {
+      const name = category.name.replace(/_video_category$/, '_specific_video');
+      const selection = category.form.elements.namedItem(name);
+      if (selection) selection.value = '';
+    });
+  });
   const displayForm = document.getElementById('display-settings-form');
   if (displayForm) {
     const status = document.getElementById('display-save-status');
-    displayForm.addEventListener('change', () => { status.textContent = 'Unsaved changes'; });
+    displayForm.addEventListener('change', event => {
+      if (!event.target.name) return; // Searching the picker does not change playback settings.
+      status.textContent = 'Unsaved changes';
+      document.querySelector('#save-preset-form button').disabled = true;
+    });
     displayForm.addEventListener('submit', () => {
       status.textContent = 'Applying settings. The viewer will restart…';
       const button = document.getElementById('display-save-button');
@@ -45,6 +56,7 @@ function initMediaFolders(manager) {
       const html = await response.text();
       if (controller.signal.aborted) return;
       content.innerHTML = html;
+      restorePlayTargets(content);
     } catch (error) {
       if (controller.signal.aborted) return;
       content.textContent = error.message + ' ';
@@ -110,6 +122,53 @@ function initMediaFolders(manager) {
     folders.filter(folder => folder.open).forEach(folder => load(folder));
   }
 }
+
+function restorePlayTargets(root) {
+  root.querySelectorAll('.media-play button').forEach(button => { button.disabled = playRequestPending; });
+  let target;
+  try { target = sessionStorage.getItem('echoview-play-display'); } catch (_) {}
+  if (!target) return;
+  root.querySelectorAll('.media-play select[name="display"]').forEach(select => {
+    if (Array.from(select.options).some(option => option.value === target)) select.value = target;
+  });
+}
+
+let playRequestPending = false;
+document.addEventListener('change', event => {
+  if (!event.target.matches('.media-play select[name="display"]')) return;
+  try { sessionStorage.setItem('echoview-play-display', event.target.value); } catch (_) {}
+  restorePlayTargets(document);
+});
+
+document.addEventListener('submit', async event => {
+  const form = event.target;
+  if (!form.matches('[data-play-media]')) return;
+  event.preventDefault();
+  if (playRequestPending) return;
+  const status = form.querySelector('.play-status');
+  const body = new FormData(form);
+  const showStatus = message => {
+    status.textContent = message;
+    const globalStatus = document.getElementById('media-play-status');
+    if (globalStatus) globalStatus.textContent = `${body.get('display')}: ${message}`;
+  };
+  playRequestPending = true;
+  document.querySelectorAll('.media-play button').forEach(button => { button.disabled = true; });
+  showStatus('Applying to display…');
+  try {
+    const response = await fetch(form.action, {
+      method: 'POST', body, headers: {'Accept': 'application/json'},
+      signal: AbortSignal.timeout(25000)
+    });
+    const result = await response.json();
+    showStatus(result.message);
+  } catch (error) {
+    showStatus('Could not confirm the request. Check Displays before retrying.');
+  } finally {
+    playRequestPending = false;
+    document.querySelectorAll('.media-play button').forEach(button => { button.disabled = false; });
+  }
+});
 
 function initSpecificPicker(picker) {
   const display = picker.dataset.display;

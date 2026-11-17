@@ -151,6 +151,7 @@ def init_config():
                     "spotify_progress_update_interval": 200,       # New: update interval in ms
                     "spotify_font_color": "#FFFFFF",
                     "video_category": "",
+                    "specific_video": "",
                     "shuffle_videos": False,
                     "video_mute": True,
                     "video_volume": 100,
@@ -368,5 +369,8 @@ def upgrade_config(cfg):
             changed = True
         if "aspect_filter" not in dcfg:
             dcfg["aspect_filter"] = "any"
+            changed = True
+        if "specific_video" not in dcfg:
+            dcfg["specific_video"] = ""
             changed = True
     return changed

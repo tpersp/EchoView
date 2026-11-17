@@ -3,6 +3,8 @@
 {% block content %}
 <div class="page-section" style="max-width:1200px;" id="file-manager">
   <h2>Media</h2>
+  <p id="media-play-status" role="status" aria-live="polite"></p>
+  {% for message in get_flashed_messages() %}<p class="flash-message" role="status">{{ message }}</p>{% endfor %}
   <p>Open a folder to browse files. Previews load only when needed.</p>
   <form method="post" action="{{ url_for('main.create_folder') }}" class="d-flex" style="gap:10px; margin-bottom:10px;">
     <input type="text" name="folder_name" placeholder="New Folder Name">
