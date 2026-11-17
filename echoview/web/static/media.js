@@ -1,0 +1,198 @@
+// Browse only the folder and page the user is interacting with.
+document.addEventListener('DOMContentLoaded', () => {
+  const manager = document.getElementById('file-manager');
+  if (manager) initMediaFolders(manager);
+  document.querySelectorAll('.specific-picker').forEach(initSpecificPicker);
+  const displayForm = document.getElementById('display-settings-form');
+  if (displayForm) {
+    const status = document.getElementById('display-save-status');
+    displayForm.addEventListener('change', () => { status.textContent = 'Unsaved changes'; });
+    displayForm.addEventListener('submit', () => {
+      status.textContent = 'Applying settings. The viewer will restart…';
+      const button = document.getElementById('display-save-button');
+      button.disabled = true;
+      button.textContent = 'Applying…';
+    });
+  }
+});
+
+function initMediaFolders(manager) {
+  const folders = Array.from(manager.querySelectorAll('.media-folder'));
+  const sort = document.getElementById('sort_select');
+  let savedFolder;
+  try { savedFolder = sessionStorage.getItem('echoview-media-folder'); } catch (_) {}
+  function remember(folder) {
+    const url = new URL(location.href);
+    url.searchParams.set('sort', sort.value);
+    url.searchParams.set('folder', folder.dataset.folderName);
+    history.replaceState(null, '', url);
+  }
+
+  async function load(folder, page = 1) {
+    const content = folder.querySelector('.folder-content');
+    if (folder.request) folder.request.abort();
+    const controller = new AbortController();
+    folder.request = controller;
+    const url = new URL(content.dataset.url, location.href);
+    url.searchParams.set('sort', sort.value);
+    url.searchParams.set('page', page);
+    url.searchParams.set('q', folder.dataset.query || '');
+    content.setAttribute('aria-busy', 'true');
+    content.textContent = 'Loading files…';
+    try {
+      const response = await fetch(url, {signal: controller.signal});
+      if (!response.ok) throw new Error('Cannot load this folder. Check the media connection and retry.');
+      const html = await response.text();
+      if (controller.signal.aborted) return;
+      content.innerHTML = html;
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      content.textContent = error.message + ' ';
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.textContent = 'Retry';
+      retry.addEventListener('click', () => load(folder, page));
+      content.append(retry);
+    } finally {
+      if (folder.request === controller) {
+        folder.request = null;
+        content.removeAttribute('aria-busy');
+      }
+    }
+  }
+
+  folders.forEach(folder => {
+    folder.addEventListener('toggle', () => {
+      if (folder.open) {
+        folders.forEach(other => { if (other !== folder) other.open = false; });
+        try { sessionStorage.setItem('echoview-media-folder', folder.dataset.folderName); } catch (_) {}
+        remember(folder);
+        if (!folder.request) load(folder);
+      } else {
+        if (folder.request) folder.request.abort();
+        folder.request = null;
+        // Detaching previews stops videos and releases their network/decoder resources.
+        folder.querySelectorAll('video').forEach(video => { video.pause(); video.removeAttribute('src'); video.load(); });
+        folder.querySelector('.folder-content').replaceChildren();
+        folder.querySelector('.folder-content').removeAttribute('aria-busy');
+      }
+    });
+    folder.addEventListener('submit', event => {
+      if (!event.target.matches('[data-folder-search]')) return;
+      event.preventDefault();
+      folder.dataset.query = new FormData(event.target).get('q');
+      load(folder);
+    });
+    folder.addEventListener('click', event => {
+      const button = event.target.closest('[data-media-page]');
+      if (button) load(folder, Number(button.dataset.mediaPage));
+    });
+  });
+  sort.addEventListener('change', () => folders.filter(folder => folder.open).forEach(folder => {
+    remember(folder);
+    load(folder);
+  }));
+  document.getElementById('media-sort-form').addEventListener('submit', event => event.preventDefault());
+  document.getElementById('folder-search').addEventListener('input', event => {
+    const query = event.target.value.toLocaleLowerCase();
+    let visible = 0;
+    folders.forEach(folder => {
+      folder.hidden = !folder.dataset.folderName.toLocaleLowerCase().includes(query);
+      if (folder.hidden) folder.open = false;
+      else visible++;
+    });
+    document.getElementById('folder-search-status').textContent = `${visible} folders`;
+  });
+  if (!folders.some(folder => folder.open)) {
+    const remembered = folders.find(folder => folder.dataset.folderName === savedFolder);
+    if (remembered) remembered.open = true;
+  } else {
+    folders.filter(folder => folder.open).forEach(folder => load(folder));
+  }
+}
+
+function initSpecificPicker(picker) {
+  const display = picker.dataset.display;
+  const form = picker.closest('form');
+  const section = document.getElementById(display + '_specific_image_section');
+  const category = form.elements.namedItem(display + '_image_category');
+  const aspect = form.elements.namedItem(display + '_aspect_filter');
+  const value = document.getElementById(display + '_specific_value');
+  const results = picker.querySelector('.specific-results');
+  const more = picker.querySelector('.specific-more');
+  const search = picker.querySelector('.specific-search');
+  let request;
+  let loaded = false;
+  let nextPage = 1;
+
+  async function load(reset = true) {
+    if (!reset && request) return;
+    if (request) request.abort();
+    const controller = new AbortController();
+    request = controller;
+    if (reset) { nextPage = 1; results.textContent = 'Loading images…'; }
+    more.hidden = true;
+    const url = new URL(picker.dataset.url, location.href);
+    url.search = new URLSearchParams({folder: category.value, aspect: aspect.value, q: search.value, page: nextPage});
+    picker.setAttribute('aria-busy', 'true');
+    try {
+      const response = await fetch(url, {signal: controller.signal});
+      if (!response.ok) throw new Error('Cannot load images. Check the media connection and retry.');
+      const data = await response.json();
+      if (controller.signal.aborted) return;
+      if (reset) results.replaceChildren();
+      data.files.forEach(name => {
+        const label = document.createElement('label');
+        label.className = 'thumb-label';
+        const image = document.createElement('img');
+        const path = [category.value, name].filter(Boolean).map(encodeURIComponent).join('/');
+        image.src = '/thumb/' + path + '?size=80';
+        image.loading = 'lazy';
+        image.decoding = 'async';
+        image.width = 80; image.height = 80; image.alt = name;
+        const radio = document.createElement('input');
+        radio.type = 'radio'; radio.name = display + '_picker'; radio.value = name;
+        radio.checked = value.value === name;
+        radio.addEventListener('change', () => {
+          value.value = name;
+          document.getElementById(display + '_specific_selected').textContent = name;
+        });
+        label.append(image, document.createElement('br'), radio, document.createTextNode(' ' + name));
+        results.append(label);
+      });
+      if (!data.total) results.textContent = 'No matching images in this folder.';
+      nextPage = data.page + 1;
+      more.textContent = 'Load more';
+      more.hidden = data.page >= data.pages;
+      loaded = true;
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (reset) results.textContent = error.message;
+      more.textContent = 'Retry';
+      more.hidden = false;
+    } finally {
+      if (request === controller) {
+        request = null;
+        picker.removeAttribute('aria-busy');
+      }
+    }
+  }
+  more.addEventListener('click', () => load(nextPage === 1));
+  picker.querySelector('.specific-search-button').addEventListener('click', () => load());
+  search.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); load(); }
+  });
+  const check = () => {
+    if (section.style.display === 'none') {
+      if (request) { request.abort(); request = null; }
+    } else if (!loaded && !request) load();
+  };
+  [category, aspect].forEach(control => control.addEventListener('change', () => {
+    loaded = false;
+    if (request) { request.abort(); request = null; }
+    check();
+  }));
+  [form.elements.namedItem(display + '_mode'), form.elements.namedItem(display + '_fallback_mode')]
+    .filter(Boolean).forEach(control => control.addEventListener('change', check));
+  check();
+}

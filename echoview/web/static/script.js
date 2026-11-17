@@ -32,7 +32,7 @@ function fetchStats() {
 }
 // Poll stats every 10s
 setInterval(fetchStats, 10000);
-window.addEventListener("load", fetchStats);
+document.addEventListener("DOMContentLoaded", fetchStats);
 document.addEventListener("visibilitychange", fetchStats);
 
 // ---- Collapsible Sections ----
@@ -282,45 +282,6 @@ function initSpotifyFontColorToggle() {
   });
 }
 window.addEventListener('DOMContentLoaded', initSpotifyFontColorToggle);
-
-// ---- Lazy load thumbnails for specific_image mode ----
-function loadSpecificThumbnails(dispName) {
-  const container = document.getElementById(dispName + "_lazyContainer");
-  if (!container) return;
-  const allThumbs = JSON.parse(container.getAttribute("data-files") || "[]");
-  const shownCount = container.querySelectorAll("label.thumb-label").length;
-  const nextLimit = shownCount + 100;
-
-  const slice = allThumbs.slice(shownCount, nextLimit);
-  slice.forEach(filePath => {
-    const bn = filePath.split("/").pop();
-    const lbl = document.createElement("label");
-    lbl.className = "thumb-label";
-    const img = document.createElement("img");
-    img.src = "/thumb/" + filePath + "?size=60";
-    img.loading = "lazy";
-    img.style.width = "60px";
-    img.style.height = "60px";
-    img.style.objectFit = "cover";
-    img.style.border = "2px solid #555";
-    img.style.borderRadius = "4px";
-    img.style.margin = "5px";
-    const radio = document.createElement("input");
-    radio.type = "radio";
-    radio.name = dispName + "_specific_image";
-    radio.value = bn;
-
-    lbl.appendChild(img);
-    lbl.appendChild(document.createElement("br"));
-    lbl.appendChild(radio);
-    lbl.appendChild(document.createTextNode(" " + bn));
-    container.insertBefore(lbl, container.lastElementChild);
-  });
-
-  if (nextLimit >= allThumbs.length && container.lastElementChild) {
-    container.lastElementChild.style.display = "none";
-  }
-}
 
 // ---- Overlay Dragging (for overlay.html) ----
 function initOverlayDragUI() {

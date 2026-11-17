@@ -43,6 +43,21 @@ def test_actual_modes_and_offline_preferences_are_distinct(controller):
     assert applied == []  # Viewing the page must never change hardware modes.
 
 
+def test_display_navigation_defers_stats_and_media_scans(controller, monkeypatch):
+    client, cfg, found, saved, applied = controller
+    def fail(*args, **kwargs):
+        pytest.fail('Navigation must defer NAS scans, media inspection and stats sampling')
+    monkeypatch.setattr(utils, 'count_files_in_folder', fail)
+    monkeypatch.setattr(utils, 'media_aspect_label', fail)
+    monkeypatch.setattr(routes, 'get_system_stats', fail)
+    monkeypatch.setattr(routes, 'get_storage_stats', fail)
+    monkeypatch.setattr(routes.os, 'listdir', fail)
+    response = client.get('/')
+    assert response.status_code == 200
+    assert b'class="specific-picker"' in response.data
+    assert b'value="saved.png"' in response.data
+
+
 def test_list_monitors_uses_actual_connector_data(controller):
     client, cfg, found, saved, applied = controller
     response = client.get("/list_monitors")

@@ -304,10 +304,9 @@ def get_pi_model():
 def get_subfolders():
     """Return a sorted list of subfolders inside IMAGE_DIR."""
     try:
-        folders = [
-            d for d in os.listdir(IMAGE_DIR)
-            if os.path.isdir(os.path.join(IMAGE_DIR, d)) and not is_ignored_folder(d)
-        ]
+        with os.scandir(IMAGE_DIR) as entries:
+            folders = [entry.name for entry in entries
+                       if not is_ignored_folder(entry.name) and entry.is_dir()]
         folders.sort(key=lambda x: x.lower())
         return folders
     except Exception:

@@ -557,3 +557,15 @@ main.content {
   color: var(--text-normal);
 }
 
+.media-folder[hidden], .specific-more[hidden] { display: none !important; }
+.media-folder { padding: 16px; }
+.display-advanced { margin-top: 24px; padding: 16px; }
+.display-advanced > summary { cursor: pointer; font-weight: bold; }
+.folder-search-label, .media-search, .media-pagination { margin: 12px 0; }
+.media-search, .media-pagination { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.folder-content[aria-busy="true"], .specific-picker[aria-busy="true"] { cursor: progress; }
+.specific-results { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.specific-results .thumb-label { width: 110px; overflow-wrap: anywhere; cursor: pointer; }
+.specific-results img { object-fit: cover; border-radius: 4px; }
+.specific-results .thumb-label:has(input:checked) { outline: 2px solid var(--text-normal); border-radius: 4px; }
+

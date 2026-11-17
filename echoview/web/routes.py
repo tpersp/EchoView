@@ -20,18 +20,18 @@ from echoview.config import (
 )
 from echoview.utils import (
     load_config, save_config, init_config, log_message,
-    get_system_stats, get_subfolders, count_files_in_folder,
+    get_system_stats, get_subfolders,
     get_hostname, get_ip_address, get_pi_model,
     get_storage_stats, format_bytes,
     CONFIG_PATH,
     is_ignored_folder,
-    media_aspect_label,
 )
 from echoview.web.spotify_auth import DEFAULT_SCOPE, validate_config, cached_status, oauth_client
 from echoview.presentation import safe_area_settings, RESOURCE_PROFILES, EDGES
 from echoview.displays import (discover_monitors, reconcile_displays, mode_choices,
                                apply_output_mode, DISPLAY_ASPECTS)
 from echoview import embed_utils
+from echoview.web.media import folder_page, SORTS
 from echoview.branches import branch_options, selected_branch, valid_branch
 
 # Supported media file extensions for the upload/file-manager features.
@@ -278,29 +278,13 @@ def upload_media():
     theme = cfg.get("theme", "dark")
     if request.method == "GET":
         sort_opt = request.args.get("sort", "name_asc")
-        folder_files = {}
+        if sort_opt not in SORTS:
+            sort_opt = "name_asc"
         subfolders = get_subfolders()
-        for sf in subfolders:
-            try:
-                folder_path = os.path.join(IMAGE_DIR, sf)
-                files = [
-                    f for f in os.listdir(folder_path)
-                    if f.lower().endswith(VALID_MEDIA_EXT)
-                ]
-                if sort_opt.startswith("name"):
-                    files.sort(reverse=(sort_opt == "name_desc"))
-                else:
-                    files.sort(
-                        key=lambda x: os.path.getmtime(os.path.join(folder_path, x)),
-                        reverse=(sort_opt == "date_desc")
-                    )
-                folder_files[sf] = files
-            except Exception:
-                folder_files[sf] = []
         return render_template(
             "upload_media.html",
             theme=theme,
-            folder_files=folder_files,
+            selected_folder=request.args.get("folder"),
             sort_option=sort_opt,
             subfolders=subfolders,
         )
@@ -327,6 +311,33 @@ def upload_media():
         log_message(f"Uploaded file: {final_path}")
 
     return redirect(url_for("main.upload_media"))
+
+
+@main_bp.route('/media/folder')
+def media_folder():
+    try:
+        result = folder_page(IMAGE_DIR, request.args.get('folder', ''),
+                             request.args.get('sort', 'name_asc'),
+                             request.args.get('page', 1, type=int), request.args.get('q', ''))
+    except ValueError:
+        return 'Invalid media folder.', 400
+    except OSError:
+        return 'Cannot read this folder. Check the media connection and retry.', 503
+    return render_template('media_folder.html', **result, subfolders=get_subfolders())
+
+
+@main_bp.route('/media/images')
+def media_images():
+    try:
+        result = folder_page(IMAGE_DIR, request.args.get('folder', ''),
+                             page=request.args.get('page', 1, type=int),
+                             query=request.args.get('q', ''), images=True,
+                             aspect=request.args.get('aspect', 'any'))
+    except ValueError:
+        return jsonify(error='Invalid media folder.'), 400
+    except OSError:
+        return jsonify(error='Cannot read images. Check the media connection and retry.'), 503
+    return jsonify(result)
 
 @main_bp.route("/restart_viewer", methods=["POST"])
 def restart_viewer():
@@ -848,44 +859,11 @@ def index():
                 pass
             return redirect(url_for("main.index"))
 
-    # Build folder counts
-    folder_counts = {}
-    for sf in get_subfolders():
-        folder_counts[sf] = count_files_in_folder(os.path.join(IMAGE_DIR, sf))
-
-    # Collect images for "specific_image" selection
-    display_images = {}
-    for dname, dcfg in cfg["displays"].items():
-        cat = dcfg.get("image_category", "")
-        base_dir = os.path.join(IMAGE_DIR, cat) if cat else IMAGE_DIR
-        img_list = []
-        if os.path.isdir(base_dir):
-            for fname in os.listdir(base_dir):
-                lf = fname.lower()
-                if lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
-                    rel_path = fname
-                    img_list.append(os.path.join(cat, rel_path) if cat else rel_path)
-        img_list.sort()
-        aspect_pref = dcfg.get("aspect_filter", "any")
-        if aspect_pref not in ("", None, "any"):
-            filtered = []
-            for rel_path in img_list:
-                full_path = os.path.join(IMAGE_DIR, rel_path)
-                if not os.path.exists(full_path):
-                    continue
-                try:
-                    label = media_aspect_label(full_path)
-                except Exception:
-                    label = "unknown"
-                if label == aspect_pref:
-                    filtered.append(rel_path)
-            img_list = filtered
-        display_images[dname] = img_list
-
-    cpu, mem_used_mb, mem_total_mb, load1, temp = get_system_stats()
-    used_bytes, total_bytes = get_storage_stats()
-    disk_line = f"{format_bytes(used_bytes)}/{format_bytes(total_bytes)}"
-    mem_line = f"{round(mem_used_mb, 1)}/{round(mem_total_mb, 1)}"
+    # Navigation must not scan every NAS folder or inspect media headers.
+    # Specific-image choices load separately when their section is opened.
+    subfolders = get_subfolders()
+    cpu, mem_line, temp, disk_line = "…", "…", "…", "…"
+    load1 = 0
     host = get_hostname()
     ipaddr = get_ip_address()
     model = get_pi_model()
@@ -909,9 +887,7 @@ def index():
     return render_template(
         "index.html",
         cfg=cfg,
-        subfolders=get_subfolders(),
-        folder_counts=folder_counts,
-        display_images=display_images,
+        subfolders=subfolders,
         cpu=cpu,
         mem_line=mem_line,
         load1=round(load1, 2),
