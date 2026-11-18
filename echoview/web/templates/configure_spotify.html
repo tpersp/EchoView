@@ -6,27 +6,57 @@
   <header class="page-header"><div><h1>Spotify</h1><p>Bring album artwork and track information to your displays.</p></div><span class="pill"><i class="fa-brands fa-spotify" aria-hidden="true"></i> Integration</span></header>
   <div class="spotify-layout">
     <section class="card">
-      <header class="panel-header"><div><h2>Connect your account</h2><p>Use your Spotify developer application's details.</p></div></header>
-      <div class="status-note" role="status">{{ spotify_status }}</div>
+      <header class="panel-header"><div><h2>Connect your account</h2><p>Connect with your Client ID, then approve access on Spotify.</p></div></header>
+      <div class="status-note" id="spotify-status" role="status">{{ spotify_status }}</div>
       <form method="post">
         <div class="fields-grid">
-          {{ f.input('client_id','Client ID',spotify.client_id|default(''),'password',required=true) }}
-          {{ f.input('client_secret','Client secret',spotify.client_secret|default(''),'password',required=true) }}
+          {{ f.input('client_id','Client ID',spotify.client_id|default(''),required=true) }}
+          <label class="field"><span class="field-label">Authorization method</span><select name="auth_method" id="spotify-auth-method"><option value="pkce"{% if spotify_auth_method == 'pkce' %} selected{% endif %}>PKCE · no Client Secret</option><option value="authorization_code"{% if spotify_auth_method == 'authorization_code' %} selected{% endif %}>Authorization code · Client Secret</option></select></label>
+          <div class="full-width" id="spotify-secret-field"{% if spotify_auth_method == 'pkce' %} hidden{% endif %}>{{ f.input('client_secret','Client secret','','password',placeholder='Leave blank to keep the saved secret',help='Only used by the authorization-code method. Switching to PKCE removes the saved secret.') }}</div>
           <div class="full-width">{{ f.input('redirect_uri','Redirect URI',spotify.redirect_uri|default('http://127.0.0.1:8080/callback'),required=true,placeholder='https://your-controller.example/callback') }}</div>
           <div class="full-width">{{ f.input('scope','Permissions (scope)',spotify.scope|default('user-read-currently-playing user-read-playback-state')) }}</div>
         </div>
         <div class="form-actions"><button type="submit" class="primary">Save Spotify settings</button></div>
       </form>
       <hr>
-      <div class="form-actions"><a class="button" href="{{ url_for('main.spotify_auth') }}">Authorize Spotify <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a><form method="post" action="{{ url_for('main.spotify_check') }}"><button type="submit" class="quiet">Check connection</button></form></div>
+      <div class="form-actions"><a class="button" href="{{ url_for('main.spotify_auth') }}">Authorize Spotify <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a><form method="post" action="{{ url_for('main.spotify_check') }}" id="spotify-check-form"><button type="submit" class="quiet">Check connection</button></form></div>
     </section>
     <aside class="card">
       <header class="panel-header"><div><h2>A quick setup guide</h2><p>Connect once, then choose Spotify on a display.</p></div></header>
-      <details class="setup-step" open><summary><span class="step-number">1</span> Create an application</summary><p>Open the <a href="https://developer.spotify.com/dashboard/" target="_blank" rel="noopener noreferrer">Spotify Developer Dashboard</a>, create an application, and copy its Client ID and Client Secret.</p></details>
+      <details class="setup-step" open><summary><span class="step-number">1</span> Create an application</summary><p>Open the <a href="https://developer.spotify.com/dashboard/" target="_blank" rel="noopener noreferrer">Spotify Developer Dashboard</a>, create an application, and copy its Client ID. A Client Secret is unnecessary with PKCE. Development mode requires the app owner to have Spotify Premium; other accounts must be allowed in the app settings.</p></details>
       <details class="setup-step"><summary><span class="step-number">2</span> Register your callback</summary><p>Register the exact Redirect URI. Use an HTTPS controller address ending in <code>/callback</code>, or explicit loopback such as <code>http://127.0.0.1:8080/callback</code>. HTTP LAN addresses and localhost are not accepted.</p></details>
-      <details class="setup-step"><summary><span class="step-number">3</span> Save and authorize</summary><p>Save your details, then choose Authorize Spotify. Use the same browser and controller address throughout the flow; authorization expires after ten minutes. Check connection tests token refresh and API access.</p></details>
+      <details class="setup-step"><summary><span class="step-number">3</span> Save and authorize</summary><p>Save your details, then choose Authorize Spotify. Use the same browser and controller address throughout the flow; authorization expires after ten minutes. Switching methods requires authorization again. Check connection tests token refresh and API access.</p></details>
       <details class="setup-step"><summary><span class="step-number">4</span> Connecting from another computer</summary><p>For loopback authorization, run <code>ssh -N -L 8080:127.0.0.1:8080 user@PI-IP</code>, then open <code>http://127.0.0.1:8080/configure_spotify</code>. Keep the tunnel open through the callback and do not edit the callback address. Alternatively, use your HTTPS controller address throughout.</p></details>
     </aside>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const method = document.getElementById('spotify-auth-method');
+  const secret = document.getElementById('spotify-secret-field');
+  function updateMethod() {
+    secret.hidden = method.value !== 'authorization_code';
+    secret.querySelector('input').disabled = secret.hidden;
+  }
+  method.addEventListener('change', updateMethod);
+  updateMethod();
+  const checkForm = document.getElementById('spotify-check-form');
+  checkForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = checkForm.querySelector('button');
+    const status = document.getElementById('spotify-status');
+    button.disabled = true;
+    status.textContent = 'Checking Spotify connection…';
+    try {
+      const response = await fetch(checkForm.action, {method: 'POST', signal: AbortSignal.timeout(15000)});
+      status.textContent = await response.text();
+    } catch (_) {
+      status.textContent = 'Could not check Spotify. Check the controller connection and try again.';
+    } finally {
+      button.disabled = false;
+    }
+  });
+</script>
 {% endblock %}

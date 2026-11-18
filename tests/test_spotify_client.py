@@ -196,3 +196,17 @@ def test_token_validation_is_serialized_and_uses_refreshed_token(tmp_path, monke
     poller.fetch()
     assert calls == ["validate-refresh", "playback"]
     poller.close()
+
+
+def test_pkce_polling_without_client_secret(tmp_path):
+    cfg = settings()
+    cfg['spotify'].update(auth_method='pkce', client_secret='')
+    calls = []
+    class Client:
+        def current_playback(self, **kwargs):
+            calls.append('playback')
+            return None
+    poller = spotify.SpotifyPoller(lambda: cfg, tmp_path / 'token', client_factory=lambda _: Client())
+    assert poller.fetch().status == 'unavailable'
+    assert calls == ['playback']
+    poller.close()

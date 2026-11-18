@@ -98,7 +98,7 @@ actual browser identity and GPU defaults. Custom flags remain configurable throu
 
 ### Spotify Integration
 
-In `Configure Spotify`, provide your **Client ID**, **Client Secret**, and **Redirect URI** from the Spotify Developer Dashboard. Then click **Authorize Spotify** to store the OAuth token. You can set one or more displays to `spotify` mode.
+In `Configure Spotify`, provide your **Client ID** and **Redirect URI** from the Spotify Developer Dashboard. New connections use **Authorization Code with PKCE**, which does not require a Client Secret. Existing secret-based connections remain supported; select PKCE, save, and authorize again to migrate. Then click **Authorize Spotify** to store the OAuth token. You can set one or more displays to `spotify` mode.
 
 The OAuth token is cached at the location specified by the `SPOTIFY_CACHE_PATH`
 
@@ -294,6 +294,18 @@ its `/callback` URL. Begin and finish on the same controller address and browser
 do not manually rewrite callback addresses. Authorization attempts expire after
 ten minutes and can only be used once. A new authorization attempt in the same
 browser replaces the previous attempt.
+
+PKCE is the default for new connections. Its per-attempt verifier is kept on the
+controller, bound to the browser session and saved configuration, and consumed
+once at callback. It survives a controller restart during authorization. The
+verifier is never sent in the browser cookie. Tokens refresh automatically without
+a Client Secret. Existing secret-based connections retain their original method
+until explicitly switched; switching deletes the old token and saved secret.
+
+See [Spotify's PKCE flow](https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow).
+This integration displays now-playing metadata; it does not stream Spotify audio.
+For current app-owner Premium and allowed-user requirements, see
+[Spotify quota modes](https://developer.spotify.com/documentation/web-api/concepts/quota-modes).
 
 The controller creates a private `.oauth_state.sqlite3` file in `VIEWER_HOME` for
 its persistent signing key and pending authorization states. The service user

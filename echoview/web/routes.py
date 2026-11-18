@@ -28,7 +28,7 @@ from echoview.utils import (
     CONFIG_PATH,
     is_ignored_folder,
 )
-from echoview.web.spotify_auth import DEFAULT_SCOPE, validate_config, cached_status, oauth_client
+from echoview.web.spotify_auth import DEFAULT_SCOPE, validate_config, cached_status, oauth_client, auth_method
 from echoview.presentation import safe_area_settings, RESOURCE_PROFILES, EDGES
 from echoview.displays import (discover_monitors, reconcile_displays, mode_choices,
                                apply_output_mode, DISPLAY_ASPECTS)
@@ -640,6 +640,13 @@ def configure_spotify():
         new = {key: request.form.get(key, "").strip()
                for key in ("client_id", "client_secret", "redirect_uri")}
         new["scope"] = request.form.get("scope", DEFAULT_SCOPE).strip()
+        method = request.form.get("auth_method", auth_method(new))
+        if method == "authorization_code" and not new["client_secret"] and new["client_id"] == cfg["spotify"].get("client_id"):
+            new["client_secret"] = cfg["spotify"].get("client_secret", "")
+        if "auth_method" in request.form:
+            new["auth_method"] = method
+        if method == "pkce":
+            new["client_secret"] = ""
         try:
             validate_config(new)
         except ValueError as exc:
@@ -658,6 +665,7 @@ def configure_spotify():
         return redirect(url_for("main.configure_spotify"))
     return render_template("configure_spotify.html", spotify=cfg["spotify"],
                            theme=cfg.get("theme", "dark"),
+                           spotify_auth_method=auth_method(cfg["spotify"]),
                            spotify_status=cached_status(cfg["spotify"], SPOTIFY_CACHE_PATH))
 
 
@@ -665,10 +673,15 @@ def configure_spotify():
 def spotify_auth():
     cfg = load_config().get("spotify", {})
     try:
-        auth = oauth_client(cfg, SPOTIFY_CACHE_PATH)
         browser = secrets.token_urlsafe(32)
         session["spotify_browser"] = browser
-        state = current_app.extensions["spotify_states"].issue(browser, cfg)
+        if auth_method(cfg) == "pkce":
+            verifier = secrets.token_urlsafe(64)
+            auth = oauth_client(cfg, SPOTIFY_CACHE_PATH, verifier=verifier)
+            state = current_app.extensions["spotify_states"].issue(browser, cfg, verifier=verifier)
+        else:
+            auth = oauth_client(cfg, SPOTIFY_CACHE_PATH)
+            state = current_app.extensions["spotify_states"].issue(browser, cfg)
         return redirect(auth.get_authorize_url(state=state))
     except ValueError as exc:
         return str(exc), 400
@@ -681,7 +694,8 @@ def callback():
     cfg = load_config().get("spotify", {})
     state = request.args.get("state", "")
     browser = session.pop("spotify_browser", None)
-    if not state or not browser or not current_app.extensions["spotify_states"].consume(state, browser, cfg):
+    proof = current_app.extensions["spotify_states"].consume(state, browser, cfg) if state and browser else False
+    if not proof or (auth_method(cfg) == "pkce" and not isinstance(proof, str)):
         return "Authorization expired or state did not match. Start authorization again in the same browser and address.", 400
     if request.args.get("error"):
         return "Spotify authorization was declined. You can authorize again.", 400
@@ -689,7 +703,12 @@ def callback():
     if not code:
         return "Authorization failed: no code provided.", 400
     try:
-        token = oauth_client(cfg, SPOTIFY_CACHE_PATH).get_access_token(code, check_cache=False)
+        auth = (oauth_client(cfg, SPOTIFY_CACHE_PATH, verifier=proof) if auth_method(cfg) == "pkce"
+                else oauth_client(cfg, SPOTIFY_CACHE_PATH))
+        token = auth.get_access_token(code, check_cache=False)
+        # SpotifyPKCE returns an access-token string; OAuth returns the full dict.
+        if isinstance(token, str):
+            token = auth.cache_handler.get_cached_token()
         if not isinstance(token, dict) or not token.get("access_token"):
             return "Spotify did not return a valid token. Authorize again.", 502
         if not set(cfg.get("scope", DEFAULT_SCOPE).split()).issubset(str(token.get("scope", "")).split()):

@@ -2,7 +2,6 @@
 from dataclasses import dataclass, replace
 import hashlib
 import math
-import os
 from pathlib import Path
 import tempfile
 import threading
@@ -102,17 +101,10 @@ class SpotifyPoller:
 
     def _client(self, cfg):
         import spotipy
-        from spotipy.oauth2 import SpotifyOAuth
+        from echoview.web.spotify_auth import oauth_client
         if self.auth is None:
-            os.makedirs(os.path.dirname(os.path.abspath(self.cache_path)), exist_ok=True)
             self.http = requests.Session()
-            self.auth = SpotifyOAuth(
-                client_id=cfg["client_id"], client_secret=cfg["client_secret"],
-                redirect_uri=cfg["redirect_uri"],
-                scope=cfg.get("scope", "user-read-currently-playing user-read-playback-state"),
-                cache_path=self.cache_path, open_browser=False, requests_timeout=5,
-                requests_session=self.http,
-            )
+            self.auth = oauth_client(cfg, self.cache_path, requests_session=self.http)
         # get_cached_token validates scopes and refreshes an expired token itself.
         token = self.auth.get_cached_token()
         if not token:
@@ -166,7 +158,7 @@ class SpotifyPoller:
         with self.lock:
             try:
                 cfg = self.config_loader().get("spotify", {})
-                key = tuple(str(cfg.get(k) or "") for k in ("client_id", "client_secret", "redirect_uri", "scope"))
+                key = tuple(str(cfg.get(k) or "") for k in ("client_id", "client_secret", "redirect_uri", "scope", "auth_method"))
                 if key != self.key:
                     self.key, self.auth = key, None
                     if self.http:
@@ -176,7 +168,7 @@ class SpotifyPoller:
                     self.failures = 0
                 if self.clock() < self.next_poll:
                     return self.result
-                if not all(cfg.get(k) for k in ("client_id", "client_secret", "redirect_uri")):
+                if not all(cfg.get(k) for k in ("client_id", "redirect_uri")):
                     result = Playback("authorization_required")
                     delay = 60
                 else:

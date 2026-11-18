@@ -209,3 +209,91 @@ def test_app_factory_retains_signing_key(tmp_path, monkeypatch):
     assert first.secret_key == second.secret_key
     assert first.config["SESSION_COOKIE_HTTPONLY"]
     assert first.config["SESSION_COOKIE_SAMESITE"] == "Lax"
+
+
+def test_pkce_needs_no_secret_and_legacy_stays_supported():
+    cfg = dict(config(), client_secret='', auth_method='pkce')
+    auth.validate_config(cfg)
+    assert auth.auth_method(cfg) == 'pkce'
+    assert auth.auth_method(config()) == 'authorization_code'
+    with pytest.raises(ValueError):
+        auth.validate_config(dict(cfg, auth_method='invalid'))
+    with pytest.raises(ValueError):
+        auth.validate_config(dict(cfg, auth_method='authorization_code'))
+
+
+def test_pkce_state_migrates_and_restores_proof_once(tmp_path):
+    import sqlite3
+    path = tmp_path / 'states'
+    with sqlite3.connect(path) as db:
+        db.execute('CREATE TABLE states (state TEXT PRIMARY KEY, browser TEXT, config TEXT, expires REAL)')
+    store = auth.StateStore(path)
+    state = store.issue('browser', config(), verifier='private-verifier')
+    assert not store.consume(state, 'other', config())
+    assert auth.StateStore(path).consume(state, 'browser', config()) == 'private-verifier'
+    assert not store.consume(state, 'browser', config())
+
+
+def test_switch_to_pkce_removes_secret_and_requires_reauthorization(web):
+    client, cfg, cache, calls = web
+    pending = start(client)
+    cache.write_text('old token')
+    assert client.post('/configure_spotify', data=dict(config(), auth_method='pkce')).status_code == 302
+    assert cfg['spotify']['auth_method'] == 'pkce'
+    assert cfg['spotify']['client_secret'] == ''
+    assert not cache.exists()
+    assert client.get('/callback', query_string={'state': pending, 'code': 'code'}).status_code == 400
+
+
+def test_saved_secret_is_not_rendered_and_blank_preserves_it(web):
+    client, cfg, cache, calls = web
+    cfg['spotify']['client_secret'] = 'do-not-render-this'
+    assert b'do-not-render-this' not in client.get('/configure_spotify').data
+    assert client.post('/configure_spotify', data=dict(config(), client_secret='', auth_method='authorization_code')).status_code == 302
+    assert cfg['spotify']['client_secret'] == 'do-not-render-this'
+
+
+def test_pkce_callback_restores_verifier_and_handles_spotipy_string(web, monkeypatch):
+    client, cfg, cache, calls = web
+    cfg['spotify'].update(auth_method='pkce', client_secret='')
+    proofs = []
+    class OAuth:
+        def get_authorize_url(self, state):
+            return 'https://accounts.spotify.com/authorize?state=' + state
+        def get_access_token(self, code, check_cache):
+            assert not check_cache
+            return 'token-string'
+        @property
+        def cache_handler(self):
+            return self
+        def get_cached_token(self):
+            return {'access_token': 'token-string', 'scope': auth.DEFAULT_SCOPE}
+    def factory(cfg, path, *, verifier):
+        proofs.append(verifier)
+        return OAuth()
+    monkeypatch.setattr(routes, 'oauth_client', factory)
+    state = start(client)
+    assert client.get('/callback', query_string={'state': state, 'code': 'code'}).status_code == 302
+    assert len(proofs) == 2 and proofs[0] == proofs[1] and len(proofs[0]) >= 43
+    assert client.get('/callback', query_string={'state': state, 'code': 'code'}).status_code == 400
+
+
+def test_pinned_spotipy_pkce_protocol():
+    # Other viewer tests stub Spotipy at collection time. A clean interpreter
+    # verifies the actual dependency's URL, exchange and refresh contracts.
+    import subprocess
+    import sys
+    from pathlib import Path
+    result = subprocess.run([sys.executable, str(Path(__file__).parent / 'native' / 'check_spotify_pkce.py')],
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_concurrent_callbacks_consume_verifier_once(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    store = auth.StateStore(tmp_path / 'states')
+    state = store.issue('browser', config(), verifier='proof')
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: store.consume(state, 'browser', config()), range(2)))
+    assert results.count('proof') == 1
+    assert results.count(False) == 1
