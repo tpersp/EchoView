@@ -41,7 +41,7 @@ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = qt_flags(os.environ.get("QTWEBENGINE_
 from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl, Signal
 from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QLabel, QProgressBar,
+    QApplication, QMainWindow, QWidget, QLabel,
     QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
 )
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
@@ -50,6 +50,7 @@ from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from echoview.spotify_client import Playback, shared_poller
+from echoview.spotify_progress import ProgressTimeline
 from echoview.presentation import (safe_bounds, safe_area_settings, overlay_bounds, text_stretch,
                                    resource_settings, decode_size, trim_image_cache,
                                    player_presentation_flags, bounded_int, runtime_display_settings)
@@ -201,7 +202,9 @@ class DisplayWindow(QMainWindow):
         self.spotify_info_label.hide()  # Hidden unless in spotify mode
 
         # New: Spotify progress bar and timer
-        self.spotify_progress_bar = QProgressBar(self.main_widget)
+        from echoview.progress_bar import SmoothProgressBar
+        self.spotify_timeline = ProgressTimeline()
+        self.spotify_progress_bar = SmoothProgressBar(self.main_widget)
         self.spotify_progress_bar.hide()
         self.spotify_progress_bar.setTextVisible(False)
         self.spotify_progress_bar.setMinimum(0)
@@ -940,6 +943,7 @@ class DisplayWindow(QMainWindow):
         self._cancel_stream()
         self.spotify_fetch_id += 1
         self.spotify_info = None
+        self.spotify_timeline.clear()
         self.spotify_art_path = None
         self.spotify_fallback_due = 0
         self.stop_current_video()
@@ -1027,32 +1031,12 @@ class DisplayWindow(QMainWindow):
         if self.current_mode == "spotify":
             if self.disp_cfg.get("spotify_show_progress", False):
                 self.spotify_progress_bar.show()
-                upd_int = max(self.resource_options["progress_interval"], bounded_int(self.disp_cfg.get("spotify_progress_update_interval", 200), 200, 50, 5000))
+                frame_ms = (50 if self.disp_cfg.get("spotify_smooth_progress", True) else
+                            bounded_int(self.disp_cfg.get("spotify_progress_update_interval", 200), 200, 50, 5000))
+                upd_int = max(self.resource_options["progress_interval"], frame_ms)
                 self.spotify_progress_timer.setInterval(upd_int)
                 self.spotify_progress_timer.start()
-                theme = self.disp_cfg.get("spotify_progress_theme", "dark")
-                if theme == "light":
-                    self.spotify_progress_bar.setStyleSheet(
-                        "QProgressBar { border: 1px solid #ccc; border-radius: 5px; background-color: #f0f0f0; }"
-                        "QProgressBar::chunk { background-color: #a0a0a0; }"
-                    )
-                elif theme == "dark":
-                    self.spotify_progress_bar.setStyleSheet(
-                        "QProgressBar { border: 1px solid #444; border-radius: 5px; background-color: #333; }"
-                        "QProgressBar::chunk { background-color: #888; }"
-                    )
-                elif theme == "spotify":
-                    self.spotify_progress_bar.setStyleSheet(
-                        "QProgressBar { border: 1px solid #1DB954; border-radius: 5px; background-color: #121212; }"
-                        "QProgressBar::chunk { background-color: #1DB954; }"
-                    )
-                elif theme == "coffee":
-                    self.spotify_progress_bar.setStyleSheet(
-                        "QProgressBar { border: 1px solid #8B4513; border-radius: 5px; background-color: #423828; }"
-                        "QProgressBar::chunk { background-color: #8B4513; }"
-                    )
-                else:
-                    self.spotify_progress_bar.setStyleSheet("")
+                self.spotify_progress_bar.setTheme(self.disp_cfg.get("spotify_progress_theme", "dark"))
             self.slideshow_timer.setInterval(5000)
             self.slideshow_timer.start()
         elif self.current_mode == "web_page":
@@ -1605,10 +1589,13 @@ class DisplayWindow(QMainWindow):
             self.spotify_info_label.show()
             if self.disp_cfg.get("spotify_show_progress", False):
                 self.spotify_progress_bar.show()
-                upd_int = max(self.resource_options["progress_interval"], bounded_int(self.disp_cfg.get("spotify_progress_update_interval", 200), 200, 50, 5000))
+                frame_ms = (50 if self.disp_cfg.get("spotify_smooth_progress", True) else
+                            bounded_int(self.disp_cfg.get("spotify_progress_update_interval", 200), 200, 50, 5000))
+                upd_int = max(self.resource_options["progress_interval"], frame_ms)
                 self.spotify_progress_timer.setInterval(upd_int)
                 if not self.spotify_progress_timer.isActive():
                     self.spotify_progress_timer.start()
+                self.update_spotify_progress()
             info_parts = []
             if self.disp_cfg.get("spotify_show_song", True) and self.spotify_info and self.spotify_info.get("song"):
                 info_parts.append(self.spotify_info["song"])
@@ -1676,12 +1663,11 @@ class DisplayWindow(QMainWindow):
 
     def update_spotify_progress(self):
         if not self.spotify_info:
-            self.spotify_progress_bar.setValue(0)
+            self.spotify_progress_bar.setFraction(0)
             return
+        now = time.monotonic()
         duration = self.spotify_info.get("duration_ms", 0)
-        elapsed = max(0, time.monotonic() - self.spotify_info["fetched_time"]) * 1000
-        progress = self.spotify_info.get("progress_ms", 0) + elapsed
-        self.spotify_progress_bar.setValue(int(min(10000, max(0, progress / duration * 10000))) if duration > 0 else 0)
+        self.spotify_progress_bar.setFraction(self.spotify_timeline.position(now) / duration if duration > 0 else 0)
 
     def start_spotify_fetch(self):
         if self.spotify_fetch_pending is not None:
@@ -1722,6 +1708,14 @@ class DisplayWindow(QMainWindow):
             self.spotify_fallback_due = 0
         else:
             self.spotify_info = None
+        if not hasattr(self, "spotify_timeline"):
+            self.spotify_timeline = ProgressTimeline()
+        if result.status == "playing":
+            self.spotify_timeline.sample(
+                result.track_id or (result.song, result.artist, result.album, result.duration_ms),
+                result.progress_ms, result.duration_ms, result.fetched_time, time.monotonic())
+        else:
+            self.spotify_timeline.clear()
         self.render_spotify(result.art_path if result.status == "playing" else "")
         if result.next_poll_at > 0:
             # Re-arm from the shared deadline, including cached results from

@@ -208,11 +208,14 @@ def test_playback_progress_uses_monotonic_time(monkeypatch):
     from echoview import viewer
     values = []
     dw = DisplayWindow.__new__(DisplayWindow)
-    dw.spotify_progress_bar = types.SimpleNamespace(setValue=values.append)
+    dw.spotify_progress_bar = types.SimpleNamespace(setFraction=values.append)
     dw.spotify_info = {"progress_ms": 1000, "duration_ms": 10000, "fetched_time": 10}
+    from echoview.spotify_progress import ProgressTimeline
+    dw.spotify_timeline = ProgressTimeline()
+    dw.spotify_timeline.sample('track', 1000, 10000, 10, 10)
     monkeypatch.setattr(viewer.time, "monotonic", lambda: 12)
     dw.update_spotify_progress()
-    assert values == [3000]
+    assert values == [0.3]
     dw.spotify_info = None
     dw.update_spotify_progress()
     assert values[-1] == 0
@@ -504,15 +507,18 @@ def test_progress_moves_between_whole_percentage_points(monkeypatch):
     from echoview import viewer
     values = []
     dw = DisplayWindow.__new__(DisplayWindow)
-    dw.spotify_progress_bar = types.SimpleNamespace(setValue=values.append)
+    dw.spotify_progress_bar = types.SimpleNamespace(setFraction=values.append)
     dw.spotify_info = {'progress_ms': 18000, 'duration_ms': 180000, 'fetched_time': 10}
+    from echoview.spotify_progress import ProgressTimeline
+    dw.spotify_timeline = ProgressTimeline()
+    dw.spotify_timeline.sample('track', 18000, 180000, 10, 10)
     now = [10.0]
     monkeypatch.setattr(viewer.time, 'monotonic', lambda: now[0])
     dw.update_spotify_progress()
     now[0] += 0.2
     dw.update_spotify_progress()
     assert values[1] > values[0]
-    assert values[1] - values[0] < 100  # Less than a whole percent.
+    assert values[1] - values[0] < 0.01  # Less than a whole percent.
     now[0] += 1000
     dw.update_spotify_progress()
-    assert values[-1] == 10000  # Never exceed track duration.
+    assert values[-1] == 1  # Never exceed track duration.

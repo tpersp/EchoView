@@ -15,6 +15,7 @@
   </div>
   <details class="playback-options">
     <summary>Progress appearance</summary>
+    {{ f.toggle(pre ~ 'spotify_smooth_progress','Smooth progress animation',dcfg.get('spotify_smooth_progress',true),help='Local animation only; no extra Spotify requests. Low-resource profiles limit the frame rate.') }}
     <div class="fields-grid">
       {{ f.select(pre ~ 'spotify_progress_position','Progress position',dcfg.get('spotify_progress_position','below_info'), [('above_info','Above track information'),('below_info','Below track information'),('top-center','Top center'),('bottom-center','Bottom center')]) }}
       {{ f.select(pre ~ 'spotify_progress_theme','Progress theme',dcfg.get('spotify_progress_theme','dark'), [('dark','Dark'),('spotify','Spotify'),('coffee','Coffee'),('light','Light')]) }}

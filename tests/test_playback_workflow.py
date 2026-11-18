@@ -280,3 +280,16 @@ def test_bad_schedule_on_second_display_does_not_mutate_first(workflow):
     response = client.post('/', data={'action': 'update_displays', 'HDMI-1_mode': 'calibration',
                                       'HDMI-2_mode': 'scheduled', 'HDMI-2_schedule': '[]'})
     assert response.status_code == 400 and cfg == before and not saves and not restarts
+
+
+def test_smooth_progress_preference_saves_and_survives_presets(workflow):
+    client, cfg, saves, restarts, root = workflow
+    form = {'action': 'update_displays', 'HDMI-1_mode': 'spotify',
+            'HDMI-1_spotify_show_progress': '1', 'HDMI-1_spotify_smooth_progress': '1'}
+    assert client.post('/', data=form).status_code == 302
+    assert cfg['displays']['HDMI-1']['spotify_smooth_progress'] is True
+    preset = presets.snapshot(cfg)
+    del form['HDMI-1_spotify_smooth_progress']
+    assert client.post('/', data=form).status_code == 302
+    assert cfg['displays']['HDMI-1']['spotify_smooth_progress'] is False
+    assert presets.restore(cfg, preset)['displays']['HDMI-1']['spotify_smooth_progress'] is True

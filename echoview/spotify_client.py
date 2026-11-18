@@ -26,6 +26,7 @@ class Playback:
     art_url: str = ""
     art_path: str = ""
     next_poll_at: float = 0
+    track_id: str = ""
 
 
 def number(value):
@@ -54,6 +55,7 @@ def normalize_playback(current, now):
     urls = [img["url"] for img in images if isinstance(img, dict) and isinstance(img.get("url"), str)] if isinstance(images, list) else []
     return Playback(
         "playing" if current.get("is_playing") else "paused",
+        track_id=str(item.get("uri") or item.get("id") or ""),
         song=str(item.get("name") or ""),
         artist=str(show.get("publisher") or show.get("name") or "") if kind == "episode" else artist,
         album=str(show.get("name") or "") if kind == "episode" else str(album.get("name") or ""),
