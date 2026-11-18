@@ -1,3 +1,9 @@
+document.addEventListener('pointerdown', event => {
+  document.querySelectorAll('.schedule-folder-picker').forEach(picker => {
+    if (!picker.contains(event.target) && picker.closeFolders) picker.closeFolders();
+  });
+});
+
 // Daily schedules use the device clock, including when the browser is elsewhere.
 document.addEventListener('DOMContentLoaded', () => {
   const roots = Array.from(document.querySelectorAll('.schedule-editor'));
@@ -115,40 +121,103 @@ class ScheduleEditor {
       const remove = this.button('Remove', () => { this.entries.splice(index, 1); this.render(true); });
       remove.setAttribute('aria-label', `Remove slot ${index + 1}`);
       controls.append(timeLabel, nameLabel, mediaLabel, shuffleLabel, remove);
-      const details = this.element('details', '', 'schedule-folder-picker');
-      details.open = !entry.folders.length;
-      const summary = this.element('summary');
-      const search = this.element('input');
-      search.type = 'search'; search.placeholder = 'Find folders'; search.setAttribute('aria-label', 'Find folders for this slot');
-      search.addEventListener('keydown', event => { if (event.key === 'Enter') event.preventDefault(); });
-      const choices = this.element('div', '', 'schedule-folder-options');
-      const names = [...new Set([...this.folders, ...entry.folders])];
-      const drawChoices = () => {
-        choices.replaceChildren();
-        names.filter(folder => folder.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())).forEach(folder => {
-          const label = this.element('label');
-          const checkbox = this.element('input');
-          checkbox.type = 'checkbox'; checkbox.value = folder; checkbox.checked = entry.folders.includes(folder);
-          checkbox.addEventListener('change', () => {
-            entry.folders = checkbox.checked ? [...new Set([...entry.folders, folder])] : entry.folders.filter(name => name !== folder);
-            this.update(true);
-          });
-          label.append(checkbox, document.createTextNode(' ' + folder + (this.folders.includes(folder) ? '' : ' (unavailable)')));
-          choices.append(label);
+      const picker = this.element('div', '', 'schedule-folder-picker');
+      const toggle = this.button('Choose folders…', () => {
+        const open = panel.hidden;
+        document.querySelectorAll('.schedule-folder-picker').forEach(other => {
+          if (other !== picker && other.closeFolders) other.closeFolders();
         });
-        if (!choices.children.length) choices.textContent = 'No matching folders. Check your media connection or search.';
+        panel.hidden = !open;
+        toggle.setAttribute('aria-expanded', String(open));
+        if (open) { search.focus({preventScroll: true}); panel.scrollIntoView({block: 'nearest'}); }
+      });
+      toggle.classList.add('schedule-folder-toggle');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-haspopup', 'dialog');
+      const panel = this.element('div', '', 'schedule-folder-menu');
+      panel.id = `${this.root.dataset.display}-folders-${index}`;
+      panel.hidden = true;
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-label', 'Choose folders for this time slot');
+      toggle.setAttribute('aria-controls', panel.id);
+      picker.closeFolders = () => { panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); };
+      picker.addEventListener('focusout', () => setTimeout(() => {
+        if (!picker.contains(document.activeElement)) picker.closeFolders();
+      }, 0));
+      picker.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !panel.hidden) {
+          event.preventDefault(); event.stopPropagation(); picker.closeFolders(); toggle.focus();
+        }
+      });
+      const search = this.element('input');
+      search.type = 'search'; search.placeholder = 'Search folders…'; search.setAttribute('aria-label', 'Find folders for this slot');
+      search.addEventListener('keydown', event => {
+        if (event.key === 'Enter') event.preventDefault();
+        if (event.key === 'ArrowDown') { event.preventDefault(); choices.querySelector('button')?.focus(); }
+      });
+      const choices = this.element('div', '', 'schedule-folder-options');
+      choices.addEventListener('keydown', event => {
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+        const options = Array.from(choices.querySelectorAll('button'));
+        if (!options.length) return;
+        event.preventDefault();
+        const index = options.indexOf(document.activeElement);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+          : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+        options[next].focus();
+      });
+      const chips = this.element('div', '', 'schedule-folder-chips');
+      chips.setAttribute('role', 'group');
+      chips.setAttribute('aria-label', 'Chosen folders');
+      const names = [...new Set([...this.folders, ...entry.folders])];
+      const matching = () => names.filter(folder => folder.toLocaleLowerCase().includes(search.value.toLocaleLowerCase()));
+      const drawChoices = focusFolder => {
+        choices.replaceChildren();
+        matching().forEach(folder => {
+          const option = this.button('', () => {
+            entry.folders = entry.folders.includes(folder) ? entry.folders.filter(name => name !== folder) : [...entry.folders, folder];
+            this.update(true); drawChoices(folder);
+          });
+          option.className = 'schedule-folder-option';
+          option.dataset.folder = folder;
+          option.setAttribute('aria-pressed', String(entry.folders.includes(folder)));
+          const check = this.element('span', entry.folders.includes(folder) ? '✓' : '', 'schedule-folder-check');
+          check.setAttribute('aria-hidden', 'true');
+          option.append(check, this.element('span', folder + (this.folders.includes(folder) ? '' : ' (unavailable)')));
+          choices.append(option);
+          if (folder === focusFolder) option.focus();
+        });
+        if (!choices.children.length) choices.append(this.element('p', 'No matching folders.'));
       };
-      const actions = this.element('div', '', 'schedule-actions');
-      actions.append(this.button('Select visible', () => {
-        entry.folders = [...new Set([...entry.folders, ...names.filter(folder => folder.toLocaleLowerCase().includes(search.value.toLocaleLowerCase()))])];
+      const refreshSelection = () => {
+        toggle.textContent = entry.folders.length ? `Add folders · ${entry.folders.length} selected ▾` : 'Choose folders… ▾';
+        chips.replaceChildren();
+        entry.folders.forEach(folder => {
+          const chip = this.element('span', '', 'schedule-folder-chip');
+          const removeFolder = this.button('×', () => {
+            entry.folders = entry.folders.filter(name => name !== folder);
+            this.update(true); drawChoices(); toggle.focus();
+          });
+          removeFolder.setAttribute('aria-label', `Remove ${folder} from this slot`);
+          chip.append(this.element('span', folder + (this.folders.includes(folder) ? '' : ' (unavailable)')), removeFolder);
+          chips.append(chip);
+        });
+      };
+      const actions = this.element('div', '', 'schedule-folder-actions');
+      actions.append(this.button('Select results', () => {
+        entry.folders = [...new Set([...entry.folders, ...matching()])];
         drawChoices(); this.update(true);
-      }), this.button('Clear selection', () => { entry.folders = []; drawChoices(); this.update(true); }));
-      search.addEventListener('input', drawChoices);
+      }), this.button('Clear', () => { entry.folders = []; drawChoices(); this.update(true); }),
+      this.button('Done', () => { picker.closeFolders(); toggle.focus(); }));
+      search.addEventListener('input', () => drawChoices());
       drawChoices();
-      details.append(summary, search, actions, choices);
-      node.append(controls, details);
+      panel.append(search, actions, choices);
+      const anchor = this.element('div', '', 'schedule-folder-anchor');
+      anchor.append(toggle, panel);
+      picker.append(chips, anchor);
+      node.append(controls, picker);
       container.append(node);
-      return {node, time, summary};
+      return {node, time, refreshSelection};
     });
     this.root.querySelector('.schedule-example').hidden = this.entries.length > 0;
     this.root.querySelector('.schedule-add').disabled = this.entries.length >= 48;
@@ -178,10 +247,7 @@ class ScheduleEditor {
   update(dirty = false) {
     this.json.value = JSON.stringify(this.entries);
     if (dirty) this.json.dispatchEvent(new Event('change', {bubbles: true}));
-    this.rows.forEach((row, i) => {
-      const folders = this.entries[i].folders;
-      row.summary.textContent = folders.length ? `${folders.length} folder${folders.length === 1 ? '' : 's'}: ${folders.join(', ')}` : 'Choose folders';
-    });
+    this.rows.forEach(row => row.refreshSelection());
     this.root.querySelectorAll('input:not([type="hidden"]), select').forEach(control => { control.disabled = !this.active(); });
     this.validate();
     this.tick(true);

@@ -5,8 +5,9 @@ to that display and repeats every day, independently of the browser.
 
 1. Add slots, or use the **06:00 / 14:00 / 18:00** example.
 2. Give each slot a start time and optional name.
-3. Choose Images/GIFs or Videos and one or more folders. Folder search and
-   Select visible help with larger collections. Shuffle is set per slot.
+3. Choose Images/GIFs or Videos, then open the folder dropdown. Click a folder
+   to add a checkmark; chosen folders appear as removable chips. Search and
+   Select results help with larger collections. Shuffle is set per slot.
 4. Review the daily timeline and the highlighted slot at the current device time.
 5. Set the shared image interval and video preferences below, then Apply.
 

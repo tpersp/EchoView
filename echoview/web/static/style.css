@@ -590,10 +590,24 @@ main.content {
 .schedule-slot-controls input, .schedule-slot-controls select { width: 100%; min-width: 0; }
 .schedule-slot-controls .schedule-shuffle { display: block; align-self: center; white-space: nowrap; }
 .schedule-slot-controls .schedule-shuffle input { width: auto; }
-.schedule-folder-picker > summary { cursor: pointer; padding: 8px 0; overflow-wrap: anywhere; }
-.schedule-folder-picker > input { width: 100%; }
-.schedule-folder-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px; max-height: 240px; overflow-y: auto; }
-.schedule-folder-options label { padding: 5px; overflow-wrap: anywhere; }
+.schedule-folder-picker { margin-top: 10px; }
+.schedule-folder-anchor { position: relative; width: min(100%, 420px); }
+.schedule-folder-toggle { width: 100%; text-align: left; }
+.schedule-folder-menu { position: absolute; top: 100%; left: 0; width: 100%; z-index: 30; padding: 10px; border: 1px solid var(--border-muted); border-radius: 8px; background: var(--input-bg); box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.schedule-folder-menu[hidden] { display: none !important; }
+.schedule-folder-menu > input { width: 100%; margin: 0 0 6px; }
+.schedule-folder-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.schedule-folder-actions button { padding: 4px 8px; font-size: .85rem; border: 0; background: transparent; }
+.schedule-folder-options { max-height: 230px; overflow-y: auto; }
+form .schedule-folder-option { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0; padding: 9px 8px; border: 0; border-radius: 4px; text-align: left; background: transparent; overflow-wrap: anywhere; }
+form .schedule-folder-option:hover, form .schedule-folder-option:focus-visible { background: var(--section-bg); }
+form .schedule-folder-option[aria-pressed="true"] { background: var(--section-bg); font-weight: 600; }
+.schedule-folder-check { flex: 0 0 18px; color: #68a98f; }
+.schedule-folder-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.schedule-folder-chips:empty { display: none; }
+.schedule-folder-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 8px; border: 1px solid var(--input-border); border-radius: 16px; background: var(--section-bg); font-size: .85rem; }
+.schedule-folder-chip > span { overflow-wrap: anywhere; min-width: 0; }
+form .schedule-folder-chip button { flex: 0 0 auto; border: 0; background: transparent; padding: 0 2px; margin: 0; font-size: 1.1rem; line-height: 1.2; }
 .schedule-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
 .schedule-error { color: #f2a875; }
 @media (max-width: 1000px) {
