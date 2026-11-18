@@ -328,7 +328,12 @@ token validation/refresh. Requests run on background workers; only queued Qt
 results update widgets. Reloading settings or closing a window invalidates its
 outstanding result. Polling is limited to one API request per five seconds for
 the process, independently of the local progress-bar timer and fallback-image
-interval. Provider rate limits and errors lengthen this delay; `Retry-After` is
+interval. Each window follows the shared next-request deadline so API/artwork
+latency cannot turn a five-second cadence into a ten-second gap. An expected
+track ending can bring the next check forward (with a two-second minimum between
+requests); manual skips are detected by normal polling. The progress bar uses
+local monotonic-time interpolation with fine-grained positions, without extra
+API requests. Provider rate limits and errors lengthen this delay; `Retry-After` is
 honored, and quota exhaustion uses a minimum five-minute pause. Authorization
 and access failures retry after one minute; network errors use bounded backoff.
 These statuses are logged without provider exception details.

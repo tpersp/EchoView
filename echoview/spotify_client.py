@@ -25,6 +25,7 @@ class Playback:
     fetched_time: float = 0
     art_url: str = ""
     art_path: str = ""
+    next_poll_at: float = 0
 
 
 def number(value):
@@ -94,6 +95,7 @@ class SpotifyPoller:
         self.http = None
         self.result = Playback("unavailable")
         self.next_poll = 0
+        self.end_check_key = None
         self.failures = 0
         self.art_dir = None
         self.art_cache = OrderedDict()
@@ -156,6 +158,7 @@ class SpotifyPoller:
     def fetch(self):
         """Call on a worker. A single lock coalesces windows and token refreshes."""
         with self.lock:
+            request_started = None
             try:
                 cfg = self.config_loader().get("spotify", {})
                 key = tuple(str(cfg.get(k) or "") for k in ("client_id", "client_secret", "redirect_uri", "scope", "auth_method"))
@@ -165,6 +168,7 @@ class SpotifyPoller:
                         self.http.close()
                         self.http = None
                     self.next_poll = 0
+                    self.end_check_key = None
                     self.failures = 0
                 if self.clock() < self.next_poll:
                     return self.result
@@ -176,6 +180,7 @@ class SpotifyPoller:
                     if client is None:
                         result, delay = Playback("authorization_required"), 60
                     else:
+                        request_started = self.clock()
                         result = normalize_playback(client.current_playback(additional_types="track,episode"), self.clock())
                         if result.status == "playing":
                             result = replace(result, art_path=self._artwork(result.art_url))
@@ -185,9 +190,26 @@ class SpotifyPoller:
                 self.failures += 1
                 status, delay = error_policy(exc, self.failures)
                 result = Playback(status, fetched_time=self.clock())
-            self.result = result
-            self.next_poll = self.clock() + delay
-            return result
+            if request_started is not None and result.status in ("playing", "paused", "unavailable"):
+                # Keep a start-to-start cadence: API/artwork latency must not add
+                # another cooldown and make the viewer miss the next deadline.
+                self.next_poll = request_started + POLL_SECONDS
+                if result.status == "playing" and result.duration_ms > result.progress_ms:
+                    remaining = (result.duration_ms - result.progress_ms) / 1000
+                    track_key = (result.song, result.artist, result.album, result.duration_ms)
+                    if remaining > POLL_SECONDS:
+                        self.end_check_key = None
+                    candidate = max(request_started + 2, result.fetched_time + remaining + 0.25)
+                    # Only one early check per ending, even if Spotify keeps
+                    # reporting the same stale position near the end.
+                    if candidate < self.next_poll and self.end_check_key != track_key:
+                        self.next_poll = candidate
+                        self.end_check_key = track_key
+            else:
+                # Provider Retry-After and error backoff begin after the response.
+                self.next_poll = self.clock() + delay
+            self.result = replace(result, next_poll_at=self.next_poll)
+            return self.result
 
     def close(self):
         """Use after workers finish; TemporaryDirectory also cleans up on exit."""

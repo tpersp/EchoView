@@ -210,3 +210,56 @@ def test_pkce_polling_without_client_secret(tmp_path):
     assert poller.fetch().status == 'unavailable'
     assert calls == ['playback']
     poller.close()
+
+
+def test_slow_requests_and_artwork_do_not_add_an_extra_poll_period(tmp_path):
+    now = [100.0]
+    calls = []
+    def playback(**kwargs):
+        calls.append(now[0])
+        now[0] += 0.25
+        return playing('https://art')
+    poller = spotify.SpotifyPoller(settings, tmp_path / 'token', clock=lambda: now[0],
+                                  client_factory=lambda _: SimpleNamespace(current_playback=playback))
+    def artwork(url):
+        now[0] += 0.75
+        return '/cached/art.jpg'
+    poller._artwork = artwork
+    result = poller.fetch()
+    assert now[0] == 101
+    assert result.next_poll_at == 105
+    now[0] = 104.99
+    assert poller.fetch() is result
+    now[0] = 105
+    poller.fetch()
+    assert calls == [100, 105]
+
+
+def test_expected_track_end_checks_earlier_then_returns_to_normal_cadence(tmp_path):
+    now = [100.0]
+    payload = playing()
+    payload['progress_ms'] = 9000
+    poller = spotify.SpotifyPoller(settings, tmp_path / 'token', clock=lambda: now[0],
+                                  client_factory=lambda _: SimpleNamespace(current_playback=lambda **kw: payload))
+    assert poller.fetch().next_poll_at == 102
+    # Spotify may still report the old track at its end. Do not hammer it.
+    now[0] = 102
+    payload['progress_ms'] = 10000
+    assert poller.fetch().next_poll_at == 107
+
+
+def test_stale_near_end_position_does_not_keep_polling_faster(tmp_path):
+    now = [100.0]
+    payload = playing()
+    payload['progress_ms'] = 9000
+    poller = spotify.SpotifyPoller(settings, tmp_path / 'token', clock=lambda: now[0],
+                                  client_factory=lambda _: SimpleNamespace(current_playback=lambda **kw: payload))
+    assert poller.fetch().next_poll_at == 102
+    now[0] = 102
+    assert poller.fetch().next_poll_at == 107
+    now[0] = 107
+    payload['progress_ms'] = 1000  # A repeat or seek rearms the end check.
+    assert poller.fetch().next_poll_at == 112
+    now[0] = 112
+    payload['progress_ms'] = 9000
+    assert poller.fetch().next_poll_at == 114

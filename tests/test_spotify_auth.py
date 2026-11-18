@@ -85,6 +85,7 @@ def web(tmp_path, monkeypatch):
     app = Flask("echoview.web.app", template_folder="templates", static_folder="static")
     store = auth.StateStore(tmp_path / "states")
     app.secret_key = store.secret()
+    app.config['SERVER_NAME'] = '127.0.0.1:8080'
     app.extensions["spotify_states"] = store
     app.register_blueprint(routes.main_bp)
     return app.test_client(), cfg, cache, calls
@@ -297,3 +298,22 @@ def test_concurrent_callbacks_consume_verifier_once(tmp_path):
         results = list(pool.map(lambda _: store.consume(state, 'browser', config()), range(2)))
     assert results.count('proof') == 1
     assert results.count(False) == 1
+
+
+def test_other_address_is_stopped_before_authorization(web):
+    client, cfg, cache, calls = web
+    response = client.get('/spotify_auth', base_url='http://10.10.10.193:8080')
+    assert response.status_code == 302
+    assert response.location == '/configure_spotify'
+    with client.session_transaction() as browser_session:
+        assert 'spotify_browser' not in browser_session
+    page = client.get('/configure_spotify', base_url='http://10.10.10.193:8080')
+    assert b'Open the callback address before authorizing' in page.data
+    assert b'href="http://127.0.0.1:8080/configure_spotify"' in page.data
+    assert calls == []
+
+
+def test_matching_address_has_no_mismatch_warning(web):
+    client, cfg, cache, calls = web
+    assert b'Open the callback address before authorizing' not in client.get('/configure_spotify').data
+    assert start(client)

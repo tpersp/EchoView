@@ -8,6 +8,9 @@
     <section class="card">
       <header class="panel-header"><div><h2>Connect your account</h2><p>Connect with your Client ID, then approve access on Spotify.</p></div></header>
       <div class="status-note" id="spotify-status" role="status">{{ spotify_status }}</div>
+      {% if spotify_setup_url %}
+      <div class="status-note" role="alert"><strong>Open the callback address before authorizing.</strong><p>This page and Spotify’s callback use different addresses. Your browser cannot carry the authorization session between them.</p><p>Keep your SSH tunnel running for a loopback address, then open the link below and choose Authorize Spotify there.</p><a class="button" href="{{ spotify_setup_url }}">Open Spotify setup at the callback address</a><p class="help-text">{{ spotify_setup_url }}</p></div>
+      {% endif %}
       <form method="post">
         <div class="fields-grid">
           {{ f.input('client_id','Client ID',spotify.client_id|default(''),required=true) }}

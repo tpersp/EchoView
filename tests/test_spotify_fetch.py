@@ -212,7 +212,7 @@ def test_playback_progress_uses_monotonic_time(monkeypatch):
     dw.spotify_info = {"progress_ms": 1000, "duration_ms": 10000, "fetched_time": 10}
     monkeypatch.setattr(viewer.time, "monotonic", lambda: 12)
     dw.update_spotify_progress()
-    assert values == [30]
+    assert values == [3000]
     dw.spotify_info = None
     dw.update_spotify_progress()
     assert values[-1] == 0
@@ -479,3 +479,40 @@ def test_mpv_normal_end_and_live_end_have_distinct_behavior():
     dw.stream_live = True
     dw._check_mpv_process()
     assert retries == [1]
+
+
+def test_gui_rearms_timer_from_shared_deadline(monkeypatch):
+    from echoview import viewer
+    from echoview.spotify_client import Playback
+    monkeypatch.setattr(viewer, 'log_message', lambda text: None)
+    monkeypatch.setattr(viewer.time, 'monotonic', lambda: 101.25)
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.running = True
+    dw.current_mode = 'spotify'
+    dw.spotify_fetch_id = dw.spotify_fetch_pending = 1
+    dw.render_spotify = lambda path: None
+    delays = []
+    dw.slideshow_timer = types.SimpleNamespace(start=delays.append)
+    dw.handle_spotify_result(1, Playback('playing', next_poll_at=105))
+    assert delays == [3751]
+    dw.spotify_fetch_id = dw.spotify_fetch_pending = 2
+    dw.handle_spotify_result(2, Playback('playing', next_poll_at=101))
+    assert delays[-1] == 100  # An early/late Qt wakeup cannot add a full period.
+
+
+def test_progress_moves_between_whole_percentage_points(monkeypatch):
+    from echoview import viewer
+    values = []
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.spotify_progress_bar = types.SimpleNamespace(setValue=values.append)
+    dw.spotify_info = {'progress_ms': 18000, 'duration_ms': 180000, 'fetched_time': 10}
+    now = [10.0]
+    monkeypatch.setattr(viewer.time, 'monotonic', lambda: now[0])
+    dw.update_spotify_progress()
+    now[0] += 0.2
+    dw.update_spotify_progress()
+    assert values[1] > values[0]
+    assert values[1] - values[0] < 100  # Less than a whole percent.
+    now[0] += 1000
+    dw.update_spotify_progress()
+    assert values[-1] == 10000  # Never exceed track duration.

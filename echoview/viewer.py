@@ -205,7 +205,7 @@ class DisplayWindow(QMainWindow):
         self.spotify_progress_bar.hide()
         self.spotify_progress_bar.setTextVisible(False)
         self.spotify_progress_bar.setMinimum(0)
-        self.spotify_progress_bar.setMaximum(100)
+        self.spotify_progress_bar.setMaximum(10000)
         self.spotify_progress_timer = QTimer(self)
         self.spotify_progress_timer.timeout.connect(self.update_spotify_progress)
 
@@ -1053,7 +1053,7 @@ class DisplayWindow(QMainWindow):
                     )
                 else:
                     self.spotify_progress_bar.setStyleSheet("")
-            self.slideshow_timer.setInterval(interval_s * 1000)
+            self.slideshow_timer.setInterval(5000)
             self.slideshow_timer.start()
         elif self.current_mode == "web_page":
             metadata = deserialize_embed_metadata(self.disp_cfg.get("embed_metadata"))
@@ -1637,9 +1637,6 @@ class DisplayWindow(QMainWindow):
                     f"color: {color}; background: transparent;"
                 )
             self.spotify_info_label.raise_()
-            # When Spotify is active we want to poll frequently for changes
-            if self.slideshow_timer.interval() != 5000:
-                self.slideshow_timer.setInterval(5000)
             self.setup_layout()
         else:
             self.spotify_art_path = None
@@ -1684,7 +1681,7 @@ class DisplayWindow(QMainWindow):
         duration = self.spotify_info.get("duration_ms", 0)
         elapsed = max(0, time.monotonic() - self.spotify_info["fetched_time"]) * 1000
         progress = self.spotify_info.get("progress_ms", 0) + elapsed
-        self.spotify_progress_bar.setValue(int(min(100, max(0, progress / duration * 100))) if duration > 0 else 0)
+        self.spotify_progress_bar.setValue(int(min(10000, max(0, progress / duration * 10000))) if duration > 0 else 0)
 
     def start_spotify_fetch(self):
         if self.spotify_fetch_pending is not None:
@@ -1726,6 +1723,11 @@ class DisplayWindow(QMainWindow):
         else:
             self.spotify_info = None
         self.render_spotify(result.art_path if result.status == "playing" else "")
+        if result.next_poll_at > 0:
+            # Re-arm from the shared deadline, including cached results from
+            # another window and Qt timers that fire slightly early.
+            remaining_ms = (result.next_poll_at - time.monotonic()) * 1000
+            self.slideshow_timer.start(max(100, int(remaining_ms) + 1))
 
     def pull_displays_from_remote(self, ip):
         pass  # Placeholder if needed

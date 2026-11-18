@@ -7,6 +7,7 @@ import subprocess
 import requests
 import json
 from copy import deepcopy
+from urllib.parse import urlsplit
 from flask import (
     Blueprint, request, redirect, url_for, render_template,
     send_from_directory, send_file, jsonify, session, current_app, flash
@@ -632,6 +633,19 @@ def clear_config():
         log_message(f"Failed to restart echoview.service after clearing config: {e}")
     return redirect(url_for("main.settings"))
 
+def spotify_setup_address(cfg):
+    """Return the configured callback origin only after validating its URL."""
+    try:
+        validate_config(cfg)
+    except ValueError:
+        return None
+    callback = urlsplit(cfg["redirect_uri"])
+    current = urlsplit(request.url_root)
+    if (callback.hostname, callback.port) != (current.hostname, current.port):
+        return f"{callback.scheme}://{callback.netloc}/configure_spotify"
+    return None
+
+
 @main_bp.route("/configure_spotify", methods=["GET", "POST"])
 def configure_spotify():
     cfg = load_config()
@@ -665,6 +679,7 @@ def configure_spotify():
         return redirect(url_for("main.configure_spotify"))
     return render_template("configure_spotify.html", spotify=cfg["spotify"],
                            theme=cfg.get("theme", "dark"),
+                           spotify_setup_url=spotify_setup_address(cfg["spotify"]),
                            spotify_auth_method=auth_method(cfg["spotify"]),
                            spotify_status=cached_status(cfg["spotify"], SPOTIFY_CACHE_PATH))
 
@@ -672,6 +687,10 @@ def configure_spotify():
 @main_bp.route("/spotify_auth")
 def spotify_auth():
     cfg = load_config().get("spotify", {})
+    # A callback on another address cannot receive this browser's session cookie.
+    # Show the setup link before issuing state or sending the user to Spotify.
+    if spotify_setup_address(cfg):
+        return redirect(url_for("main.configure_spotify"))
     try:
         browser = secrets.token_urlsafe(32)
         session["spotify_browser"] = browser
