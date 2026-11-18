@@ -293,3 +293,17 @@ def test_smooth_progress_preference_saves_and_survives_presets(workflow):
     assert client.post('/', data=form).status_code == 302
     assert cfg['displays']['HDMI-1']['spotify_smooth_progress'] is False
     assert presets.restore(cfg, preset)['displays']['HDMI-1']['spotify_smooth_progress'] is True
+
+
+def test_spotify_layout_saved_in_presets_and_validated(workflow):
+    client, cfg, saves, restarts, root = workflow
+    form = {'action': 'update_displays', 'HDMI-1_mode': 'spotify', 'HDMI-1_spotify_layout': 'album_card'}
+    assert client.post('/', data=form).status_code == 302
+    assert cfg['displays']['HDMI-1']['spotify_layout'] == 'album_card'
+    preset = presets.snapshot(cfg)
+    cfg['displays']['HDMI-1']['spotify_layout'] = 'poster'
+    assert presets.restore(cfg,preset)['displays']['HDMI-1']['spotify_layout'] == 'album_card'
+    form['HDMI-1_spotify_layout'] = 'bad-layout'
+    before = deepcopy(cfg)
+    assert client.post('/', data=form).status_code == 400
+    assert cfg == before

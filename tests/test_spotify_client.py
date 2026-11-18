@@ -263,3 +263,23 @@ def test_stale_near_end_position_does_not_keep_polling_faster(tmp_path):
     now[0] = 112
     payload['progress_ms'] = 9000
     assert poller.fetch().next_poll_at == 114
+
+
+def test_publisher_uses_existing_poll_and_failure_does_not_break_playback(tmp_path):
+    now = [100.0]
+    publications, calls = [], []
+    def publish(result, cfg):
+        publications.append(result.status)
+        raise OSError('read-only snapshot directory')
+    def playback(**kwargs):
+        calls.append(1)
+        payload = playing()
+        payload.update(device={'name': 'Kitchen', 'type': 'speaker'}, shuffle_state=True, repeat_state='context')
+        return payload
+    poller = spotify.SpotifyPoller(settings, tmp_path/'token', clock=lambda: now[0],
+                                  client_factory=lambda _: SimpleNamespace(current_playback=playback), publisher=publish)
+    result = poller.fetch()
+    assert result.status == 'playing' and result.device_name == 'Kitchen'
+    assert result.shuffle is True and result.repeat == 'context'
+    assert poller.fetch() is result
+    assert len(calls) == len(publications) == 1

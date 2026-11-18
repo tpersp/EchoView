@@ -29,6 +29,7 @@ from echoview.utils import (
     CONFIG_PATH,
     is_ignored_folder,
 )
+from echoview.spotify_state import read_state, state_directory
 from echoview.web.spotify_auth import DEFAULT_SCOPE, validate_config, cached_status, oauth_client, auth_method
 from echoview.presentation import safe_area_settings, RESOURCE_PROFILES, EDGES
 from echoview.displays import (discover_monitors, reconcile_displays, mode_choices,
@@ -684,6 +685,28 @@ def configure_spotify():
                            spotify_status=cached_status(cfg["spotify"], SPOTIFY_CACHE_PATH))
 
 
+@main_bp.get("/spotify/now-playing")
+def spotify_now_playing():
+    cfg = load_config()
+    active = any(display.get('mode') == 'spotify' for display in cfg.get('displays', {}).values())
+    state = read_state(state_directory(VIEWER_HOME), cfg.get('spotify', {}), active)
+    if state.get('artwork'):
+        state['artwork'] = url_for('main.spotify_artwork', key=state['artwork'])
+    response = jsonify(state)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@main_bp.get("/spotify/artwork/<key>.jpg")
+def spotify_artwork(key):
+    if len(key) != 16 or any(char not in '0123456789abcdef' for char in key):
+        return 'Artwork unavailable', 404
+    path = state_directory(VIEWER_HOME) / f'art-{key}.jpg'
+    if not path.is_file():
+        return 'Artwork unavailable', 404
+    return send_file(path, mimetype='image/jpeg', max_age=3600)
+
+
 @main_bp.route("/spotify_auth")
 def spotify_auth():
     cfg = load_config().get("spotify", {})
@@ -975,6 +998,10 @@ def index():
 
                 # If Spotify, store extras
                 if new_mode == "spotify":
+                    layout = request.form.get(pre + 'spotify_layout', dcfg.get('spotify_layout', 'classic'))
+                    if layout not in ('classic', 'album_card', 'poster'):
+                        return 'Invalid Spotify layout.', 400
+                    dcfg['spotify_layout'] = layout
                     dcfg["fallback_mode"] = request.form.get(pre + "fallback_mode", dcfg.get("fallback_mode", "random_image"))
                     dcfg["spotify_show_song"] = True if request.form.get(pre + "spotify_show_song") else False
                     dcfg["spotify_show_artist"] = True if request.form.get(pre + "spotify_show_artist") else False

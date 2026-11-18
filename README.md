@@ -392,3 +392,28 @@ Update failure handling, private backups and service startup checks are document
 
 Audio services, output selection and silent-playback troubleshooting are covered
 in [audio setup](docs/audio.md).
+
+### Spotify layouts and web now playing
+
+In **Displays → Spotify**, choose **Classic** (existing artwork/overlay),
+**Album card** (artwork beside a text panel; stacks on portrait screens), or
+**Poster** (centered artwork with track details below). Classic remains the
+default. Card and Poster place text and progress automatically, retain text
+visibility, size and color settings, and respect output safe area and physical
+pixel aspect. Layout selection is included in display presets.
+
+The **Spotify** web page includes a read-only **Now playing** panel with artwork,
+track/episode information, elapsed/total time, device name and shuffle/repeat
+status. It reads a small local snapshot produced by the viewer's existing poll;
+opening the page does not call Spotify. It needs at least one display in Spotify
+mode. Paused playback freezes progress; stale/offline/authorization states are
+shown explicitly. Browser polling pauses while the tab is hidden.
+
+Snapshots and up to two 320px artwork thumbnails live in a private temporary
+folder identified by the service user and VIEWER_HOME (Linux shared memory when
+available, otherwise the system temporary directory). This avoids periodic
+SD-card writes on the Pi. Metadata is published
+atomically, tied to the current Spotify configuration, and expires after 45
+seconds without an update. Tokens and credentials are never included. Source
+media and the NAS are not used for these thumbnails. There are no playback
+controls and no additional Spotify permissions.

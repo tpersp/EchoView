@@ -1,6 +1,7 @@
 <div id="{{ dname }}_spotify_section" class="mode-section">
   <div class="section-heading"><h3>Track information</h3><span class="pill">Spotify</span></div>
   <div class="fields-grid">
+    {{ f.select(pre ~ 'spotify_layout','Display layout',dcfg.get('spotify_layout','classic'), [('classic','Classic · artwork with overlay'),('album_card','Album card · artwork beside details'),('poster','Poster · centered artwork and details')],help='Album card adapts to portrait screens. Card and Poster arrange text and progress automatically; text size, content and color still apply.') }}
     {{ f.select(pre ~ 'fallback_mode', 'When nothing is playing', dcfg.get('fallback_mode','random_image'), [('random_image','Random image / GIF'),('specific_image','Specific image / GIF'),('mixed','Multiple folders'),('none','Nothing')]) }}
     {{ f.input(pre ~ 'spotify_font_size', 'Text size', dcfg.get('spotify_font_size',18), 'number') }}
     {{ f.select(pre ~ 'spotify_info_position', 'Track information position', dcfg.get('spotify_info_position','bottom-center'), positions) }}

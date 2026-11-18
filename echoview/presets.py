@@ -11,7 +11,7 @@ PLAYBACK_KEYS = {
     'shuffle_videos', 'video_mute', 'video_volume', 'video_play_to_end', 'video_max_seconds',
     'spotify_show_song', 'spotify_show_artist', 'spotify_show_album', 'spotify_font_size',
     'spotify_negative_font', 'spotify_font_color', 'spotify_info_position',
-    'spotify_show_progress', 'spotify_progress_position', 'spotify_progress_theme',
+    'spotify_layout', 'spotify_show_progress', 'spotify_progress_position', 'spotify_progress_theme',
     'spotify_progress_update_interval', 'spotify_smooth_progress',
 }
 

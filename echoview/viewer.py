@@ -203,6 +203,9 @@ class DisplayWindow(QMainWindow):
 
         # New: Spotify progress bar and timer
         from echoview.progress_bar import SmoothProgressBar
+        from echoview.spotify_card import SpotifyCard
+        self.spotify_card = SpotifyCard(self.main_widget)
+        self.spotify_card.hide()
         self.spotify_timeline = ProgressTimeline()
         self.spotify_progress_bar = SmoothProgressBar(self.main_widget)
         self.spotify_progress_bar.hide()
@@ -288,6 +291,13 @@ class DisplayWindow(QMainWindow):
             self._layout_hls_video(rect)
             self.hls_video_widget.lower()
         self.bg_label.lower()
+        if hasattr(self, 'spotify_card') and self.spotify_card.isVisible():
+            self.spotify_card.setGeometry(rect)
+            self.spotify_card.raise_()
+            self._position_spotify_progress_bar(rect, margin)
+            if hasattr(self, 'overlay_config') and self.clock_label.isVisible():
+                self._place_overlay_label(self.clock_label, self.overlay_config.get('clock_position', 'bottom-center'), rect)
+            return
 
         self._correct_label_font(self.spotify_info_label, self.disp_cfg.get("spotify_font_size", 18), rect)
         self._correct_label_font(self.clock_label, getattr(self, "overlay_config", {}).get("clock_font_size", 26), rect)
@@ -336,6 +346,9 @@ class DisplayWindow(QMainWindow):
         if not self.spotify_progress_bar.isVisible():
             return
         ppos = self.disp_cfg.get("spotify_progress_position", "bottom-center")
+        if getattr(self, 'spotify_card', None) and self.spotify_card.isVisible():
+            ppos = 'bottom-center'
+            margin = max(margin, min(40, min(rect.width(), rect.height()) // 15))
         height = min(10, max(1, rect.height() - 2 * margin))
         x = rect.x() + margin
         width = max(1, rect.width() - 2 * margin)
@@ -944,6 +957,9 @@ class DisplayWindow(QMainWindow):
         self.spotify_fetch_id += 1
         self.spotify_info = None
         self.spotify_timeline.clear()
+        self.spotify_card.hide()
+        self.foreground_label.show()
+        self.bg_label.show()
         self.spotify_art_path = None
         self.spotify_fallback_due = 0
         self.stop_current_video()
@@ -1580,6 +1596,32 @@ class DisplayWindow(QMainWindow):
 
     def render_spotify(self, path):
         if self.spotify_info:
+            card = getattr(self, 'spotify_card', None)
+            if card and self.disp_cfg.get('spotify_layout', 'classic') in ('album_card', 'poster'):
+                if self.current_movie:
+                    self.current_movie.stop()
+                    self.current_movie = None
+                    self.foreground_label.setMovie(None)
+                    self.handling_gif_frames = False
+                self.foreground_label.hide()
+                self.bg_label.hide()
+                self.spotify_info_label.hide()
+                card.set_track(path, self.spotify_info, self.disp_cfg, self.physical_pixel_aspect())
+                card.show()
+                if self.disp_cfg.get('spotify_show_progress', False):
+                    self.spotify_progress_bar.show()
+                    self.spotify_progress_bar.setTheme(self.disp_cfg.get('spotify_progress_theme', 'dark'))
+                    frame_ms = (50 if self.disp_cfg.get('spotify_smooth_progress', True) else
+                                bounded_int(self.disp_cfg.get('spotify_progress_update_interval', 200), 200, 50, 5000))
+                    self.spotify_progress_timer.start(max(self.resource_options['progress_interval'], frame_ms))
+                    self.update_spotify_progress()
+                self.setup_layout()
+                return
+            if card and card.isVisible():
+                card.hide()
+                self.foreground_label.show()
+                self.bg_label.show()
+                self.spotify_art_path = None
             if path and path != getattr(self, "spotify_art_path", None):
                 self.show_foreground_image(path, is_spotify=True)
             elif not path:
@@ -1626,6 +1668,11 @@ class DisplayWindow(QMainWindow):
             self.spotify_info_label.raise_()
             self.setup_layout()
         else:
+            card = getattr(self, 'spotify_card', None)
+            if card:
+                card.hide()
+                self.foreground_label.show()
+                self.bg_label.show()
             self.spotify_art_path = None
             self.spotify_info_label.setText("")
             self.spotify_info_label.hide()

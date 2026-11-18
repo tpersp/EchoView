@@ -27,6 +27,10 @@ class Playback:
     art_path: str = ""
     next_poll_at: float = 0
     track_id: str = ""
+    device_name: str = ""
+    device_type: str = ""
+    shuffle: bool = False
+    repeat: str = "off"
 
 
 def number(value):
@@ -53,9 +57,14 @@ def normalize_playback(current, now):
     artist = ", ".join(str(a.get("name") or "") for a in artists if isinstance(a, dict)) if isinstance(artists, list) else ""
     images = (item.get("images") or show.get("images") or []) if kind == "episode" else (album.get("images") or [])
     urls = [img["url"] for img in images if isinstance(img, dict) and isinstance(img.get("url"), str)] if isinstance(images, list) else []
+    device = current.get("device") or {}
+    if not isinstance(device, dict):
+        device = {}
     return Playback(
         "playing" if current.get("is_playing") else "paused",
         track_id=str(item.get("uri") or item.get("id") or ""),
+        device_name=str(device.get("name") or ""), device_type=str(device.get("type") or ""),
+        shuffle=bool(current.get("shuffle_state")), repeat=str(current.get("repeat_state") or "off"),
         song=str(item.get("name") or ""),
         artist=str(show.get("publisher") or show.get("name") or "") if kind == "episode" else artist,
         album=str(show.get("name") or "") if kind == "episode" else str(album.get("name") or ""),
@@ -85,12 +94,13 @@ def error_policy(exc, failures):
 
 
 class SpotifyPoller:
-    def __init__(self, config_loader, cache_path, clock=time.monotonic, client_factory=None, artwork_get=requests.get):
+    def __init__(self, config_loader, cache_path, clock=time.monotonic, client_factory=None, artwork_get=requests.get, publisher=None):
         self.config_loader = config_loader
         self.cache_path = cache_path
         self.clock = clock
         self.client_factory = client_factory or self._client
         self.artwork_get = artwork_get
+        self.publisher = publisher
         self.lock = threading.Lock()
         self.key = None
         self.auth = None
@@ -161,6 +171,7 @@ class SpotifyPoller:
         """Call on a worker. A single lock coalesces windows and token refreshes."""
         with self.lock:
             request_started = None
+            cfg = {}
             try:
                 cfg = self.config_loader().get("spotify", {})
                 key = tuple(str(cfg.get(k) or "") for k in ("client_id", "client_secret", "redirect_uri", "scope", "auth_method"))
@@ -211,6 +222,11 @@ class SpotifyPoller:
                 # Provider Retry-After and error backoff begin after the response.
                 self.next_poll = self.clock() + delay
             self.result = replace(result, next_poll_at=self.next_poll)
+            if self.publisher:
+                try:
+                    self.publisher(self.result, cfg)
+                except (OSError, ValueError):
+                    pass  # A web snapshot failure must not interrupt the display.
             return self.result
 
     def close(self):
@@ -233,5 +249,8 @@ def shared_poller():
         if _shared is None:
             from echoview.utils import load_config
             from echoview.config import SPOTIFY_CACHE_PATH
-            _shared = SpotifyPoller(load_config, SPOTIFY_CACHE_PATH)
+            from echoview.config import VIEWER_HOME
+            from echoview.spotify_state import StatePublisher, state_directory
+            _shared = SpotifyPoller(load_config, SPOTIFY_CACHE_PATH,
+                                    publisher=StatePublisher(state_directory(VIEWER_HOME)))
         return _shared

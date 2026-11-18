@@ -4,6 +4,7 @@
 {% block content %}
 <div class="page-section">
   <header class="page-header"><div><h1>Spotify</h1><p>Bring album artwork and track information to your displays.</p></div><span class="pill"><i class="fa-brands fa-spotify" aria-hidden="true"></i> Integration</span></header>
+  {% include 'components/now_playing.html' %}
   <div class="spotify-layout">
     <section class="card">
       <header class="panel-header"><div><h2>Connect your account</h2><p>Connect with your Client ID, then approve access on Spotify.</p></div></header>
@@ -36,6 +37,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='now_playing.js') }}"></script>
 <script>
   const method = document.getElementById('spotify-auth-method');
   const secret = document.getElementById('spotify-secret-field');
