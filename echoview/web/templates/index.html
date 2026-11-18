@@ -1,472 +1,107 @@
-{% extends "base.html" %}
-{% block title %}Viewer Controller{% endblock %}
+{% extends 'base.html' %}
+{% import 'components/fields.html' as f %}
+{% block title %}Displays{% endblock %}
 {% block content %}
-
-<div class="page-section" style="max-width:1200px;">
-
-  <!-- Top info row -->
-  <div style="text-align:center; display:flex; flex-wrap:wrap; gap:20px; margin-bottom:10px;">
-    <div>Hostname: {{ host }}</div>
-    <div>IP: {{ ipaddr }}</div>
-    <div>CPU: <span id="stat_cpu">{{ cpu }}%</span></div>
-    <div>Mem: <span id="stat_mem">{{ mem_line }}MB</span></div>
-    <div>Temp: <span id="stat_temp">{{ temp }}</span></div>
-    <div>Storage: <span id="stat_disk">{{ disk_usage }}</span></div>
-    {% if sub_info_line %}
-      <div>{{ sub_info_line }}</div>
-    {% endif %}
+{% set mode_labels = {'random_image':'Random image / GIF', 'specific_image':'Specific image / GIF', 'mixed':'Multiple folders', 'scheduled':'Scheduled playback', 'videos':'Videos', 'spotify':'Spotify now playing', 'web_page':'Web page', 'calibration':'Calibration pattern'} %}
+{% set positions = [('top-left','Top left'),('top-center','Top center'),('top-right','Top right'),('bottom-left','Bottom left'),('bottom-center','Bottom center'),('bottom-right','Bottom right')] %}
+<div class="page-section">
+  <header class="page-header">
+    <div><h1>Displays</h1><p>Set what plays on each screen.</p></div>
+    <div class="page-actions"><button type="button" class="quiet" data-open-details="display-presets"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Presets</button><a class="button" href="{{ url_for('main.upload_media') }}"><i class="fa-solid fa-folder-open" aria-hidden="true"></i> Browse media</a></div>
+  </header>
+  {% for message in get_flashed_messages() %}<div class="flash-message" role="status">{{ message }}</div>{% endfor %}
+  <div class="metrics-grid" aria-label="Device overview">
+    <section class="card metric"><div class="metric-label">Active outputs <i class="fa-solid fa-desktop" aria-hidden="true"></i></div><div class="metric-value">{{ monitors.values()|selectattr('active')|list|length }} <span class="metric-detail">/ {{ cfg.displays|length }}</span></div><div class="metric-detail">{{ host }}</div></section>
+    <section class="card metric"><div class="metric-label">Processor <i class="fa-solid fa-microchip" aria-hidden="true"></i></div><div class="metric-value" id="stat_cpu">{{ cpu }}%</div><div class="metric-detail">Temperature <span id="stat_temp">{{ temp }}</span></div></section>
+    <section class="card metric"><div class="metric-label">Memory <i class="fa-solid fa-memory" aria-hidden="true"></i></div><div class="metric-value" id="stat_mem">…</div><div class="metric-detail" id="stat_mem_total">Loading device memory</div></section>
+    <section class="card metric"><div class="metric-label">Media storage <i class="fa-solid fa-hard-drive" aria-hidden="true"></i></div><div class="metric-value" id="stat_disk">…</div><div class="metric-detail" id="stat_disk_total">Loading storage usage</div></section>
   </div>
-
-  {% for message in get_flashed_messages() %}
-    <div class="flash-message">{{ message }}</div>
-  {% endfor %}
-  <h2>Displays</h2>
-  <p>Choose what each display plays, then apply your changes.</p>
-  <details class="card display-presets">
-    <summary>Saved display presets</summary>
-    <p>Keep named playback setups and switch between them. Output resolution, safe area, device performance and credentials stay as configured.</p>
-    <form method="post" action="{{ url_for('main.display_presets') }}" id="save-preset-form">
-      <input type="hidden" name="action" value="save">
-      <label>Preset name <input name="name" maxlength="48" required placeholder="Evening slideshow"></label>
-      <button type="submit">Save applied setup</button>
-      <small>Apply any unsaved display changes first.</small>
-    </form>
-    {% if cfg.display_presets %}
-    <form method="post" action="{{ url_for('main.display_presets') }}">
-      <label>Preset <select name="name">
-        {% for name in cfg.display_presets %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
-      </select></label>
-      <button type="submit" name="action" value="apply">Apply preset</button>
-      <button type="submit" name="action" value="delete" onclick="return confirm('Delete this preset? Media files and playback will stay unchanged.')">Delete preset</button>
-    </form>
-    {% else %}<p>No presets saved yet.</p>{% endif %}
-  </details>
-  <!-- Multi-monitor: one card per display -->
-  <form method="POST" id="display-settings-form">
+  <form method="post" id="display-settings-form">
     <input type="hidden" name="action" value="update_displays">
-    <div class="row g-3">
-      {% for dname, dcfg in cfg.displays.items() %}
-      <div class="col d-flex">
-        <div class="card h-100 flex-fill text-center">
-        <h3>{{ dname }} ({{ monitors.get(dname, {}).get('resolution', 'Unknown') }})</h3>
-        <!-- Display Settings for this monitor -->
-        <div>
-          <!-- Mode -->
-          <label>Mode:</label><br>
-          <select name="{{ dname }}_mode" id="{{ dname }}_mode">
-            <option value="random_image"   {% if dcfg.mode=="random_image" %}selected{% endif %}>Random Image/GIF</option>
-            <option value="specific_image" {% if dcfg.mode=="specific_image" %}selected{% endif %}>Specific Image/GIF</option>
-            <option value="mixed"          {% if dcfg.mode=="mixed" %}selected{% endif %}>Mixed (Multiple Folders)</option>
-            <option value="scheduled" {% if dcfg.mode=='scheduled' %}selected{% endif %}>Scheduled playback</option>
-            <option value="videos"         {% if dcfg.mode=="videos" %}selected{% endif %}>Videos</option>
-            <option value="spotify"        {% if dcfg.mode=="spotify" %}selected{% endif %}>Spotify Now Playing</option>
-            <option value="web_page"       {% if dcfg.mode=="web_page" %}selected{% endif %}>Web Page</option>
-            <option value="calibration" {% if dcfg.mode=="calibration" %}selected{% endif %}>Calibration Pattern</option>
-          </select>
-          <br><br>
-
-          <!-- Spotify Settings -->
-          <div id="{{ dname }}_spotify_section" class="mode-section">
-            <label>Fallback Mode:</label><br>
-            <select name="{{ dname }}_fallback_mode">
-              <option value="random_image"   {% if dcfg.fallback_mode=="random_image" %}selected{% endif %}>Random Image/GIF</option>
-              <option value="specific_image" {% if dcfg.fallback_mode=="specific_image" %}selected{% endif %}>Specific Image/GIF</option>
-              <option value="mixed"          {% if dcfg.fallback_mode=="mixed" %}selected{% endif %}>Mixed (Multiple Folders)</option>
-              <option value="none"           {% if dcfg.fallback_mode=="none" %}selected{% endif %}>None</option>
-            </select>
-            <br><br>
-            <!-- Spotify Info Options as inline checkboxes -->
-            <div style="display:flex; flex-wrap:wrap; gap:10px; justify-content:center;">
-              <label style="display:inline-block;">
-                <input type="checkbox" name="{{ dname }}_spotify_show_song" value="1" {% if dcfg.spotify_show_song is not defined or dcfg.spotify_show_song %}checked{% endif %}>
-                Song Title
-              </label>
-              <label style="display:inline-block;">
-                <input type="checkbox" name="{{ dname }}_spotify_show_artist" value="1" {% if dcfg.spotify_show_artist is not defined or dcfg.spotify_show_artist %}checked{% endif %}>
-                Artist
-              </label>
-              <label style="display:inline-block;">
-                <input type="checkbox" name="{{ dname }}_spotify_show_album" value="1" {% if dcfg.spotify_show_album is not defined or dcfg.spotify_show_album %}checked{% endif %}>
-                Album
-              </label>
-              <label style="display:inline-block;">
-                <input type="checkbox" name="{{ dname }}_spotify_show_progress" value="1" {% if dcfg.spotify_show_progress is defined and dcfg.spotify_show_progress %}checked{% endif %}>
-                Live Playback Progress
-              </label>
-              <label style="display:inline-block;">
-                <input type="checkbox" class="spotify-negative-font" id="{{ dname }}_spotify_negative_font" name="{{ dname }}_spotify_negative_font" value="1" {% if dcfg.spotify_negative_font is not defined or dcfg.spotify_negative_font %}checked{% endif %}>
-                Auto Negative Font
-              </label>
-              <span id="{{ dname }}_spotify_font_color_container" style="display:inline-block; margin-left:10px;">
-                <label>Font Color:</label>
-                <input type="color" name="{{ dname }}_spotify_font_color" value="{{ dcfg.spotify_font_color|default('#FFFFFF') }}">
-              </span>
-            </div>
-            <br>
-            <label>Spotify Font Size:</label>
-            <input type="number" name="{{ dname }}_spotify_font_size" value="{{ dcfg.spotify_font_size|default(18) }}" style="width:60px;">
-            <br><br>
-            <!-- Spotify Info Position Dropdown -->
-            <label>Spotify Info Position:</label><br>
-            <select name="{{ dname }}_spotify_info_position">
-              <option value="top-left" {% if dcfg.spotify_info_position=="top-left" %}selected{% endif %}>Top Left</option>
-              <option value="top-center" {% if dcfg.spotify_info_position=="top-center" %}selected{% endif %}>Top Center</option>
-              <option value="top-right" {% if dcfg.spotify_info_position=="top-right" %}selected{% endif %}>Top Right</option>
-              <option value="bottom-left" {% if dcfg.spotify_info_position=="bottom-left" %}selected{% endif %}>Bottom Left</option>
-              <option value="bottom-center" {% if dcfg.spotify_info_position=="bottom-center" or dcfg.spotify_info_position is not defined %}selected{% endif %}>Bottom Center</option>
-              <option value="bottom-right" {% if dcfg.spotify_info_position=="bottom-right" %}selected{% endif %}>Bottom Right</option>
-            </select>
-            <br><br>
-            <!-- New: Progress Bar settings -->
-            <label>Progress Bar Position:</label><br>
-            <select name="{{ dname }}_spotify_progress_position">
-              <option value="above_info" {% if dcfg.spotify_progress_position=="above_info" %}selected{% endif %}>Above Info</option>
-              <option value="below_info" {% if dcfg.spotify_progress_position=="below_info" or dcfg.spotify_progress_position is not defined %}selected{% endif %}>Below Info</option>
-              <option value="top-center" {% if dcfg.spotify_progress_position=="top-center" %}selected{% endif %}>Top Center</option>
-              <option value="bottom-center" {% if dcfg.spotify_progress_position=="bottom-center" %}selected{% endif %}>Bottom Center</option>
-            </select>
-            <br><br>
-            <label>Progress Bar Theme:</label><br>
-            <select name="{{ dname }}_spotify_progress_theme">
-              <option value="dark" {% if dcfg.spotify_progress_theme=="dark" or dcfg.spotify_progress_theme is not defined %}selected{% endif %}>Dark</option>
-              <option value="spotify" {% if dcfg.spotify_progress_theme=="spotify" %}selected{% endif %}>Spotify</option>
-              <option value="coffee" {% if dcfg.spotify_progress_theme=="coffee" %}selected{% endif %}>Coffee</option>
-              <option value="light" {% if dcfg.spotify_progress_theme=="light" %}selected{% endif %}>Light</option>
-            </select>
-            <br><br>
-          </div>
-
-          <!-- Random/Mixed Settings -->
-          {% include 'schedule_editor.html' %}
-          <div id="{{ dname }}_random_section" class="mode-section">
-            <label>Interval (sec):</label><br>
-            <input type="number" name="{{ dname }}_image_interval" value="{{ dcfg.image_interval }}" min="1" max="86400">
-            <br><br>
-            <div id="{{ dname }}_manual_image_shuffle">
-            <label>Shuffle?</label><br>
-            <select name="{{ dname }}_shuffle_mode">
-              <option value="yes" {% if dcfg.shuffle_mode %}selected{% endif %}>Yes</option>
-              <option value="no"  {% if not dcfg.shuffle_mode %}selected{% endif %}>No</option>
-            </select>
-            <br><br>
-            </div>
-          </div>
-
-          <!-- Rotate -->
-          <label>Rotate (degrees):</label><br>
-          <input type="number" name="{{ dname }}_rotate" value="{{ dcfg.rotate|default(0) }}">
-          <br><br>
-
-          <!-- Aspect Filter -->
-          <div id="{{ dname }}_aspect_container">
-            <label>Aspect Filter:</label><br>
-            <select name="{{ dname }}_aspect_filter">
-              <option value="any" {% if dcfg.aspect_filter is not defined or dcfg.aspect_filter=='any' %}selected{% endif %}>Any</option>
-              <option value="square" {% if dcfg.aspect_filter=='square' %}selected{% endif %}>1:1 (Square)</option>
-              <option value="landscape" {% if dcfg.aspect_filter=='landscape' %}selected{% endif %}>16:9 (Landscape)</option>
-              <option value="portrait" {% if dcfg.aspect_filter=='portrait' %}selected{% endif %}>9:16 (Portrait)</option>
-            </select>
-          </div>
-          <br>
-
-          <!-- Category selection for Random/Specific -->
-          <div id="{{ dname }}_category_section" class="mode-section">
-            <label>Category (subfolder):</label><br>
-            <select name="{{ dname }}_image_category">
-              <option value="" {% if not dcfg.image_category %}selected{% endif %}>All</option>
-              {% if dcfg.image_category and dcfg.image_category not in subfolders %}
-              <option value="{{ dcfg.image_category }}" selected>{{ dcfg.image_category }} (unavailable)</option>
-              {% endif %}
-              {% for sf in subfolders %}
-                <option value="{{ sf }}" {% if dcfg.image_category==sf %}selected{% endif %}>
-                  {{ sf }}
-                </option>
-              {% endfor %}
-            </select>
-            <br><br>
-          </div>
-
-          <!-- Mixed Folders UI -->
-          <div id="{{ dname }}_mixed_section" class="mode-section">
-            <label>Multiple Folders (drag to reorder):</label><br>
-            <input type="text" placeholder="Search..." id="{{ dname }}_search" style="width:90%;"><br>
-            <div style="display:flex; gap:10px; margin-top:10px;">
-              <ul id="{{ dname }}_availList" style="flex:1; list-style:none; border:1px solid var(--border-muted); padding:5px;">
-                {% for sf in subfolders %}
-                  {% if sf not in dcfg.mixed_folders %}
-                    <li draggable="true" data-folder="{{ sf }}" style="margin:4px; border:1px solid #666; border-radius:4px; cursor:move; padding:4px;">
-                      {{ sf }}
-                    </li>
-                  {% endif %}
-                {% endfor %}
-              </ul>
-              <ul id="{{ dname }}_selList" style="flex:1; list-style:none; border:1px solid var(--border-muted); padding:5px;">
-                {% for sf in dcfg.mixed_folders %}
-                    <li draggable="true" data-folder="{{ sf }}" style="margin:4px; border:1px solid #666; border-radius:4px; cursor:move; padding:4px;">
-                      {{ sf }}
-                    </li>
-                {% endfor %}
-              </ul>
-            </div>
-            <input type="hidden" name="{{ dname }}_mixed_order" id="{{ dname }}_mixed_order" value='{{ dcfg.mixed_folders|default([])|tojson }}'>
-            <br>
-          </div>
-
-          <!-- Video Settings -->
-          <div id="{{ dname }}_videos_section" class="mode-section">
-            <div id="{{ dname }}_manual_video_selection">
-            <label>Video selection:</label><br>
-            <select name="{{ dname }}_specific_video">
-              <option value="">All videos in folder</option>
-              {% if dcfg.specific_video %}<option value="{{ dcfg.specific_video }}" selected>{{ dcfg.specific_video }}</option>{% endif %}
-            </select>
-            <p><small>Choose an individual video using “Play on display” in <a href="{{ url_for('main.upload_media') }}">Media</a>.</small></p>
-            <label>Video Category (subfolder):</label><br>
-            <select name="{{ dname }}_video_category">
-              <option value="" {% if not dcfg.video_category %}selected{% endif %}>All</option>
-              {% if dcfg.video_category and dcfg.video_category not in subfolders %}
-              <option value="{{ dcfg.video_category }}" selected>{{ dcfg.video_category }} (unavailable)</option>
-              {% endif %}
-              {% for sf in subfolders %}
-                <option value="{{ sf }}" {% if dcfg.video_category==sf %}selected{% endif %}>
-                  {{ sf }}
-                </option>
-              {% endfor %}
-            </select>
-            <br><br>
-            <label>Shuffle Videos?</label><br>
-            <select name="{{ dname }}_shuffle_videos">
-              <option value="yes" {% if dcfg.shuffle_videos %}selected{% endif %}>Yes</option>
-              <option value="no" {% if not dcfg.shuffle_videos %}selected{% endif %}>No</option>
-            </select>
-            <br><br>
-            </div>
-            <h4>Video playback preferences</h4>
-            <label>Mute by Default:</label>
-            <input type="checkbox" name="{{ dname }}_video_mute" id="{{ dname }}_video_mute" class="video-mute" value="1" {% if dcfg.video_mute is not defined or dcfg.video_mute %}checked{% endif %}>
-            <br><br>
-            <div id="{{ dname }}_volume_container">
-              <label>Volume:</label>
-              <input type="number" name="{{ dname }}_video_volume" value="{{ dcfg.video_volume|default(100) }}" min="0" max="100" style="width:60px;">
-              <br><br>
-            </div>
-            <label>Play to End:</label>
-            <input type="checkbox" name="{{ dname }}_video_play_to_end" id="{{ dname }}_video_play_to_end" class="video-play-to-end" value="1" {% if dcfg.video_play_to_end is not defined or dcfg.video_play_to_end %}checked{% endif %}>
-            <br><br>
-            <div id="{{ dname }}_max_seconds_container">
-              <label>Max play seconds:</label>
-              <input type="number" name="{{ dname }}_video_max_seconds" value="{{ dcfg.video_max_seconds|default(120) }}" style="width:80px;">
-            </div>
-            <br>
-          </div>
-
-          <!-- Specific Image selection -->
-          <div id="{{ dname }}_specific_image_section" class="mode-section">
-            <label>Select Image/GIF:</label><br>
-            <input type="hidden" name="{{ dname }}_specific_image" id="{{ dname }}_specific_value" value="{{ dcfg.specific_image }}">
-            <p>Selected: <span id="{{ dname }}_specific_selected">{{ dcfg.specific_image or 'None' }}</span></p>
-            <div class="specific-picker" data-display="{{ dname }}" data-url="{{ url_for('main.media_images') }}">
-              <label>Find an image <input type="search" class="specific-search" placeholder="Search filenames"></label>
-              <button type="button" class="specific-search-button">Search</button>
-              <div class="specific-results" aria-live="polite"></div>
-              <button type="button" class="specific-more" hidden>Load more</button>
-            </div>
-            <br>
-          </div>
-
-          <!-- Web Page Settings -->
-          <div id="{{ dname }}_web_page_section" class="mode-section">
-            <label>Web URL:</label><br>
-            {#
-              Use a datalist to provide quick access to previously saved
-              websites. Users can still enter any URL manually.  Check the
-              box below to remember the URL for future use.
-            #}
-            <input type="text"
-                   class="web-url-input"
-                   data-display="{{ dname }}"
-                   name="{{ dname }}_web_url"
-                   list="{{ dname }}_saved_sites"
-                   value="{{ dcfg.web_url|default('') }}"
-                   style="width:90%;" placeholder="https://example.com">
-            <datalist id="{{ dname }}_saved_sites">
-              {% if cfg.saved_websites is defined %}
-                {% for site in cfg.saved_websites %}
-                  {% if site is string %}
-                    <option value="{{ site }}">{{ site }}</option>
-                  {% elif site.url is defined %}
-                    {% set label = site.title or site.provider or site.url %}
-                    <option value="{{ site.url }}">{{ label }}</option>
-                  {% else %}
-                    {% set fallback_url = site.get('url', '') %}
-                    {% set label = site.get('title', site.get('provider', fallback_url)) %}
-                    <option value="{{ fallback_url }}">{{ label }}</option>
-                  {% endif %}
-                {% endfor %}
-              {% endif %}
-            </datalist>
-            <div style="margin-top:8px; display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap;">
-              <button type="button"
-                      class="button small refresh-embed-btn"
-                      data-display="{{ dname }}">Refresh Metadata</button>
-              <span id="{{ dname }}_embed_status" class="embed-status">
-                {% set meta = dcfg.embed_metadata %}
-                {% if meta %}
-                  {{ meta.embed_type|default('iframe')|capitalize }} detected
-                {% else %}
-                  No metadata cached
-                {% endif %}
-              </span>
-              <span id="{{ dname }}_embed_error" class="embed-error" style="color:#ff6666;"></span>
-            </div>
-            <label style="display:block; margin-top:10px; color: var(--text-normal);">
-              <input type="checkbox"
-                     name="{{ dname }}_web_use_external_browser"
-                     value="1"
-                     {% if dcfg.web_use_external_browser %}checked{% endif %}>
-              Open this page in Chromium instead of the built-in web view
-            </label>
-            <small style="display:block; margin-top:5px; color: var(--text-normal);">
-              Helpful for heavier sites or pages that embed YouTube/video content and buffer inside Qt WebEngine.
-            </small>
-            <div id="{{ dname }}_embed_metadata" class="embed-metadata" style="margin-top:10px; color: var(--text-normal);">
-              {% if meta %}
-                {% if meta.title %}
-                  <div><strong>{{ meta.title }}</strong></div>
-                {% endif %}
-                <div>
-                  {{ meta.provider|default('Unknown provider') }}
-                  {% if meta.content_type %} &mdash; {{ meta.content_type|capitalize }}{% endif %}
-                </div>
-                {% if meta.thumbnail_url %}
-                  <div style="margin-top:6px;">
-                    <img src="{{ meta.thumbnail_url }}" alt="thumbnail" style="max-width:200px; border-radius:4px;">
-                  </div>
-                {% endif %}
-                {% if meta.canonical_url %}
-                  <div style="margin-top:6px;"><code style="font-size:0.85em;">{{ meta.canonical_url }}</code></div>
-                {% endif %}
-              {% else %}
-                <div style="font-style:italic;">Enter a URL and refresh metadata.</div>
-              {% endif %}
-            </div>
-            <div id="{{ dname }}_youtube_controls"
-                 class="youtube-options"
-                 data-display="{{ dname }}"
-                 style="margin-top:12px; {% if meta and meta.embed_type == 'youtube' %}display:flex; flex-wrap:wrap; justify-content:center; gap:10px;{% else %}display:none;{% endif %}">
-              <div style="font-weight:bold; margin-bottom:6px;">YouTube Playback Options</div>
-              <label style="margin-right:12px;">
-                <input type="checkbox"
-                       name="{{ dname }}_youtube_autoplay"
-                       {% if dcfg.youtube_autoplay %}checked{% endif %}>
-                Autoplay
-              </label>
-              <label style="margin-right:12px;">
-                <input type="checkbox"
-                       name="{{ dname }}_youtube_mute"
-                       {% if dcfg.youtube_mute %}checked{% endif %}>
-                Mute on load
-              </label>
-              <label style="margin-right:12px;">
-                <input type="checkbox"
-                       name="{{ dname }}_youtube_captions"
-                       {% if dcfg.youtube_captions %}checked{% endif %}>
-                Closed captions
-              </label>
-              <label style="margin-right:12px;">
-                Quality:
-                <select name="{{ dname }}_youtube_quality">
-                  {% set qual = dcfg.youtube_quality|default('default') %}
-                  {% set options = [
-                    ('default', 'Default'),
-                    ('small', '144p'),
-                    ('medium', '360p'),
-                    ('large', '480p'),
-                    ('hd720', '720p'),
-                    ('hd1080', '1080p'),
-                    ('highres', 'Highest available')
-                  ] %}
-                  {% for qvalue, qlabel in options %}
-                    <option value="{{ qvalue }}" {% if qual == qvalue %}selected{% endif %}>{{ qlabel }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-            </div>
-            <label style="display:block; margin-top:10px; color: var(--text-normal);">
-              <input type="checkbox" name="{{ dname }}_save_web" value="1"> Save this URL
-            </label>
-            <small style="display:block; margin-top:5px; color: var(--text-normal);">
-              Saved websites appear as suggestions for all displays.
-            </small>
-            <br><br>
-          </div>
-
+    <div class="display-panels">
+    {% for dname, dcfg in cfg.displays.items() %}
+      {% set pre = dname ~ '_' %}{% set output = monitors.get(dname,{}) %}
+      <section class="card display-panel">
+        <header class="display-panel-header">
+          <div class="display-identity"><span class="panel-icon"><i class="fa-solid fa-display" aria-hidden="true"></i></span><div><h2>{{ dname }}</h2><small>{{ output.resolution|default('Unknown') }}{% if output.refresh %} · {{ output.refresh }} Hz{% endif %}</small></div></div>
+          <span class="pill{% if output.active %} active{% endif %}">{{ 'Active output' if output.active else ('Connected' if output.connected else 'Unavailable') }}</span>
+        </header>
+        <label class="field display-mode"><span class="field-label">Playback mode</span><select name="{{ pre }}mode" id="{{ pre }}mode">{% for mode,label in mode_labels.items() %}<option value="{{ mode }}"{% if dcfg.mode == mode %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+        {% include 'schedule_editor.html' %}
+        <div id="{{ pre }}random_section" class="mode-section"><div class="fields-grid">
+          {{ f.input(pre ~ 'image_interval','Image interval (seconds)',dcfg.image_interval,'number',min=1,max=86400) }}
+          <div id="{{ pre }}manual_image_shuffle">{{ f.select(pre ~ 'shuffle_mode','Playback order','yes' if dcfg.shuffle_mode else 'no',[('no','In order'),('yes','Shuffle')]) }}</div>
+        </div></div>
+        <div id="{{ pre }}category_section" class="mode-section"><label class="field"><span class="field-label">Media folder</span><select name="{{ pre }}image_category">
+          <option value=""{% if not dcfg.image_category %} selected{% endif %}>Root folder</option>
+          {% if dcfg.image_category and dcfg.image_category not in subfolders %}<option value="{{ dcfg.image_category }}" selected>{{ dcfg.image_category }} (unavailable)</option>{% endif %}
+          {% for folder in subfolders %}<option value="{{ folder }}"{% if dcfg.image_category == folder %} selected{% endif %}>{{ folder }}</option>{% endfor %}
+        </select></label></div>
+        <div id="{{ pre }}mixed_section" class="mode-section">
+          <label class="field"><span class="field-label">Find folders</span><input type="search" id="{{ pre }}search" placeholder="Search your folders"></label>
+          <div class="mixed-lists"><div><span class="field-label">Available folders</span><ul id="{{ pre }}availList" class="mixed-list">{% for folder in subfolders %}{% if folder not in dcfg.mixed_folders %}<li class="mixed-item" draggable="true" data-folder="{{ folder }}" tabindex="0" role="button">{{ folder }}</li>{% endif %}{% endfor %}</ul></div>
+            <div><span class="field-label">Play order <small>· Drag to reorder</small></span><ul id="{{ pre }}selList" class="mixed-list">{% for folder in dcfg.mixed_folders %}<li class="mixed-item" draggable="true" data-folder="{{ folder }}" tabindex="0" role="button">{{ folder }}</li>{% endfor %}</ul></div></div>
+          <input type="hidden" name="{{ pre }}mixed_order" id="{{ pre }}mixed_order" value='{{ dcfg.mixed_folders|default([])|tojson }}'>
         </div>
+        <div id="{{ pre }}specific_image_section" class="mode-section">
+          <div class="section-heading"><h3>Choose an image</h3><small>Selected: <span id="{{ pre }}specific_selected">{{ dcfg.specific_image or 'None' }}</span></small></div>
+          <input type="hidden" name="{{ pre }}specific_image" id="{{ pre }}specific_value" value="{{ dcfg.specific_image }}">
+          <div class="specific-picker" data-display="{{ dname }}" data-url="{{ url_for('main.media_images') }}"><div class="inline-form"><label class="field"><span class="field-label">Search images</span><input type="search" class="specific-search" placeholder="Find a filename"></label><button type="button" class="specific-search-button">Search</button></div><div class="specific-results" aria-live="polite"></div><button type="button" class="specific-more" hidden>Load more</button></div>
         </div>
-      </div>
-      {% endfor %}
+        <div id="{{ pre }}videos_section" class="mode-section">
+          <div id="{{ pre }}manual_video_selection"><div class="fields-grid">
+            {{ f.select(pre ~ 'specific_video','Video selection',dcfg.get('specific_video',''), [('','All videos in folder')] + ([(dcfg.specific_video,dcfg.specific_video)] if dcfg.specific_video else []),help='Choose individual videos from Media → Play on display.') }}
+            <label class="field"><span class="field-label">Video folder</span><select name="{{ pre }}video_category"><option value=""{% if not dcfg.video_category %} selected{% endif %}>Root folder</option>{% if dcfg.video_category and dcfg.video_category not in subfolders %}<option value="{{ dcfg.video_category }}" selected>{{ dcfg.video_category }} (unavailable)</option>{% endif %}{% for folder in subfolders %}<option value="{{ folder }}"{% if dcfg.video_category == folder %} selected{% endif %}>{{ folder }}</option>{% endfor %}</select></label>
+            {{ f.select(pre ~ 'shuffle_videos','Video order','yes' if dcfg.shuffle_videos else 'no',[('no','In order'),('yes','Shuffle')]) }}
+          </div></div>
+          <details class="playback-options" open><summary>Video playback preferences</summary><div class="fields-grid">
+            {{ f.toggle(pre ~ 'video_mute','Mute audio',dcfg.get('video_mute',true),id=pre ~ 'video_mute',css='video-mute') }}
+            <div id="{{ pre }}volume_container">{{ f.input(pre ~ 'video_volume','Volume',dcfg.get('video_volume',100),'number',min=0,max=100) }}</div>
+            {{ f.toggle(pre ~ 'video_play_to_end','Play to end',dcfg.get('video_play_to_end',true),id=pre ~ 'video_play_to_end',css='video-play-to-end') }}
+            <div id="{{ pre }}max_seconds_container">{{ f.input(pre ~ 'video_max_seconds','Maximum seconds',dcfg.get('video_max_seconds',120),'number') }}</div>
+          </div></details>
+        </div>
+        {% include 'components/display_spotify.html' %}
+        {% include 'components/display_web.html' %}
+        <details class="playback-options"><summary>Image appearance</summary><div class="fields-grid">
+          {{ f.input(pre ~ 'rotate','Rotation (degrees)',dcfg.get('rotate',0),'number') }}
+          <div id="{{ pre }}aspect_container">{{ f.select(pre ~ 'aspect_filter','Aspect filter',dcfg.get('aspect_filter','any'), [('any','Any'),('square','1:1 (Square)'),('landscape','16:9 (Landscape)'),('portrait','9:16 (Portrait)')]) }}</div>
+        </div></details>
+      </section>
+    {% endfor %}
     </div>
-    <br>
-    <div style="text-align:center;">
-      <p id="display-save-status" role="status"></p>
-      <button type="submit" id="display-save-button">Apply to displays</button>
-    </div>
+    <div class="card save-bar"><p id="display-save-status" role="status">No unsaved changes</p><button type="submit" class="primary" id="display-save-button">Apply to displays</button></div>
   </form>
-  
-  <details class="display-advanced card">
-    <summary>Output resolution, safe area and calibration</summary>
-  {% for dname, dcfg in cfg.displays.items() %}
-    {% set output = monitors.get(dname, {}) %}
-    <form method="POST" action="{{ url_for('main.configure_output') }}" class="card" style="margin-bottom:15px; padding:15px;">
-      <h3>{{ dname }} — {{ 'Active' if output.active else ('Connected, inactive' if output.connected else 'Disconnected / unavailable') }}</h3>
-      <p>Actual: {{ output.resolution }}{% if output.refresh %} @ {{ output.refresh }} Hz{% endif %}. Saved preference: {{ dcfg.output_mode|default('auto') }}.</p>
-      <input type="hidden" name="display" value="{{ dname }}">
-      <label>Output resolution and refresh rate:
-        <select name="output_mode">
-          <option value="auto" {% if dcfg.output_mode|default('auto') == 'auto' %}selected{% endif %}>Automatic / preferred mode</option>
-          {% set choices = output.available_modes|default([]) %}
-          {% for choice in choices %}
-            <option value="{{ choice.value }}" {% if dcfg.output_mode == choice.value %}selected{% endif %}>{{ choice.label }}</option>
-          {% endfor %}
-          {% if dcfg.output_mode|default('auto') != 'auto' and dcfg.output_mode not in choices|map(attribute='value')|list %}
-            <option value="{{ dcfg.output_mode }}" selected>{{ dcfg.output_mode }} (not currently advertised)</option>
-          {% endif %}
-        </select>
-      </label>
-      <label>Physical display aspect ratio:
-        <select name="display_aspect">
-          {% for aspect in display_aspects %}
-          <option value="{{ aspect }}" {% if dcfg.display_aspect|default('auto') == aspect %}selected{% endif %}>{{ 'Auto (composite 4:3; otherwise square pixels)' if aspect == 'auto' else aspect }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <p>Match the aspect setting to your physical screen. It corrects images, GIFs, Spotify artwork and video; web-page layout follows the output raster.</p>
-      {% if output.kind == 'composite' %}<p>RCA exposes standard-definition modes only. Choose PAL/NTSC with the boot-profile helper; this control cannot create an HDMI resolution on RCA.</p>{% endif %}
-      <button type="submit" {% if not output.connected %}disabled{% endif %}>Apply output settings</button>
-    </form>
-    <form method="POST" action="{{ url_for('main.configure_presentation') }}" class="card" style="margin-bottom:15px; padding:15px;">
-      <h3>{{ dname }} — Safe area</h3>
-      <input type="hidden" name="display" value="{{ dname }}">
-      <p>Inset each edge to keep media, clocks and track information clear of TV overscan. Zero preserves the full output area.</p>
-      {% set margins = dcfg.safe_area if dcfg.safe_area is mapping else {} %}
-      {% for edge in ['left', 'right', 'top', 'bottom'] %}
-      <label>{{ edge|capitalize }} (%):
-        <input type="number" name="safe_{{ edge }}" min="0" max="20" step="any" value="{{ margins.get(edge, 0) }}" required>
-      </label>
+  <div class="utility-panels">
+    <details class="card foldout display-presets" id="display-presets"><summary><i class="fa-regular fa-bookmark" aria-hidden="true"></i> Saved display presets</summary>
+      <p class="help-text">Keep named playback setups. Output resolution, safe area, device performance and credentials stay as configured.</p>
+      <form method="post" action="{{ url_for('main.display_presets') }}" id="save-preset-form"><input type="hidden" name="action" value="save"><label class="field"><span class="field-label">Preset name</span><input name="name" maxlength="48" required placeholder="Evening slideshow"></label><div class="form-actions"><button type="submit">Save applied setup</button><small>Apply unsaved display changes first.</small></div></form>
+      {% if cfg.display_presets %}<hr><form method="post" action="{{ url_for('main.display_presets') }}"><label class="field"><span class="field-label">Choose a preset</span><select name="name">{% for name in cfg.display_presets %}<option value="{{ name }}">{{ name }}</option>{% endfor %}</select></label><div class="form-actions"><button type="submit" name="action" value="apply">Apply preset</button><button type="submit" name="action" value="delete" class="quiet danger-text" onclick="return confirm('Delete this preset? Media files and playback will stay unchanged.')">Delete preset</button></div></form>{% else %}<p class="help-text form-actions">No presets saved yet.</p>{% endif %}
+    </details>
+    <details class="display-advanced card foldout"><summary><i class="fa-solid fa-display" aria-hidden="true"></i> Output resolution, safe area and calibration</summary>
+      {% for dname, dcfg in cfg.displays.items() %}{% set output = monitors.get(dname,{}) %}
+      <form method="post" action="{{ url_for('main.configure_output') }}" class="output-form">
+        <h3>{{ dname }} — {{ 'Active' if output.active else ('Connected, inactive' if output.connected else 'Disconnected / unavailable') }}</h3>
+        <p class="help-text">Actual: {{ output.resolution }}{% if output.refresh %} @ {{ output.refresh }} Hz{% endif %}. Saved preference: {{ dcfg.output_mode|default('auto') }}.</p>
+        <input type="hidden" name="display" value="{{ dname }}">
+        <div class="fields-grid">
+          <label class="field"><span class="field-label">Output resolution and refresh rate</span><select name="output_mode"><option value="auto"{% if dcfg.output_mode|default('auto') == 'auto' %} selected{% endif %}>Automatic / preferred mode</option>{% set choices = output.available_modes|default([]) %}{% for choice in choices %}<option value="{{ choice.value }}"{% if dcfg.output_mode == choice.value %} selected{% endif %}>{{ choice.label }}</option>{% endfor %}{% if dcfg.output_mode|default('auto') != 'auto' and dcfg.output_mode not in choices|map(attribute='value')|list %}<option value="{{ dcfg.output_mode }}" selected>{{ dcfg.output_mode }} (not currently advertised)</option>{% endif %}</select></label>
+          <label class="field"><span class="field-label">Physical display aspect ratio</span><select name="display_aspect">{% for aspect in display_aspects %}<option value="{{ aspect }}"{% if dcfg.display_aspect|default('auto') == aspect %} selected{% endif %}>{{ 'Auto (composite 4:3; otherwise square pixels)' if aspect == 'auto' else aspect }}</option>{% endfor %}</select></label>
+        </div>
+        <p class="help-text form-actions">Match the aspect setting to your physical screen. It corrects images, GIFs, Spotify artwork and video; web-page layout follows the output raster.</p>
+        {% if output.kind == 'composite' %}<p class="help-text">RCA exposes standard-definition modes only. Choose PAL/NTSC with the boot-profile helper; this control cannot create an HDMI resolution on RCA.</p>{% endif %}
+        <div class="form-actions"><button type="submit"{% if not output.connected %} disabled{% endif %}>Apply output settings</button></div>
+      </form>
+      <form method="post" action="{{ url_for('main.configure_presentation') }}" class="output-form">
+        <h3>{{ dname }} — Safe area</h3><p class="help-text">Inset the edges to keep media and overlays clear of TV overscan.</p>
+        <input type="hidden" name="display" value="{{ dname }}">{% set margins = dcfg.safe_area if dcfg.safe_area is mapping else {} %}
+        <div class="fields-grid">{% for edge in ['left','right','top','bottom'] %}{{ f.input('safe_' ~ edge,edge|capitalize ~ ' (%)',margins.get(edge,0),'number',min=0,max=20,step='any',required=true) }}{% endfor %}</div>
+        <p class="help-text form-actions">Use Calibration Pattern in the viewer mode selector to check the visible boundary, circles and grid. External browser fullscreen may ignore window insets. Device performance options are in <a href="{{ url_for('main.settings') }}">Settings</a>.</p>
+        <div class="form-actions"><button type="submit">Save presentation settings</button></div>
+      </form>
       {% endfor %}
-      <p>Device performance options are available in <a href="{{ url_for('main.settings') }}">Settings</a>.</p>
-      <p>Use Calibration Pattern in the viewer mode selector to check the visible boundary, circles and grid. External browser fullscreen may ignore window insets.</p>
-      <button type="submit">Save presentation settings</button>
-    </form>
-  {% endfor %}
-
-  </details>
-
-  <!-- Bottom status row as its own card -->
-  <div class="card" style="margin-top:20px; text-align:center; color: var(--text-normal);">
-    <strong>Status:</strong>
-    Spotify Status: {{ spotify_status }}
+    </details>
   </div>
+  <footer class="connection-note"><span>{{ host }} · {{ ipaddr }}</span><span>Spotify: {{ spotify_status }}</span></footer>
 </div>
-
 {% endblock %}

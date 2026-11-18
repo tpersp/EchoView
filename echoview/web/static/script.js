@@ -21,11 +21,16 @@ function fetchStats() {
       const loadEl = document.getElementById("stat_load");
       const tempEl = document.getElementById("stat_temp");
       const diskEl = document.getElementById("stat_disk");
-      if (cpuEl)  cpuEl.textContent = data.cpu_percent + "%";
-      if (memEl)  memEl.textContent = data.mem_used_mb + "/" + data.mem_total_mb + "MB";
+      if (cpuEl) cpuEl.textContent = data.cpu_percent + "%";
+      const megabytes = value => Number(value) >= 1024 ? (Number(value) / 1024).toFixed(1) + " GB" : Math.round(Number(value)) + " MB";
+      if (memEl) memEl.textContent = megabytes(data.mem_used_mb);
+      const memTotal = document.getElementById("stat_mem_total");
+      if (memTotal) memTotal.textContent = "of " + megabytes(data.mem_total_mb);
       if (loadEl) loadEl.textContent = data.load_1min;
       if (tempEl) tempEl.textContent = data.temp;
-      if (diskEl) diskEl.textContent = data.disk_used + "/" + data.disk_total;
+      if (diskEl) diskEl.textContent = data.disk_used;
+      const diskTotal = document.getElementById("stat_disk_total");
+      if (diskTotal) diskTotal.textContent = "of " + data.disk_total;
     })
     .catch(e => console.log("Stats fetch error:", e))
     .finally(() => { statsRequestPending = false; });
@@ -360,32 +365,24 @@ function onMonitorChange() {
   if (selForm) selForm.submit();
 }
 
-// Mobile sidebar toggle
-window.addEventListener('DOMContentLoaded', () => {
-  const navToggle = document.getElementById('nav-toggle');
-  const sidebar = document.querySelector('.sidebar');
-  if (navToggle && sidebar) {
-    navToggle.addEventListener('click', () => {
-      sidebar.classList.toggle('open');
-    });
-  }
-});
-
 // Toggle per-file action menus in media manager
 function toggleFileMenu(btn) {
   const item = btn.closest('.file-item');
-  if (item) {
-    item.classList.toggle('open');
-  }
+  if (!item) return;
+  const open = !item.classList.contains('open');
+  document.querySelectorAll('#file-manager .file-item.open').forEach(other => {
+    other.classList.remove('open');
+    other.querySelector('.file-options-btn')?.setAttribute('aria-expanded', 'false');
+  });
+  item.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', String(open));
 }
-
-// Close any open file menus when clicking outside
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.file-item')) {
-    document.querySelectorAll('#file-manager .file-item.open').forEach(el => {
-      el.classList.remove('open');
-    });
-  }
+document.addEventListener('click', event => {
+  if (event.target.closest('.file-item')) return;
+  document.querySelectorAll('#file-manager .file-item.open').forEach(item => {
+    item.classList.remove('open');
+    item.querySelector('.file-options-btn')?.setAttribute('aria-expanded', 'false');
+  });
 });
 
 // ---- Web embed detection ----
@@ -435,7 +432,7 @@ function toggleYoutubeOptions(display, embedType) {
   container.style.display = embedType === "youtube" ? "flex" : "none";
   if (embedType === "youtube") {
     container.style.flexWrap = "wrap";
-    container.style.justifyContent = "center";
+    container.style.justifyContent = "flex-start";
     container.style.gap = "10px";
   }
 }

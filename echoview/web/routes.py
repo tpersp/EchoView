@@ -111,6 +111,11 @@ def compute_overlay_preview(overlay_cfg, monitors_dict):
 main_bp = Blueprint("main", __name__, static_folder="static")
 
 
+@main_bp.app_context_processor
+def controller_ui_context():
+    return {'ui_version': APP_VERSION, 'ui_background_available': os.path.isfile(WEB_BG)}
+
+
 def _save_and_restart(cfg):
     """Keep successful saves even when applying them fails; report both states."""
     try:

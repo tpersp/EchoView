@@ -1,84 +1,29 @@
-{% extends "base.html" %}
-{% block title %}Overlay Configuration{% endblock %}
+{% extends 'base.html' %}
+{% import 'components/fields.html' as f %}
+{% block title %}Overlays{% endblock %}
 {% block content %}
-<div class="page-section" style="max-width:1200px;">
-  <h2>Overlay Configuration</h2>
-  <form method="POST" action="{{ url_for('main.overlay_config') }}">
-    <div class="cards-container">
+<div class="page-section">
+  <header class="page-header"><div><h1>Overlays</h1><p>A little useful information, right where you want it.</p></div><span class="pill">{{ monitors|length }} displays</span></header>
+  <form method="post" action="{{ url_for('main.overlay_config') }}">
+    <div class="panel-grid">
       {% for monitor_name, monitor_cfg in monitors.items() %}
-      <div class="card" style="text-align:center;">
-        <h3>{{ monitor_name }} ({{ monitor_cfg.screen_name }})</h3>
-        <!-- Clock enable/size/color -->
-        <div style="margin-bottom:10px;">
-          <label>
-            <input type="checkbox" name="{{ monitor_name }}_clock_enabled" {% if monitor_cfg.overlay and monitor_cfg.overlay.clock_enabled %}checked{% endif %}>
-            Show Clock
-          </label>
-          <br><br>
-          <label>Clock Font Size:</label>
-          <input type="number" min="8" max="512" name="{{ monitor_name }}_clock_font_size"
-                 value="{{ monitor_cfg.overlay.clock_font_size if monitor_cfg.overlay and monitor_cfg.overlay.clock_font_size is defined else 26 }}">
+      {% set over = monitor_cfg.overlay|default({}) %}
+      {% set pre = monitor_name ~ '_' %}
+      <section class="card">
+        <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-regular fa-clock" aria-hidden="true"></i></span><div><h2>{{ monitor_name }}</h2><p>Clock appearance and placement.</p></div></div></header>
+        <div class="toggle-grid">
+          {{ f.toggle(pre ~ 'clock_enabled','Show clock',over.clock_enabled|default(false),value='on') }}
+          {{ f.toggle(pre ~ 'auto_negative_font','Automatic text contrast',over.auto_negative_font|default(false),value='on') }}
         </div>
-
-
-        <!-- Color / auto negative font -->
-        <div style="margin-bottom:10px;">
-          <label>Font Color:</label>
-          <input type="color" name="{{ monitor_name }}_font_color"
-                 value="{{ monitor_cfg.overlay.font_color if monitor_cfg.overlay and monitor_cfg.overlay.font_color is defined else '#FFFFFF' }}">
-          <br><br>
-          <label>
-            <input type="checkbox" name="{{ monitor_name }}_auto_negative_font"
-              {% if monitor_cfg.overlay and monitor_cfg.overlay.auto_negative_font %}checked{% endif %}>
-            Auto Negative Font Color
-          </label>
+        <div class="fields-grid form-actions">
+          {{ f.input(pre ~ 'clock_font_size','Clock text size',over.clock_font_size|default(26),'number',min=8,max=512) }}
+          {{ f.input(pre ~ 'font_color','Text color',over.font_color|default('#FFFFFF'),'color') }}
+          <div class="full-width">{{ f.select(pre ~ 'clock_position','Clock position',over.clock_position|default('bottom-center'), [('top-left','Top left'),('top-center','Top center'),('top-right','Top right'),('center','Center'),('bottom-left','Bottom left'),('bottom-center','Bottom center'),('bottom-right','Bottom right')]) }}</div>
         </div>
-
-        <!-- Clock position -->
-        <div style="margin-bottom:10px;">
-          <label>Clock Position:</label>
-          <select name="{{ monitor_name }}_clock_position">
-            <option value="top-left"
-              {% if monitor_cfg.overlay and monitor_cfg.overlay.clock_position == "top-left" %}selected{% endif %}>
-              Top Left
-            </option>
-            <option value="top-center"
-              {% if monitor_cfg.overlay and monitor_cfg.overlay.clock_position == "top-center" %}selected{% endif %}>
-              Top Center
-            </option>
-            <option value="top-right"
-              {% if monitor_cfg.overlay and monitor_cfg.overlay.clock_position == "top-right" %}selected{% endif %}>
-              Top Right
-            </option>
-            <option value="center"
-              {% if monitor_cfg.overlay and monitor_cfg.overlay.clock_position == "center" %}selected{% endif %}>
-              Center
-            </option>
-            <option value="bottom-left"
-              {% if monitor_cfg.overlay and monitor_cfg.overlay.clock_position == "bottom-left" %}selected{% endif %}>
-              Bottom Left
-            </option>
-            <option value="bottom-center"
-              {% if monitor_cfg.overlay and monitor_cfg.overlay.clock_position == "bottom-center" or not monitor_cfg.overlay or monitor_cfg.overlay.clock_position is undefined %}selected{% endif %}>
-              Bottom Center
-            </option>
-            <option value="bottom-right"
-              {% if monitor_cfg.overlay and monitor_cfg.overlay.clock_position == "bottom-right" %}selected{% endif %}>
-              Bottom Right
-            </option>
-          </select>
-          <br><br>
-        </div>
-
-      </div>
+      </section>
       {% endfor %}
     </div>
-    <div style="text-align:center; margin-top:20px;">
-      <button type="submit">Save All Overlay Settings</button>
-    </div>
+    <div class="card save-bar"><p>Save the clock settings for your displays.</p><button type="submit" class="primary">Save all overlay settings</button></div>
   </form>
-  {# The draggable overlay preview box was removed as it provided no useful feedback. #}
 </div>
 {% endblock %}
-
-{# No extra scripts needed since preview box was removed #}

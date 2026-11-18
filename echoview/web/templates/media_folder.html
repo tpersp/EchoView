@@ -1,75 +1,30 @@
 {% from 'media_play_controls.html' import play_form with context %}
-<p role="status">{{ total }} files{% if query %} matching “{{ query }}”{% endif %}. Page {{ page }} of {{ pages }}.</p>
-{% if display_names %}
-{% if display_names|length > 1 %}<p><small>Applying media restarts the viewer on all displays.</small></p>{% endif %}
-<details class="folder-play">
-  <summary>Play this folder on a display</summary>
-  {{ play_form('folder_images', label='Play images/GIFs') }}
-  {{ play_form('folder_videos', label='Play videos') }}
-  <small>Uses that display’s current playback and audio preferences.</small>
-</details>
-{% endif %}
-<form class="media-search" data-folder-search>
-  <label>Find files <input name="q" value="{{ query }}" placeholder="Search this folder" type="search"></label>
-  <button type="submit">Search</button>
-  <button type="button" data-media-page="1">Refresh</button>
-</form>
-    <form method="post" action="{{ url_for('main.rename_folder') }}" class="d-flex" style="gap:10px;">
-      <input type="hidden" name="folder" value="{{ folder }}">
-      <input type="text" name="new_name" placeholder="Rename folder">
-      <button type="submit">Rename</button>
-    </form>
-    <form method="post" action="{{ url_for('main.delete_folder') }}" style="margin-top:5px;">
-      <input type="hidden" name="folder" value="{{ folder }}">
-      <button type="submit">Delete Folder</button>
-    </form>
-    <div class="folder-grid">
-      {% for f in files %}
-      <div class="file-item">
-        {% if f.lower().endswith(('.mp4','.mov','.avi','.mkv','.webm')) %}
-        <video src="{{ url_for('main.serve_image', filename=folder ~ '/' ~ f) }}" class="file-thumb" controls preload="none"></video>
-        {% else %}
-        <img src="{{ url_for('main.serve_thumbnail', filename=folder ~ '/' ~ f, size=120) }}" class="file-thumb" loading="lazy" decoding="async" width="120" height="120" alt="{{ f }}">
-        {% endif %}
-        <button type="button" class="file-options-btn" onclick="toggleFileMenu(this)">⋮</button>
-        <div class="file-options-menu">
-          <form method="post" action="{{ url_for('main.rename_image') }}">
-            <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
-            <input type="text" name="new_name" placeholder="rename">
-            <button type="submit">Rename</button>
-          </form>
-          <form method="post" action="{{ url_for('main.delete_image') }}">
-            <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
-            <button type="submit">Delete</button>
-          </form>
-          <a href="{{ url_for('main.download_file', filename=folder ~ '/' ~ f) }}">Download</a>
-          <form method="post" action="{{ url_for('main.move_image') }}">
-            <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
-            <select name="dest">
-              {% for dest in subfolders %}
-                {% if dest != folder %}
-                  <option value="{{ dest }}">{{ dest }}</option>
-                {% endif %}
-              {% endfor %}
-            </select>
-            <button type="submit">Move</button>
-          </form>
-        </div>
-        <div class="filename" style="word-break:break-all;">{{ f }}</div>
-        {{ play_form('file', f) }}
-      </div>
-      {% endfor %}
-      <div class="file-item">
-        <form method="POST" enctype="multipart/form-data" action="{{ url_for('main.upload_media') }}">
-          <input type="hidden" name="subfolder" value="{{ folder }}">
-          <label class="upload-thumb">
-            +
-            <input type="file" name="mediafiles" accept=".gif,.png,.jpg,.jpeg,.mp4,.mov,.avi,.mkv,.webm" multiple style="display:none" onchange="this.form.submit()">
-          </label>
-        </form>
-      </div>
+<p class="library-count" role="status">{{ total }} files{% if query %} matching “{{ query }}”{% endif %} · Page {{ page }} of {{ pages }}.</p>
+<div class="folder-tools-row">
+  <form class="folder-search-form" data-folder-search><label class="field"><span class="field-label">Find files</span><input name="q" value="{{ query }}" placeholder="Search this folder" type="search"></label><button type="submit">Search</button><button type="button" class="quiet" data-media-page="1">Refresh</button></form>
+</div>
+<div class="folder-tools-row">
+  {% if display_names %}<details class="folder-play"><summary><i class="fa-solid fa-play" aria-hidden="true"></i> Play this folder on a display</summary>{{ play_form('folder_images', label='Play images/GIFs') }}{{ play_form('folder_videos', label='Play videos') }}<small>Uses that display’s current playback and audio preferences.{% if display_names|length > 1 %} Applying media restarts the viewer on all displays.{% endif %}</small></details>{% endif %}
+  <details class="folder-tools"><summary><i class="fa-solid fa-ellipsis" aria-hidden="true"></i> Folder options</summary><div class="inline-form"><form method="post" action="{{ url_for('main.rename_folder') }}" class="inline-form"><input type="hidden" name="folder" value="{{ folder }}"><label class="field"><span class="field-label">New folder name</span><input type="text" name="new_name" placeholder="Rename folder"></label><button type="submit">Rename</button></form><form method="post" action="{{ url_for('main.delete_folder') }}"><input type="hidden" name="folder" value="{{ folder }}"><button type="submit" class="quiet danger-text">Delete folder</button></form></div></details>
+</div>
+<div class="folder-grid">
+  {% for f in files %}
+  <article class="file-item">
+    <div class="file-preview">
+      {% if f.lower().endswith(('.mp4','.mov','.avi','.mkv','.webm')) %}<video src="{{ url_for('main.serve_image', filename=folder ~ '/' ~ f) }}" class="file-thumb" controls preload="none"></video>{% else %}<img src="{{ url_for('main.serve_thumbnail', filename=folder ~ '/' ~ f, size=120) }}" class="file-thumb" loading="lazy" decoding="async" width="120" height="120" alt="{{ f }}">{% endif %}
+      <span class="media-type">{{ f.rsplit('.',1)[-1]|upper }}</span>
     </div>
-<nav aria-label="Folder pages" class="media-pagination">
-  {% if page > 1 %}<button type="button" data-media-page="{{ page - 1 }}">Previous</button>{% endif %}
-  {% if page < pages %}<button type="button" data-media-page="{{ page + 1 }}">Next</button>{% endif %}
-</nav>
+    <button type="button" class="file-options-btn" onclick="toggleFileMenu(this)" aria-label="File options for {{ f }}" aria-expanded="false">⋮</button>
+    <div class="file-options-menu">
+      <form method="post" action="{{ url_for('main.rename_image') }}"><input type="hidden" name="path" value="{{ folder }}/{{ f }}"><input type="text" name="new_name" placeholder="New filename" aria-label="New filename"><button type="submit">Rename</button></form>
+      <a class="button quiet" href="{{ url_for('main.download_file', filename=folder ~ '/' ~ f) }}">Download</a>
+      <form method="post" action="{{ url_for('main.move_image') }}"><input type="hidden" name="path" value="{{ folder }}/{{ f }}"><select name="dest" aria-label="Destination folder">{% for dest in subfolders %}{% if dest != folder %}<option value="{{ dest }}">{{ dest }}</option>{% endif %}{% endfor %}</select><button type="submit">Move</button></form>
+      <form method="post" action="{{ url_for('main.delete_image') }}"><input type="hidden" name="path" value="{{ folder }}/{{ f }}"><button type="submit" class="quiet danger-text">Delete file</button></form>
+    </div>
+    <div class="filename" title="{{ f }}">{{ f }}</div>
+    {{ play_form('file', f) }}
+  </article>
+  {% endfor %}
+  <div class="file-item upload-item"><form method="post" enctype="multipart/form-data" action="{{ url_for('main.upload_media') }}"><input type="hidden" name="subfolder" value="{{ folder }}"><label class="upload-thumb"><i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i><span>Add media</span><input type="file" name="mediafiles" accept=".gif,.png,.jpg,.jpeg,.mp4,.mov,.avi,.mkv,.webm" multiple hidden onchange="this.form.submit()"></label></form></div>
+</div>
+<nav aria-label="Folder pages" class="media-pagination">{% if page > 1 %}<button type="button" data-media-page="{{ page - 1 }}">Previous</button>{% endif %}{% if page < pages %}<button type="button" data-media-page="{{ page + 1 }}">Next</button>{% endif %}</nav>

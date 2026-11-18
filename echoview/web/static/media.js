@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     displayForm.addEventListener('change', event => {
       if (!event.target.name) return; // Searching the picker does not change playback settings.
       status.textContent = 'Unsaved changes';
+      displayForm.querySelector('.save-bar')?.classList.add('has-changes');
       document.querySelector('#save-preset-form button').disabled = true;
     });
     displayForm.addEventListener('submit', () => {

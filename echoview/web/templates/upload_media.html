@@ -1,39 +1,23 @@
-{% extends "base.html" %}
-{% block title %}Upload Media{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Media library{% endblock %}
 {% block content %}
-<div class="page-section" style="max-width:1200px;" id="file-manager">
-  <h2>Media</h2>
-  <p id="media-play-status" role="status" aria-live="polite"></p>
-  {% for message in get_flashed_messages() %}<p class="flash-message" role="status">{{ message }}</p>{% endfor %}
-  <p>Open a folder to browse files. Previews load only when needed.</p>
-  <form method="post" action="{{ url_for('main.create_folder') }}" class="d-flex" style="gap:10px; margin-bottom:10px;">
-    <input type="text" name="folder_name" placeholder="New Folder Name">
-    <button type="submit">Create Folder</button>
-  </form>
-  <form id="media-sort-form" method="get" action="{{ url_for('main.upload_media') }}" style="margin-bottom:10px;">
-    <label for="sort_select">Sort:</label>
-    <select id="sort_select" name="sort" >
-      <option value="name_asc" {% if sort_option == 'name_asc' %}selected{% endif %}>Name (A-Z)</option>
-      <option value="name_desc" {% if sort_option == 'name_desc' %}selected{% endif %}>Name (Z-A)</option>
-      <option value="date_desc" {% if sort_option == 'date_desc' %}selected{% endif %}>Date Added (Newest)</option>
-      <option value="date_asc" {% if sort_option == 'date_asc' %}selected{% endif %}>Date Added (Oldest)</option>
-    </select>
-  </form>
-  <label class="folder-search-label">Find a folder
-    <input type="search" id="folder-search" placeholder="Filter folder names">
-  </label>
-  <p id="folder-search-status" role="status"></p>
+<div class="page-section" id="file-manager">
+  <header class="page-header"><div><h1>Media library</h1><p>Find a folder, choose your media, and put it on display.</p></div><span class="pill">{{ subfolders|length }} folders</span></header>
+  <p id="media-play-status" class="flash-message" role="status" aria-live="polite"></p>
+  {% for message in get_flashed_messages() %}<div class="flash-message" role="status">{{ message }}</div>{% endfor %}
+  <div class="card media-toolbar">
+    <label class="folder-search-label"><span class="field-label">Find a folder</span><input type="search" id="folder-search" placeholder="Search your library"></label>
+    <form id="media-sort-form" class="sort-control" method="get" action="{{ url_for('main.upload_media') }}"><label class="field"><span class="field-label">Sort files</span><select id="sort_select" name="sort"><option value="name_asc"{% if sort_option == 'name_asc' %} selected{% endif %}>Name · A to Z</option><option value="name_desc"{% if sort_option == 'name_desc' %} selected{% endif %}>Name · Z to A</option><option value="date_desc"{% if sort_option == 'date_desc' %} selected{% endif %}>Newest first</option><option value="date_asc"{% if sort_option == 'date_asc' %} selected{% endif %}>Oldest first</option></select></label></form>
+    <details class="inline-create"><summary class="button"><i class="fa-solid fa-plus" aria-hidden="true"></i> New folder</summary><form method="post" action="{{ url_for('main.create_folder') }}"><label class="field"><span class="field-label">Folder name</span><input type="text" name="folder_name" placeholder="A name for your collection" required></label><div class="form-actions"><button type="submit">Create folder</button></div></form></details>
+  </div>
+  <p id="folder-search-status" role="status">Open a folder to browse. Previews load only when needed.</p>
   {% for folder in subfolders %}
-  <details class="card media-folder" data-folder-name="{{ folder }}" {% if folder == selected_folder %}open{% endif %}>
-    <summary>{{ folder }}</summary>
-    <div class="folder-content" data-url="{{ url_for('main.media_folder', folder=folder, sort=sort_option) }}" aria-live="polite">
-      <a href="{{ url_for('main.upload_media', folder=folder, sort=sort_option) }}">Open folder</a>
-    </div>
+  <details class="card media-folder" data-folder-name="{{ folder }}"{% if folder == selected_folder %} open{% endif %}>
+    <summary><span class="folder-icon"><i class="fa-regular fa-folder" aria-hidden="true"></i></span><span class="folder-title">{{ folder }}<small>Browse files in this folder</small></span><i class="fa-solid fa-chevron-down folder-chevron" aria-hidden="true"></i></summary>
+    <div class="folder-content" data-url="{{ url_for('main.media_folder', folder=folder, sort=sort_option) }}" aria-live="polite"><a href="{{ url_for('main.upload_media', folder=folder, sort=sort_option) }}">Open folder</a></div>
   </details>
+  {% else %}
+  <section class="card empty-state"><i class="fa-regular fa-folder-open" aria-hidden="true"></i><h2>No folders to show</h2><p>Check your media connection, or create a folder to start a new collection.</p></section>
   {% endfor %}
-  <form method="post" action="{{ url_for('main.create_folder') }}" class="d-flex" style="gap:10px; margin-top:10px;">
-    <input type="text" name="folder_name" placeholder="New Folder Name">
-    <button type="submit">Create Folder</button>
-  </form>
 </div>
 {% endblock %}

@@ -3,55 +3,59 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}EchoView{% endblock %}</title>
+  <meta name="color-scheme" content="dark light">
+  <title>{% block title %}EchoView{% endblock %} · EchoView</title>
   <link rel="icon" href="{{ url_for('static', filename='icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body class="{{ theme }}-theme">
-
-  <!-- Mobile top bar with hamburger -->
-  <header class="top-bar d-md-none">
-    <button class="btn btn-link" id="nav-toggle" aria-label="Open menu"><i class="fa fa-bars"></i></button>
-    <span class="ms-2 fw-bold">EchoView</span>
+<body class="{{ theme|default('dark') }}-theme{% if theme|default('dark') == 'custom' and ui_background_available %} has-background{% endif %}" data-page="{{ request.endpoint }}">
+  {% set pages = {'main.index':'Displays', 'main.upload_media':'Media library', 'main.configure_spotify':'Spotify', 'main.overlay_config':'Overlays', 'main.settings':'Settings'} %}
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <header class="mobile-header">
+    <button type="button" class="icon-button" id="nav-toggle" aria-label="Open navigation" aria-controls="app-navigation" aria-expanded="false"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
+    <a class="mobile-brand" href="{{ url_for('main.index') }}">EchoView</a>
+    <span class="local-indicator"><span></span> Local</span>
   </header>
-
-  <!-- Sidebar navigation -->
-  <aside class="sidebar">
-    <div class="sidebar-brand d-flex align-items-center mb-3">
-      <img src="{{ url_for('static', filename='icon.png') }}" alt="EchoView" class="me-2" style="height:32px;">
-      <span class="fw-bold">EchoView</span>
+  <button type="button" class="nav-scrim" id="nav-scrim" aria-label="Close navigation" hidden></button>
+  <aside class="sidebar" id="app-navigation">
+    <div class="sidebar-brand">
+      <a href="{{ url_for('main.index') }}" class="brand-link">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 28 28" fill="none"><rect x="3" y="5" width="22" height="15" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M10 24h8M14 20v4M12 10l6 3-6 3v-6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+        <span>EchoView<small>Display controller</small></span>
+      </a>
+      <button type="button" class="icon-button nav-close" id="nav-close" aria-label="Close navigation"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
     </div>
-    <nav>
-      <ul class="nav flex-column">
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'main.index' %}active{% endif %}" href="{{ url_for('main.index') }}"><i class="fa fa-tv me-2"></i>Displays</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'main.upload_media' %}active{% endif %}" href="{{ url_for('main.upload_media') }}"><i class="fa fa-image me-2"></i>Media</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'main.configure_spotify' %}active{% endif %}" href="{{ url_for('main.configure_spotify') }}"><i class="fa-brands fa-spotify me-2"></i>Spotify</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'main.overlay_config' %}active{% endif %}" href="{{ url_for('main.overlay_config') }}"><i class="fa fa-layer-group me-2"></i>Overlay</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'main.settings' %}active{% endif %}" href="{{ url_for('main.settings') }}"><i class="fa fa-sliders-h me-2"></i>Settings</a></li>
-      </ul>
-      <div class="mt-auto">
-        <form action="{{ url_for('main.restart_viewer') }}" method="post"><button class="dropdown-item w-100" type="submit"><i class="fa fa-sync me-2"></i>Restart Viewer</button></form>
-        <form action="{{ url_for('main.restart_device') }}" method="post"><button class="dropdown-item w-100" type="submit"><i class="fa fa-redo me-2"></i>Restart Device</button></form>
-        <form action="{{ url_for('main.power_off') }}" method="post"><button class="dropdown-item w-100 text-danger" type="submit"><i class="fa fa-power-off me-2"></i>Shut Down</button></form>
-      </div>
+    <nav aria-label="Primary navigation">
+      <p class="nav-caption">WORKSPACE</p>
+      {% set links = [('main.index','Displays','desktop'), ('main.upload_media','Media','photo-film'), ('main.overlay_config','Overlays','layer-group'), ('main.configure_spotify','Spotify','music'), ('main.settings','Settings','sliders')] %}
+      {% for endpoint, label, icon in links %}
+      <a class="nav-link{% if request.endpoint == endpoint %} active{% endif %}" href="{{ url_for(endpoint) }}"{% if request.endpoint == endpoint %} aria-current="page"{% endif %}><i class="fa-solid fa-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span>{% if request.endpoint == endpoint %}<span class="nav-active-dot" aria-hidden="true"></span>{% endif %}</a>
+      {% endfor %}
     </nav>
-    <!-- Theme toggle -->
-    <form method="post" action="{{ url_for('main.toggle_theme') }}" class="mt-3 d-flex align-items-center">
-      <input type="hidden" name="return_to" value="{{ request.path }}">
-      <span class="me-2">Theme</span>
-      <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="fa fa-moon"></i></button>
-    </form>
+    <div class="sidebar-footer">
+      <details class="device-menu">
+        <summary><i class="fa-solid fa-power-off" aria-hidden="true"></i> Device controls <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+        <div class="device-actions">
+          <form action="{{ url_for('main.restart_viewer') }}" method="post"><button type="submit">Restart viewer</button></form>
+          <form action="{{ url_for('main.restart_device') }}" method="post"><button type="submit">Restart device</button></form>
+          <form action="{{ url_for('main.power_off') }}" method="post"><button type="submit" class="danger-text">Shut down</button></form>
+        </div>
+      </details>
+      <form method="post" action="{{ url_for('main.toggle_theme') }}" class="theme-form">
+        <input type="hidden" name="return_to" value="{{ request.path }}">
+        <button type="submit" class="theme-toggle"><i class="fa-solid fa-{{ 'sun' if theme|default('dark') == 'dark' else 'moon' }}" aria-hidden="true"></i> {{ 'Light appearance' if theme|default('dark') == 'dark' else 'Dark appearance' }}</button>
+      </form>
+      <div class="sidebar-version"><span class="local-indicator"><span></span> Local controller</span><span>v{{ ui_version|default(version|default('dev')) }}</span></div>
+    </div>
   </aside>
-
-  <!-- Main content -->
-  <main class="content">{% block content %}{% endblock %}</main>
-
+  <header class="app-header"><div><span class="breadcrumb-label">Workspace</span><span class="breadcrumb-separator">/</span>{{ pages.get(request.endpoint, 'EchoView') }}</div><span class="header-note">Your space, on display.</span></header>
+  <main class="content" id="main-content" tabindex="-1">{% block content %}{% endblock %}</main>
   <script src="{{ url_for('static', filename='script.js') }}"></script>
   <script src="{{ url_for('static', filename='media.js') }}"></script>
   <script src="{{ url_for('static', filename='schedule.js') }}"></script>
+  <script src="{{ url_for('static', filename='ui.js') }}"></script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>
-

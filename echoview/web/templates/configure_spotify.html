@@ -1,78 +1,32 @@
-{% extends "base.html" %}
-{% block title %}Configure Spotify{% endblock %}
+{% extends 'base.html' %}
+{% import 'components/fields.html' as f %}
+{% block title %}Spotify{% endblock %}
 {% block content %}
-
-<div class="page-section" style="max-width:1200px;">
-  <h2>Configure Spotify Integration</h2>
-  <div class="flash-message">{{ spotify_status }}</div>
-
-  <!-- Collapsible Steps -->
-  <div class="collapsible-header">1. Spotify Developer Dashboard</div>
-  <div class="collapsible-content">
-    <p>
-      Visit the <a href="https://developer.spotify.com/dashboard/" target="_blank">Spotify Developer Dashboard</a>
-      and log in (or sign up if you don't have an account).
-    </p>
+<div class="page-section">
+  <header class="page-header"><div><h1>Spotify</h1><p>Bring album artwork and track information to your displays.</p></div><span class="pill"><i class="fa-brands fa-spotify" aria-hidden="true"></i> Integration</span></header>
+  <div class="spotify-layout">
+    <section class="card">
+      <header class="panel-header"><div><h2>Connect your account</h2><p>Use your Spotify developer application's details.</p></div></header>
+      <div class="status-note" role="status">{{ spotify_status }}</div>
+      <form method="post">
+        <div class="fields-grid">
+          {{ f.input('client_id','Client ID',spotify.client_id|default(''),'password',required=true) }}
+          {{ f.input('client_secret','Client secret',spotify.client_secret|default(''),'password',required=true) }}
+          <div class="full-width">{{ f.input('redirect_uri','Redirect URI',spotify.redirect_uri|default('http://127.0.0.1:8080/callback'),required=true,placeholder='https://your-controller.example/callback') }}</div>
+          <div class="full-width">{{ f.input('scope','Permissions (scope)',spotify.scope|default('user-read-currently-playing user-read-playback-state')) }}</div>
+        </div>
+        <div class="form-actions"><button type="submit" class="primary">Save Spotify settings</button></div>
+      </form>
+      <hr>
+      <div class="form-actions"><a class="button" href="{{ url_for('main.spotify_auth') }}">Authorize Spotify <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a><form method="post" action="{{ url_for('main.spotify_check') }}"><button type="submit" class="quiet">Check connection</button></form></div>
+    </section>
+    <aside class="card">
+      <header class="panel-header"><div><h2>A quick setup guide</h2><p>Connect once, then choose Spotify on a display.</p></div></header>
+      <details class="setup-step" open><summary><span class="step-number">1</span> Create an application</summary><p>Open the <a href="https://developer.spotify.com/dashboard/" target="_blank" rel="noopener noreferrer">Spotify Developer Dashboard</a>, create an application, and copy its Client ID and Client Secret.</p></details>
+      <details class="setup-step"><summary><span class="step-number">2</span> Register your callback</summary><p>Register the exact Redirect URI. Use an HTTPS controller address ending in <code>/callback</code>, or explicit loopback such as <code>http://127.0.0.1:8080/callback</code>. HTTP LAN addresses and localhost are not accepted.</p></details>
+      <details class="setup-step"><summary><span class="step-number">3</span> Save and authorize</summary><p>Save your details, then choose Authorize Spotify. Use the same browser and controller address throughout the flow; authorization expires after ten minutes. Check connection tests token refresh and API access.</p></details>
+      <details class="setup-step"><summary><span class="step-number">4</span> Connecting from another computer</summary><p>For loopback authorization, run <code>ssh -N -L 8080:127.0.0.1:8080 user@PI-IP</code>, then open <code>http://127.0.0.1:8080/configure_spotify</code>. Keep the tunnel open through the callback and do not edit the callback address. Alternatively, use your HTTPS controller address throughout.</p></details>
+    </aside>
   </div>
-
-  <div class="collapsible-header">2. Create a New Application</div>
-  <div class="collapsible-content">
-    <p>
-      After creation, note down your <strong>Client ID</strong> and <strong>Client Secret</strong>.
-      In your app settings, set the <strong>Redirect URI</strong> to something like
-      <code>https://your-controller.example/callback</code>, or
-      <code>http://127.0.0.1:8080/callback</code> with SSH forwarding.
-      Register the exact URI. HTTP LAN addresses and localhost are not accepted.
-    </p>
-  </div>
-
-  <div class="collapsible-header">3. Enter Your Config Below</div>
-  <div class="collapsible-content">
-    <p>
-      Fill in Client ID, Client Secret, Redirect URI, and the desired Scope,
-      then click "Save Spotify Settings".
-    </p>
-  </div>
-
-  <div class="collapsible-header">4. Authorize & Use</div>
-  <div class="collapsible-content">
-    <p>
-      Click <strong>Authorize Spotify</strong> to begin the OAuth flow.
-      Use the same browser and controller address throughout authorization.
-      For a remote browser with loopback, first run
-      <code>ssh -N -L 8080:127.0.0.1:8080 user@PI-IP</code>, then open
-      <code>http://127.0.0.1:8080/configure_spotify</code> to start.
-      Keep the tunnel open through the callback. Do not edit the callback address.
-      Alternatively use your HTTPS controller address for the entire flow.
-      Authorization expires after ten minutes. After connecting, use Check Connection
-      to test token refresh and API access.
-    </p>
-  </div>
-
-  <!-- Actual Form -->
-  <form method="POST" style="margin-top:15px;">
-    <div style="margin-bottom:10px;">
-      <label>Spotify Client ID:</label><br>
-      <input type="password" name="client_id" value="{{ spotify.client_id|default('') }}" required>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label>Spotify Client Secret:</label><br>
-      <input type="password" name="client_secret" value="{{ spotify.client_secret|default('') }}" required>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label>Redirect URI:</label><br>
-      <input type="text" name="redirect_uri" value="{{ spotify.redirect_uri|default('http://127.0.0.1:8080/callback') }}" required>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label>Scope:</label><br>
-      <input type="text" name="scope" value="{{ spotify.scope|default('user-read-currently-playing user-read-playback-state') }}">
-    </div>
-    <button type="submit">Save Spotify Settings</button>
-  </form>
-
-  <form method="POST" action="{{ url_for('main.spotify_check') }}"><button type="submit">Check Connection</button></form>
-  <br>
-  <a href="{{ url_for('main.spotify_auth') }}"><button>Authorize Spotify</button></a>
 </div>
-
 {% endblock %}

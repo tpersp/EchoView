@@ -1,8 +1,18 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>EchoView maintenance</title></head>
-<body><h1>EchoView maintenance</h1><p>{{ message }}</p>
+{% extends 'base.html' %}
+{% block title %}Maintenance{% endblock %}
+{% block content %}
+<div class="page-section">
+  <section class="card maintenance-panel">
+    <span class="maintenance-icon"><i class="fa-solid fa-{{ 'arrows-rotate' if pending else 'circle-exclamation' }}" aria-hidden="true"></i></span>
+    <h1>{{ 'Reconnecting to EchoView' if pending else 'Action needs attention' }}</h1>
+    <p>{{ message }}</p>
+    {% if pending %}<p id="maintenance-status" class="help-text" role="status">Waiting for EchoView to restart. This page will reconnect automatically.</p>{% endif %}
+    <a class="button" href="/">Return to EchoView</a>
+  </section>
+</div>
+{% endblock %}
+{% block extra_scripts %}
 {% if pending %}
-<p id="maintenance-status" role="status">Waiting for EchoView to restart. This page will reconnect automatically.</p>
 <script>
   async function reconnect() {
     try {
@@ -20,4 +30,4 @@
   setTimeout(reconnect, 10000);
 </script>
 {% endif %}
-<p><a href="/">Return to EchoView</a></p></body></html>
+{% endblock %}
