@@ -133,21 +133,28 @@ def _save_and_restart(cfg):
     return {'saved': True, 'message': 'Settings saved and viewer restarted.'}, 200
 
 
-def apply_live_settings(cfg, names):
-    return request_update(state_directory(VIEWER_HOME), cfg, names)
+def apply_live_settings(cfg, names, kind='spotify'):
+    return request_update(state_directory(VIEWER_HOME), cfg, names, kind=kind)
 
 
 def _save_display_settings(cfg, previous):
     names = visual_changes(previous, cfg)
     if not names:
         return _save_and_restart(cfg)
+    return _save_live_settings(cfg, names)
+
+
+def _save_live_settings(cfg, names, kind='spotify'):
     try:
         save_config(cfg)
     except (OSError, TypeError, ValueError):
         return {'saved': False, 'message': 'Could not save settings. Playback was not changed.'}, 503
     try:
-        if apply_live_settings(cfg, names):
-            return {'saved': True, 'message': 'Visual settings applied. Playback kept running.'}, 200
+        confirmed = (apply_live_settings(cfg, names) if kind == 'spotify' else
+                     apply_live_settings(cfg, names, kind=kind))
+        if confirmed:
+            label = 'Overlay' if kind == 'overlay' else 'Visual'
+            return {'saved': True, 'message': f'{label} settings applied. Playback kept running.'}, 200
     except (OSError, TypeError, ValueError):
         pass
     return {'saved': True, 'message': 'Settings saved, but the live update could not be confirmed. Use Restart Viewer if the display has not updated.'}, 503
@@ -810,7 +817,7 @@ def spotify_check():
 
 @main_bp.route("/overlay_config", methods=["GET", "POST"])
 def overlay_config():
-    cfg = load_config()
+    cfg = deepcopy(load_config())
     if request.method == "POST":
         sizes = {}
         for monitor in cfg.get("displays", {}):
@@ -820,28 +827,37 @@ def overlay_config():
                 return "Clock font size must be an integer from 8 to 512.", 400
             if not 8 <= sizes[monitor] <= 512:
                 return "Clock font size must be an integer from 8 to 512.", 400
-        for monitor in cfg.get("displays", {}):
-            new_overlay = {
+        changed = []
+        positions = {'top-left', 'top-center', 'top-right', 'center', 'bottom-left', 'bottom-center', 'bottom-right'}
+        for monitor, display in cfg.get('displays', {}).items():
+            old_overlay = display.get('overlay', cfg.get('overlay', {}))
+            new_overlay = {**old_overlay,
                 "clock_enabled": (f"{monitor}_clock_enabled" in request.form),
                 "clock_font_size": sizes[monitor],
                 "font_color": request.form.get(f"{monitor}_font_color", "#FFFFFF"),
                 "auto_negative_font": (f"{monitor}_auto_negative_font" in request.form),
                 "clock_position": request.form.get(f"{monitor}_clock_position", "bottom-center"),
             }
-            if "displays" in cfg and monitor in cfg["displays"]:
-                cfg["displays"][monitor]["overlay"] = new_overlay
-        if "overlay" not in cfg:
-            cfg["overlay"] = {}
-        try:
-            cfg["overlay"]["offset_x"] = int(request.form.get("offset_x", "0"))
-            cfg["overlay"]["offset_y"] = int(request.form.get("offset_y", "0"))
-        except Exception:
-            pass
-        save_config(cfg)
-        try:
-            subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
-        except subprocess.CalledProcessError as e:
-            log_message(f"Failed to restart echoview.service: {e}")
+            if new_overlay['clock_position'] not in positions:
+                return 'Choose a valid clock position.', 400
+            if new_overlay != old_overlay:
+                display['overlay'] = new_overlay
+                changed.append(monitor)
+        # Preserve legacy offsets when the current form does not expose them.
+        for key in ('offset_x', 'offset_y'):
+            if key in request.form:
+                try:
+                    value = int(request.form[key])
+                except (TypeError, ValueError):
+                    return 'Overlay offsets must be integers.', 400
+                if value != cfg.get('overlay', {}).get(key):
+                    cfg.setdefault('overlay', {})[key] = value
+                    changed = list(cfg.get('displays', {}))
+        if changed:
+            result, status = _save_live_settings(cfg, changed, kind='overlay')
+            flash(result['message'])
+        else:
+            flash('No changes to apply. Playback was left running.')
         return redirect(url_for("main.overlay_config"))
     else:
         monitors_cfg = cfg.get("displays", {})
@@ -849,6 +865,7 @@ def overlay_config():
             "overlay.html",
             theme=cfg.get("theme", "dark"),
             monitors=monitors_cfg,
+            overlay_defaults=cfg.get('overlay', {}),
         )
 
 @main_bp.route("/display/presentation", methods=["POST"])

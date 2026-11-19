@@ -294,6 +294,7 @@ class DisplayWindow(QMainWindow):
             self._layout_hls_video(rect)
             self.hls_video_widget.lower()
         self.bg_label.lower()
+        self._correct_label_font(self.clock_label, getattr(self, "overlay_config", {}).get("clock_font_size", 26), rect)
         if hasattr(self, 'spotify_card') and self.spotify_card.isVisible():
             self.spotify_card.setGeometry(rect)
             self.spotify_card.raise_()
@@ -303,7 +304,6 @@ class DisplayWindow(QMainWindow):
             return
 
         self._correct_label_font(self.spotify_info_label, self.disp_cfg.get("spotify_font_size", 18), rect)
-        self._correct_label_font(self.clock_label, getattr(self, "overlay_config", {}).get("clock_font_size", 26), rect)
         info_rect = QRect(rect)
         if self.spotify_progress_bar.isVisible() and rect.height() > 40:
             progress_position = self.disp_cfg.get("spotify_progress_position", "bottom-center")
@@ -991,24 +991,7 @@ class DisplayWindow(QMainWindow):
             self.schedule_retry_due = time.monotonic() + 30
             self.schedule_timer.start()
 
-        over = self.disp_cfg.get("overlay", self.cfg.get("overlay", {}))
-        if over.get("clock_enabled", False):
-            self.clock_label.show()
-        else:
-            self.clock_label.hide()
-
-        cfsize = bounded_int(over.get("clock_font_size", 24), 24, 8, 512)
-        if over.get("auto_negative_font", False):
-            self.clock_label.useDifference = True
-            self.clock_label.setStyleSheet("background: transparent;")
-            font_clock = QFont(self.clock_label.font())
-            font_clock.setPixelSize(cfsize)
-            self.clock_label.setFont(font_clock)
-        else:
-            self.clock_label.useDifference = False
-            fcolor = over.get("font_color", "#FFFFFF")
-            self.clock_label.setStyleSheet(f"color: {fcolor}; background: transparent;")
-        self.overlay_config = over
+        self._set_overlay(self.disp_cfg.get("overlay", self.cfg.get("overlay", {})))
 
         gui_cfg = self.cfg.get("gui", {})
         self.resource_options = resource_settings(self.disp_cfg.get("resource_profile", "standard"), self.cfg)
@@ -1776,6 +1759,27 @@ class DisplayWindow(QMainWindow):
             remaining_ms = (result.next_poll_at - time.monotonic()) * 1000
             self.slideshow_timer.start(max(100, int(remaining_ms) + 1))
 
+    def _set_overlay(self, settings):
+        self.overlay_config = dict(settings)
+        self.clock_label.useDifference = bool(settings.get('auto_negative_font', False))
+        color = settings.get('font_color', '#FFFFFF')
+        self.clock_label.setStyleSheet('background: transparent;' if self.clock_label.useDifference else
+                                      f'color: {color}; background: transparent;')
+        self._correct_label_font(self.clock_label, settings.get('clock_font_size', 24), self.presentation_rect())
+        self.update_clock()
+        self.clock_label.setVisible(bool(settings.get('clock_enabled', False)))
+        self.clock_label.update()
+
+    def apply_overlay_settings(self, cfg):
+        display = cfg.get('displays', {}).get(self.disp_name, {})
+        self.cfg = cfg
+        if 'overlay' in display:
+            self.disp_cfg['overlay'] = dict(display['overlay'])
+        else:
+            self.disp_cfg.pop('overlay', None)
+        self._set_overlay(display.get('overlay', cfg.get('overlay', {})))
+        self.setup_layout()
+
     def apply_spotify_visual_settings(self, settings):
         # This runs on the Qt thread. Keep the poll, interpolation timeline,
         # current artwork and fallback playback intact.
@@ -1838,12 +1842,28 @@ class EchoViewGUI:
         names = request.get('displays')
         if not isinstance(names, list) or not names:
             return False
+        kind = request.get('kind', 'spotify')
+        if kind not in ('spotify', 'overlay'):
+            return False
+        targets = []
         for name in names:
-            window = self.window_by_connector.get(name)
-            if not window or not window.running or window.current_mode != 'spotify' or name not in cfg.get('displays', {}):
+            if name not in cfg.get('displays', {}):
                 return False
-        for name in names:
-            self.window_by_connector[name].apply_spotify_visual_settings(cfg['displays'][name])
+            window = self.window_by_connector.get(name)
+            if not window or not window.running:
+                if kind == 'overlay':
+                    continue  # Saved settings take effect when this display connects.
+                return False
+            if kind == 'spotify' and window.current_mode != 'spotify':
+                return False
+            targets.append((name, window))
+        if not targets:
+            return False
+        for name, window in targets:
+            if kind == 'overlay':
+                window.apply_overlay_settings(cfg)
+            else:
+                window.apply_spotify_visual_settings(cfg['displays'][name])
         self.cfg = cfg
         return True
 

@@ -443,3 +443,13 @@ thread and rejects requests superseded by another save. If confirmation is
 missing, settings remain saved and the UI says so; it does not force a restart.
 Use **Restart viewer** if needed. This channel uses the same private temporary
 storage as the now-playing snapshot and never reads NAS media.
+
+### Live clock overlay settings
+
+**Overlays → Apply overlay settings** changes clock visibility, size, color,
+automatic contrast and position in the running viewer. It updates the clock
+widgets on the Qt thread without reloading media, restarting players, resetting
+slideshow timers or changing Spotify progress. Settings for disconnected outputs
+are retained for their next connection. Applying unchanged settings is a no-op.
+The page confirms live application, or reports that settings were saved but the
+viewer could not confirm them. It never forces a restart on confirmation failure.

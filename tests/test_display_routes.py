@@ -183,3 +183,61 @@ def test_saving_web_url_does_not_do_network_extraction(controller, monkeypatch):
     response = client.post("/", data={"action": "update_displays", "Composite-1_mode": "web_page", "Composite-1_web_url": "https://youtube.com/watch?v=abc123def45"})
     assert response.status_code == 302
     assert saved[-1]["displays"]["Composite-1"]["embed_metadata"]["embed_type"] == "youtube"
+
+
+def overlay_form(cfg):
+    data={}
+    for name,display in cfg['displays'].items():
+        over=display.get('overlay',{})
+        for key,default in [('clock_font_size',26),('font_color','#FFFFFF'),('clock_position','bottom-center')]:
+            data[name+'_'+key]=str(over.get(key,default))
+        for key in ('clock_enabled','auto_negative_font'):
+            if over.get(key): data[name+'_'+key]='on'
+    return data
+
+
+def test_overlay_live_apply_preserves_playback_and_legacy_settings(controller,monkeypatch):
+    client,cfg,found,saved,applied=controller
+    cfg['overlay']={'offset_x':20,'offset_y':30}
+    for display in cfg['displays'].values():
+        display['overlay']={'clock_enabled':False,'clock_font_size':26,'font_color':'#FFFFFF',
+                            'auto_negative_font':False,'clock_position':'bottom-center','custom':'preserved'}
+    before=deepcopy(cfg); requests=[]
+    monkeypatch.setattr(routes,'apply_live_settings',lambda cfg,names,kind:requests.append((names,kind)) or True)
+    monkeypatch.setattr(routes.subprocess,'run',lambda *a,**k:pytest.fail('restart'))
+    monkeypatch.setattr(routes.subprocess,'check_call',lambda *a,**k:pytest.fail('restart'))
+    data=overlay_form(cfg); data.update({'Composite-1_clock_enabled':'on','Composite-1_clock_font_size':'30'})
+    response=client.post('/overlay_config',data=data,follow_redirects=True)
+    assert response.status_code==200 and b'Overlay settings applied. Playback kept running.' in response.data
+    assert requests==[(['Composite-1'],'overlay')]
+    assert saved[-1]['overlay']==before['overlay']
+    assert saved[-1]['displays']['Composite-1']['overlay']['custom']=='preserved'
+    for name in cfg['displays']:
+        assert {k:v for k,v in saved[-1]['displays'][name].items() if k!='overlay'}=={k:v for k,v in before['displays'][name].items() if k!='overlay'}
+
+
+def test_overlay_noop_does_not_save_or_signal(controller,monkeypatch):
+    client,cfg,found,saved,applied=controller
+    for display in cfg['displays'].values():
+        display['overlay']={'clock_enabled':False,'clock_font_size':26,'font_color':'#FFFFFF',
+                            'auto_negative_font':False,'clock_position':'bottom-center'}
+    monkeypatch.setattr(routes,'apply_live_settings',lambda *a,**k:pytest.fail('no-op signal'))
+    assert client.post('/overlay_config',data=overlay_form(cfg)).status_code==302
+    assert not saved
+
+
+def test_overlay_unconfirmed_save_is_reported_without_restart(controller,monkeypatch):
+    client,cfg,found,saved,applied=controller
+    monkeypatch.setattr(routes,'apply_live_settings',lambda *a,**k:False)
+    monkeypatch.setattr(routes.subprocess,'check_call',lambda *a,**k:pytest.fail('restart'))
+    data=overlay_form(cfg);data['Composite-1_clock_enabled']='on'
+    response=client.post('/overlay_config',data=data,follow_redirects=True)
+    assert b'live update could not be confirmed' in response.data
+    assert saved[-1]['displays']['Composite-1']['overlay']['clock_enabled'] is True
+
+
+def test_invalid_overlay_position_never_saves(controller):
+    client,cfg,found,saved,applied=controller
+    before=deepcopy(cfg);data=overlay_form(cfg);data['Composite-1_clock_position']='invalid'
+    assert client.post('/overlay_config',data=data).status_code==400
+    assert not saved and cfg==before

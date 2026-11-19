@@ -4,10 +4,11 @@
 {% block content %}
 <div class="page-section">
   <header class="page-header"><div><h1>Overlays</h1><p>A little useful information, right where you want it.</p></div><span class="pill">{{ monitors|length }} displays</span></header>
-  <form method="post" action="{{ url_for('main.overlay_config') }}">
+  {% for message in get_flashed_messages() %}<div class="flash-message" role="status">{{ message }}</div>{% endfor %}
+  <form id="overlay-settings-form" method="post" action="{{ url_for('main.overlay_config') }}">
     <div class="panel-grid">
       {% for monitor_name, monitor_cfg in monitors.items() %}
-      {% set over = monitor_cfg.overlay|default({}) %}
+      {% set over = monitor_cfg.overlay|default(overlay_defaults|default({})) %}
       {% set pre = monitor_name ~ '_' %}
       <section class="card">
         <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-regular fa-clock" aria-hidden="true"></i></span><div><h2>{{ monitor_name }}</h2><p>Clock appearance and placement.</p></div></div></header>
@@ -23,7 +24,17 @@
       </section>
       {% endfor %}
     </div>
-    <div class="card save-bar"><p>Save the clock settings for your displays.</p><button type="submit" class="primary">Save all overlay settings</button></div>
+    <div class="card save-bar"><p>Update the clocks without interrupting playback.</p><button type="submit" class="primary">Apply overlay settings</button></div>
   </form>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.getElementById('overlay-settings-form').addEventListener('submit', event => {
+    const button = event.target.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.textContent = 'Applying…';
+  });
+</script>
 {% endblock %}

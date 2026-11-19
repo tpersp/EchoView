@@ -1,4 +1,4 @@
-"""Small local request/ack channel for Spotify visual changes on the Qt thread."""
+"""Small local request/ack channel for visual and clock changes on the Qt thread."""
 import json
 import os
 from pathlib import Path
@@ -48,10 +48,10 @@ def atomic_json(directory, name, value):
         Path(path).unlink(missing_ok=True)
 
 
-def request_update(directory, cfg, displays, timeout=3):
+def request_update(directory, cfg, displays, timeout=3, kind='spotify'):
     revision = secrets.token_hex(16)
     atomic_json(directory, 'visual-request.json', dict(revision=revision, config=fingerprint(cfg),
-                displays=displays, expires=time.time()+15))
+                displays=displays, kind=kind, expires=time.time()+15))
     deadline = time.monotonic()+timeout
     while time.monotonic() < deadline:
         try:

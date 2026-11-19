@@ -29,9 +29,9 @@ with tempfile.TemporaryDirectory(prefix='echoview-live-') as directory:
     timer=window.slideshow_timer.interval(); fid=window.spotify_fetch_id
     gui=SimpleNamespace(window_by_connector={'fixture':window},cfg=cfg)
     receiver=VisualSettingsReceiver(directory,lambda req:viewer.EchoViewGUI._apply_live_visual_request(gui,req))
-    def apply(config,names):
+    def apply(config,names,kind='spotify'):
         results=[]
-        worker=threading.Thread(target=lambda:results.append(request_update(directory,config,names,timeout=2)))
+        worker=threading.Thread(target=lambda:results.append(request_update(directory,config,names,timeout=2,kind=kind)))
         worker.start()
         while worker.is_alive(): receiver.poll(); app.processEvents(); time.sleep(.01)
         worker.join(); return results[0]
@@ -58,5 +58,38 @@ with tempfile.TemporaryDirectory(prefix='echoview-live-') as directory:
     cfg['displays']['fixture']['spotify_font_size']=28
     assert apply(cfg,['fixture'])
     assert window.last_displayed_path==before
+    # Clock updates apply independently of media mode and Spotify presentation.
+    gif=Path(directory)/'playing.gif'
+    Image.new('RGB',(32,32),'red').save(gif,save_all=True,append_images=[Image.new('RGB',(32,32),'blue')],duration=100,loop=0)
+    from PySide6.QtGui import QMovie
+    movie=QMovie(str(gif)); window.current_movie=movie
+    window.foreground_label.setMovie(movie); movie.start()
+    for mode in ('random_image','videos','web_page','spotify'):
+        window.current_mode=mode
+        if mode=='spotify':
+            window.spotify_card.set_track(str(path),{'song':'Fixture'},{'spotify_layout':'album_card'},1)
+            window.spotify_card.show()
+        else:
+            window.spotify_card.hide()
+        cfg['displays']['fixture']['overlay']={'clock_enabled':True,'clock_font_size':32,
+            'clock_position':'top-right','auto_negative_font':True,'font_color':'#123456'}
+        before=window.last_displayed_path
+        assert apply(cfg,['fixture'],kind='overlay')
+        assert window.clock_label.isVisible() and window.clock_label.font().pixelSize()==32
+        assert window.clock_label.useDifference is True
+        assert window.current_mode==mode and window.winId()==identity
+        assert window.current_movie is movie and movie.state()==QMovie.Running
+        assert window.last_displayed_path==before and window.spotify_timeline is timeline
+        cfg['displays']['fixture']['overlay'].update(clock_enabled=False,auto_negative_font=False,clock_font_size=28)
+        assert apply(cfg,['fixture'],kind='overlay')
+        assert not window.clock_label.isVisible() and not window.clock_label.useDifference
+        assert '#123456' in window.clock_label.styleSheet()
+        assert window.slideshow_timer.interval()==timer
+    cfg['displays']['disconnected']={'mode':'random_image'}
+    assert apply(cfg,['fixture','disconnected'],kind='overlay')
+    assert not apply(cfg,['disconnected'],kind='overlay')
+    assert not apply(cfg,['fixture'],kind='unknown')
+    movie.stop(); window.current_movie=None; window.foreground_label.setMovie(None)
     window.close(); app.processEvents()
+    print('Native clock live apply passed across images/video/web/Spotify: enable, disable, size, contrast, color, stable window and unchanged media/timers.')
     print('Native live apply passed: same window/timeline/artwork/poll timer, layout/progress changes, stale request rejection and paused fallback preservation.')
