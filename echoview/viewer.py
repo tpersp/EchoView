@@ -51,6 +51,9 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from echoview.spotify_client import Playback, shared_poller
 from echoview.spotify_progress import ProgressTimeline
+from echoview.live_settings import VISUAL_KEYS, VisualSettingsReceiver
+from echoview.spotify_state import state_directory
+from echoview.web.spotify_auth import fingerprint
 from echoview.presentation import (safe_bounds, safe_area_settings, overlay_bounds, text_stretch,
                                    resource_settings, decode_size, trim_image_cache,
                                    player_presentation_flags, bounded_int, runtime_display_settings)
@@ -1773,6 +1776,23 @@ class DisplayWindow(QMainWindow):
             remaining_ms = (result.next_poll_at - time.monotonic()) * 1000
             self.slideshow_timer.start(max(100, int(remaining_ms) + 1))
 
+    def apply_spotify_visual_settings(self, settings):
+        # This runs on the Qt thread. Keep the poll, interpolation timeline,
+        # current artwork and fallback playback intact.
+        path = (self.spotify_card.path if self.spotify_card.isVisible() else self.spotify_art_path) or ''
+        for target in (self.disp_cfg, self.cfg.get('displays', {}).get(self.disp_name, {})):
+            for key in VISUAL_KEYS:
+                if key in settings:
+                    target[key] = settings[key]
+                else:
+                    target.pop(key, None)
+        if not self.disp_cfg.get('spotify_show_progress', False):
+            self.spotify_progress_bar.hide()
+            self.spotify_progress_timer.stop()
+        self.spotify_progress_bar.setTheme(self.disp_cfg.get('spotify_progress_theme', 'dark'))
+        if self.spotify_info:
+            self.render_spotify(path)
+
     def pull_displays_from_remote(self, ip):
         pass  # Placeholder if needed
 
@@ -1789,6 +1809,10 @@ class EchoViewGUI:
         for screen in self.app.screens():
             screen.geometryChanged.connect(self._schedule_sync)
         self._sync_screens()
+        self.visual_updates = VisualSettingsReceiver(state_directory(VIEWER_HOME), self._apply_live_visual_request)
+        self.visual_timer = QTimer()
+        self.visual_timer.timeout.connect(self.visual_updates.poll)
+        self.visual_timer.start(250)
 
     def _schedule_sync(self, *args):
         QTimer.singleShot(100, self._sync_screens)
@@ -1806,6 +1830,22 @@ class EchoViewGUI:
                 self.mode_attempts = {item for item in self.mode_attempts if item[0] != name}
         self.windows = list(self.window_by_connector.values())
         self._schedule_sync()
+
+    def _apply_live_visual_request(self, request):
+        cfg = load_config()
+        if fingerprint(cfg) != request.get('config'):
+            return False  # Another save superseded this request.
+        names = request.get('displays')
+        if not isinstance(names, list) or not names:
+            return False
+        for name in names:
+            window = self.window_by_connector.get(name)
+            if not window or not window.running or window.current_mode != 'spotify' or name not in cfg.get('displays', {}):
+                return False
+        for name in names:
+            self.window_by_connector[name].apply_spotify_visual_settings(cfg['displays'][name])
+        self.cfg = cfg
+        return True
 
     def _sync_screens(self):
         self.cfg = load_config()

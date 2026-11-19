@@ -30,6 +30,7 @@ from echoview.utils import (
     is_ignored_folder,
 )
 from echoview.spotify_state import read_state, state_directory
+from echoview.live_settings import visual_changes, request_update
 from echoview.web.spotify_auth import DEFAULT_SCOPE, validate_config, cached_status, oauth_client, auth_method
 from echoview.presentation import safe_area_settings, RESOURCE_PROFILES, EDGES
 from echoview.displays import (discover_monitors, reconcile_displays, mode_choices,
@@ -132,6 +133,26 @@ def _save_and_restart(cfg):
     return {'saved': True, 'message': 'Settings saved and viewer restarted.'}, 200
 
 
+def apply_live_settings(cfg, names):
+    return request_update(state_directory(VIEWER_HOME), cfg, names)
+
+
+def _save_display_settings(cfg, previous):
+    names = visual_changes(previous, cfg)
+    if not names:
+        return _save_and_restart(cfg)
+    try:
+        save_config(cfg)
+    except (OSError, TypeError, ValueError):
+        return {'saved': False, 'message': 'Could not save settings. Playback was not changed.'}, 503
+    try:
+        if apply_live_settings(cfg, names):
+            return {'saved': True, 'message': 'Visual settings applied. Playback kept running.'}, 200
+    except (OSError, TypeError, ValueError):
+        pass
+    return {'saved': True, 'message': 'Settings saved, but the live update could not be confirmed. Use Restart Viewer if the display has not updated.'}, 503
+
+
 def _media_action_response(result, status, folder):
     if request.accept_mimetypes.best == 'application/json':
         return jsonify(result), status
@@ -202,7 +223,7 @@ def display_presets():
             if updated == cfg:
                 flash(f'Preset “{name}” is already applied.')
             else:
-                result, status = _save_and_restart(updated)
+                result, status = _save_display_settings(updated, cfg)
                 flash(result['message'])
         else:
             raise ValueError('Unknown preset action.')
@@ -1051,7 +1072,7 @@ def index():
             if cfg == previous:
                 flash('No changes to apply. Playback was left running.')
             else:
-                result, status = _save_and_restart(cfg)
+                result, status = _save_display_settings(cfg, previous)
                 flash(result['message'])
             return redirect(url_for("main.index"))
 

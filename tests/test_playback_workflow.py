@@ -28,6 +28,7 @@ def workflow(tmp_path, monkeypatch):
         saves.append(copied)
         cfg.clear()
         cfg.update(copied)
+    monkeypatch.setattr(routes, 'apply_live_settings', lambda cfg,names: True)
     monkeypatch.setattr(routes, 'load_config', lambda: cfg)
     monkeypatch.setattr(routes, 'save_config', save)
     monkeypatch.setattr(routes, 'IMAGE_DIR', str(root))
@@ -328,3 +329,40 @@ def test_old_preset_keeps_device_line_off(workflow):
         settings.pop('spotify_show_device', None)
     cfg['displays']['HDMI-1']['spotify_show_device'] = True
     assert presets.restore(cfg,preset)['displays']['HDMI-1']['spotify_show_device'] is False
+
+
+def test_visual_apply_is_live_but_media_change_restarts(workflow,monkeypatch):
+    client,cfg,saves,restarts,root=workflow
+    cfg['displays']['HDMI-1']['mode']='spotify'
+    previous=deepcopy(cfg)
+    updated=deepcopy(cfg); updated['displays']['HDMI-1']['spotify_font_size']=24
+    applied=[]
+    monkeypatch.setattr(routes,'apply_live_settings',lambda cfg,names:applied.extend(names) or True)
+    result,status=routes._save_display_settings(updated,previous)
+    assert status==200 and 'kept running' in result['message']
+    assert applied==['HDMI-1'] and not restarts
+    changed=deepcopy(updated); changed['displays']['HDMI-1']['mode']='videos'
+    assert routes._save_display_settings(changed,updated)[1]==200
+    assert len(restarts)==1
+
+
+def test_unconfirmed_visual_apply_keeps_save_and_never_restarts(workflow,monkeypatch):
+    client,cfg,saves,restarts,root=workflow
+    cfg['displays']['HDMI-1']['mode']='spotify'
+    updated=deepcopy(cfg); updated['displays']['HDMI-1']['spotify_font_size']=24
+    monkeypatch.setattr(routes,'apply_live_settings',lambda cfg,names:False)
+    result,status=routes._save_display_settings(updated,cfg)
+    assert status==503 and result['saved'] is True
+    assert 'could not be confirmed' in result['message']
+    assert cfg['displays']['HDMI-1']['spotify_font_size']==24 and not restarts
+
+
+def test_visual_save_failure_never_signals_viewer(workflow,monkeypatch):
+    client,cfg,saves,restarts,root=workflow
+    cfg['displays']['HDMI-1']['mode']='spotify'
+    updated=deepcopy(cfg); updated['displays']['HDMI-1']['spotify_font_size']=24
+    def fail(cfg): raise OSError('full')
+    monkeypatch.setattr(routes,'save_config',fail)
+    monkeypatch.setattr(routes,'apply_live_settings',lambda *args:pytest.fail('must not apply unsaved settings'))
+    result,status=routes._save_display_settings(updated,cfg)
+    assert status==503 and result['saved'] is False and not restarts

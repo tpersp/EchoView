@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.querySelector('#save-preset-form button').disabled = true;
     });
     displayForm.addEventListener('submit', () => {
-      status.textContent = 'Applying settings. The viewer will restart…';
+      status.textContent = 'Applying settings…';
       const button = document.getElementById('display-save-button');
       button.disabled = true;
       button.textContent = 'Applying…';

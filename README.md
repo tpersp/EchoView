@@ -420,3 +420,26 @@ atomically, tied to the current Spotify configuration, and expires after 45
 seconds without an update. Tokens and credentials are never included. Source
 media and the NAS are not used for these thumbnails. There are no playback
 controls and no additional Spotify permissions.
+
+### Previewing and applying Spotify appearance
+
+Open **Displays → Spotify → Preview before applying** to try layout, text size,
+color, information visibility and progress appearance. The browser preview uses
+the locally cached track/artwork (or an example when nothing is available),
+updates while editing, and never saves settings. Placement is approximate;
+physical output and image appearance settings still belong to the real display.
+Opening a preview adds no Spotify API requests, and local refresh pauses in a
+hidden tab.
+
+**Apply to displays** updates Spotify-only visual changes in the running viewer,
+including layout, text and progress options. The current window, track,
+interpolation timeline, artwork and API polling stay intact. Mode/media changes,
+fallback changes and physical output settings retain the normal restart path.
+Presets that only change Spotify visuals use the live path too.
+
+The controller saves first, publishes a private local request, and waits up to
+three seconds for the viewer's confirmation. The viewer processes it on its Qt
+thread and rejects requests superseded by another save. If confirmation is
+missing, settings remain saved and the UI says so; it does not force a restart.
+Use **Restart viewer** if needed. This channel uses the same private temporary
+storage as the now-playing snapshot and never reads NAS media.

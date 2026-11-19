@@ -105,3 +105,5 @@
   <footer class="connection-note"><span>{{ host }} · {{ ipaddr }}</span><span>Spotify: {{ spotify_status }}</span></footer>
 </div>
 {% endblock %}
+
+{% block extra_scripts %}<script src="{{ url_for('static', filename='spotify_preview.js') }}"></script>{% endblock %}
