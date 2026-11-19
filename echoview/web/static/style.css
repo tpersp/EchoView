@@ -65,7 +65,7 @@ hr { border-color: var(--border-muted); margin: 20px 0; opacity: 1; }
 .brand-link:hover { color: var(--text-normal); text-decoration: none; }
 .brand-link small { display: block; font-size: 10px; font-weight: 400; letter-spacing: .2px; margin-top: 1px; }
 .brand-mark { width: 36px; height: 40px; display: grid; place-items: center; color: var(--accent); }
-.brand-mark svg { width: 32px; height: 32px; }
+.brand-mark img { width: 32px; height: 32px; object-fit: contain; }
 .nav-caption { font-size: 10px; font-weight: 650; letter-spacing: .12em; color: var(--text-dim); margin: 0 12px 12px; }
 .sidebar .nav-link { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 8px; color: var(--nav-fg); font-size: 13px; font-weight: 550; margin: 3px 0; }
 .sidebar .nav-link > i { width: 18px; text-align: center; font-size: 14px; }
