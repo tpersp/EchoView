@@ -14,9 +14,11 @@
         <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-regular fa-clock" aria-hidden="true"></i></span><div><h2>{{ monitor_name }}</h2><p>Clock appearance and placement.</p></div></div></header>
         <div class="toggle-grid">
           {{ f.toggle(pre ~ 'clock_enabled','Show clock',over.clock_enabled|default(false),value='on') }}
+          {{ f.toggle(pre ~ 'clock_show_seconds','Show seconds',over.clock_show_seconds|default(true),value='on') }}
           {{ f.toggle(pre ~ 'auto_negative_font','Automatic text contrast',over.auto_negative_font|default(false),value='on') }}
         </div>
         <div class="fields-grid form-actions">
+          {{ f.select(pre ~ 'clock_format','Clock format',over.clock_format|default('24'), [('24','24-hour'),('12','12-hour · AM/PM')]) }}
           {{ f.input(pre ~ 'clock_font_size','Clock text size',over.clock_font_size|default(26),'number',min=8,max=512) }}
           {{ f.input(pre ~ 'font_color','Text color',over.font_color|default('#FFFFFF'),'color') }}
           <div class="full-width">{{ f.select(pre ~ 'clock_position','Clock position',over.clock_position|default('bottom-center'), [('top-left','Top left'),('top-center','Top center'),('top-right','Top right'),('center','Center'),('bottom-left','Bottom left'),('bottom-center','Bottom center'),('bottom-right','Bottom right')]) }}</div>

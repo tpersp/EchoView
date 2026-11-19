@@ -258,3 +258,33 @@ def test_clock_preview_fallback_and_safe_area():
     geometry=routes.clock_preview_geometry({'safe_area':{'left':10,'top':5}},'HDMI-1',{})
     assert geometry['width']==1920 and geometry['height']==1080
     assert geometry['safe_area']['left']==10 and geometry['safe_area']['top']==5
+
+
+@pytest.mark.parametrize('clock_format,seconds',[('12',False),('12',True),('24',False),('24',True)])
+def test_clock_format_saves_live_per_display(controller,monkeypatch,clock_format,seconds):
+    client,cfg,found,saved,applied=controller
+    requests=[]
+    monkeypatch.setattr(routes,'apply_live_settings',lambda cfg,names,kind:requests.append(kind) or True)
+    data=overlay_form(cfg);data['Composite-1_clock_format']=clock_format
+    if seconds:data['Composite-1_clock_show_seconds']='on'
+    assert client.post('/overlay_config',data=data).status_code==302
+    over=saved[-1]['displays']['Composite-1']['overlay']
+    assert over.get('clock_format','24')==clock_format
+    assert over.get('clock_show_seconds',True)==seconds
+    assert requests==['overlay']
+
+
+def test_cached_form_keeps_existing_clock_format(controller,monkeypatch):
+    client,cfg,found,saved,applied=controller
+    cfg['displays']['Composite-1']['overlay']={'clock_format':'12','clock_show_seconds':False}
+    monkeypatch.setattr(routes,'apply_live_settings',lambda *a,**k:True)
+    assert client.post('/overlay_config',data=overlay_form(cfg)).status_code==302
+    over=saved[-1]['displays']['Composite-1']['overlay']
+    assert over['clock_format']=='12' and over['clock_show_seconds'] is False
+
+
+def test_invalid_clock_format_preserves_config(controller):
+    client,cfg,found,saved,applied=controller
+    before=deepcopy(cfg);data=overlay_form(cfg);data['Composite-1_clock_format']='invalid'
+    assert client.post('/overlay_config',data=data).status_code==400
+    assert not saved and cfg==before

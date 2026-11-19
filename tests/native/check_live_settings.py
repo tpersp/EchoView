@@ -85,6 +85,26 @@ with tempfile.TemporaryDirectory(prefix='echoview-live-') as directory:
         assert not window.clock_label.isVisible() and not window.clock_label.useDifference
         assert '#123456' in window.clock_label.styleSheet()
         assert window.slideshow_timer.interval()==timer
+    from datetime import datetime as RealDateTime
+    class Clock:
+        value=RealDateTime(2026,1,1,12,0,0)
+        @classmethod
+        def now(cls): return cls.value
+    viewer.datetime=Clock
+    cfg['displays']['fixture']['overlay'].update(clock_enabled=True,clock_format='12',clock_show_seconds=False,clock_font_size=28,clock_position='top-right')
+    assert apply(cfg,['fixture'],kind='overlay')
+    assert window.clock_label.text()=='12:00 PM'
+    Clock.value=RealDateTime(2026,1,1,9,5,6);window.update_clock()
+    width=window.clock_label.width();right=window.clock_label.geometry().right()
+    assert window.clock_label.text()=='9:05 AM'
+    Clock.value=RealDateTime(2026,1,1,10,5,6);window.update_clock()
+    assert window.clock_label.text()=='10:05 AM' and window.clock_label.width()>width
+    assert abs(window.clock_label.geometry().right()-right)<=1
+    cfg['displays']['fixture']['overlay'].update(clock_format='24',clock_show_seconds=True)
+    Clock.value=RealDateTime(2026,1,1,0,5,6)
+    assert apply(cfg,['fixture'],kind='overlay')
+    assert window.clock_label.text()=='00:05:06'
+    assert window.winId()==identity and window.slideshow_timer.interval()==timer
     cfg['displays']['disconnected']={'mode':'random_image'}
     assert apply(cfg,['fixture','disconnected'],kind='overlay')
     assert not apply(cfg,['disconnected'],kind='overlay')

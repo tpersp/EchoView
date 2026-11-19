@@ -5,14 +5,18 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!form || !previews.length) return;
   const sampled = performance.now();
   const startSeconds = Number(form.dataset.clockSeconds) || 0;
-  function clockText() {
+  function clockText(format, showSeconds) {
     const seconds = (startSeconds + Math.floor((performance.now()-sampled)/1000)) % 86400;
-    return [Math.floor(seconds/3600), Math.floor(seconds/60)%60, seconds%60].map(value => String(value).padStart(2,'0')).join(':');
+    const hour = Math.floor(seconds/3600);
+    const twelve = format === '12';
+    const parts = [twelve ? String(hour%12 || 12) : String(hour).padStart(2,'0'), String(Math.floor(seconds/60)%60).padStart(2,'0')];
+    if (showSeconds) parts.push(String(seconds%60).padStart(2,'0'));
+    return parts.join(':') + (twelve ? (hour>=12 ? ' PM' : ' AM') : '');
   }
   function render(preview) {
     const prefix = preview.dataset.display + '_';
     const value = (key,fallback) => form.elements.namedItem(prefix+key)?.value ?? fallback;
-    const checked = key => form.elements.namedItem(prefix+key)?.checked ?? false;
+    const checked = (key,fallback=false) => form.elements.namedItem(prefix+key)?.checked ?? fallback;
     const screen = preview.querySelector('[data-overlay-screen]');
     const safe = preview.querySelector('[data-overlay-safe]');
     const clock = preview.querySelector('[data-overlay-clock]');
@@ -27,7 +31,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const auto = checked('auto_negative_font');
     clock.style.color = auto ? '#ffffff' : value('font_color','#ffffff');
     clock.classList.toggle('auto-contrast', auto);
-    clock.textContent = clockText();
+    const text = clockText(value('clock_format','24'),checked('clock_show_seconds',true));
+    if (clock.textContent !== text) clock.textContent = text;
     if (!show || !screen.clientHeight) return;
     const nativeHeight = geometry.height * (1-(margins.top+margins.bottom)/100);
     const nativeWidth = geometry.width * (1-(margins.left+margins.right)/100);

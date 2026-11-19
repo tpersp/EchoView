@@ -850,6 +850,16 @@ def overlay_config():
                 "auto_negative_font": (f"{monitor}_auto_negative_font" in request.form),
                 "clock_position": request.form.get(f"{monitor}_clock_position", "bottom-center"),
             }
+            clock_format = request.form.get(f'{monitor}_clock_format', old_overlay.get('clock_format', '24'))
+            if clock_format not in ('12', '24'):
+                return 'Choose a 12-hour or 24-hour clock.', 400
+            # Old/cached forms lack these fields; retain their existing format.
+            if f'{monitor}_clock_format' in request.form:
+                show_seconds = f'{monitor}_clock_show_seconds' in request.form
+                for key, value, default in (('clock_format', clock_format, '24'),
+                                            ('clock_show_seconds', show_seconds, True)):
+                    if key in old_overlay or value != default:
+                        new_overlay[key] = value
             if new_overlay['clock_position'] not in positions:
                 return 'Choose a valid clock position.', 400
             if new_overlay != old_overlay:

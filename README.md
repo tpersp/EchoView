@@ -460,3 +460,10 @@ and saved safe area. Try visibility, size, color, contrast and position against
 a sample light/dark background before Apply. Placement is approximate; editing
 the preview never saves settings, accesses media or changes the running display.
 The local clock animation pauses while the browser tab is hidden.
+
+Clock overlays support **Show seconds** and a per-display **Clock format**:
+**24-hour** (`13:05` / `13:05:09`) or **12-hour · AM/PM** (`1:05 PM` /
+`1:05:09 PM`). Existing clocks keep 24-hour time with seconds. Format changes
+update the preview immediately and apply live. AM/PM is locale-independent;
+midnight is 12 AM and noon is 12 PM. Clock width adjusts as the text changes,
+keeping right/center alignment without touching media playback.

@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME
 from echoview import scheduling
+from echoview.clock_overlay import format_clock
 
 from echoview.browser import qt_flags, chromium_flags
 from echoview.streaming import (capabilities as stream_capabilities, playback_environment,
@@ -911,11 +912,15 @@ class DisplayWindow(QMainWindow):
 
     def _place_overlay_label(self, lbl, position: str, container_rect, y_offset: int = 0, full_width: bool = False) -> int:
         margin = min(10, container_rect.width() // 10, container_rect.height() // 10)
-        lbl.setWordWrap(True)
+        is_clock = lbl is self.clock_label
+        lbl.setWordWrap(not is_clock)
         max_width = container_rect.width() - 2 * margin
-        width = max(1, max_width if full_width else min(lbl.sizeHint().width(), max_width))
+        # A previously fixed QLabel sizeHint can retain the old clock width.
+        # Measure the current text directly, keeping AM/PM on the same line.
+        natural_width = lbl.fontMetrics().horizontalAdvance(lbl.text()) + 2 if is_clock else lbl.sizeHint().width()
+        width = max(1, max_width if full_width else min(natural_width, max_width))
         lbl.setFixedWidth(width)
-        height = lbl.heightForWidth(width)
+        height = lbl.fontMetrics().height() + 2 if is_clock else lbl.heightForWidth(width)
         if height < 0:
             height = lbl.sizeHint().height()
         bounds = overlay_bounds((container_rect.x(), container_rect.y(), container_rect.width(), container_rect.height()),
@@ -1576,8 +1581,20 @@ class DisplayWindow(QMainWindow):
         self.updateForegroundScaled()
 
     def update_clock(self):
-        now_str = datetime.now().strftime("%H:%M:%S")
-        self.clock_label.setText(now_str)
+        settings = getattr(self, 'overlay_config', {})
+        text = format_clock(datetime.now(), settings)
+        previous = self.clock_label.text()
+        if text == previous:
+            return
+        self.clock_label.setText(text)
+        # Reposition only the clock when its text width changes (9→10, 12→1,
+        # AM→PM), without touching media layout or playback timers.
+        if self.clock_label.isVisible():
+            metrics = self.clock_label.fontMetrics()
+            if metrics.horizontalAdvance(text) != metrics.horizontalAdvance(previous):
+                rect = self.presentation_rect()
+                self._correct_label_font(self.clock_label, settings.get('clock_font_size', 26), rect)
+                self._place_overlay_label(self.clock_label, settings.get('clock_position', 'bottom-center'), rect)
 
 
     def render_spotify(self, path):
