@@ -288,3 +288,19 @@ def test_invalid_clock_format_preserves_config(controller):
     before=deepcopy(cfg);data=overlay_form(cfg);data['Composite-1_clock_format']='invalid'
     assert client.post('/overlay_config',data=data).status_code==400
     assert not saved and cfg==before
+
+
+def test_clock_blink_toggle_live_and_cached_form_preserves_it(controller,monkeypatch):
+    client,cfg,found,saved,applied=controller
+    monkeypatch.setattr(routes,'apply_live_settings',lambda *a,**k:True)
+    data=overlay_form(cfg);data.update({'Composite-1_clock_blink_present':'1','Composite-1_clock_blink_separators':'on'})
+    assert client.post('/overlay_config',data=data).status_code==302
+    assert saved[-1]['displays']['Composite-1']['overlay']['clock_blink_separators'] is True
+    cfg['displays']['Composite-1']['overlay']=saved[-1]['displays']['Composite-1']['overlay']
+    assert client.post('/overlay_config',data=overlay_form(cfg)).status_code==302
+    # A cached form does not turn the feature off.
+    assert saved[-1]['displays']['Composite-1']['overlay']['clock_blink_separators'] is True
+    assert cfg['displays']['Composite-1']['overlay']['clock_blink_separators'] is True
+    del data['Composite-1_clock_blink_separators']
+    assert client.post('/overlay_config',data=data).status_code==302
+    assert saved[-1]['displays']['Composite-1']['overlay']['clock_blink_separators'] is False

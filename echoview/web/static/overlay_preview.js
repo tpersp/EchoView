@@ -5,8 +5,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!form || !previews.length) return;
   const sampled = performance.now();
   const startSeconds = Number(form.dataset.clockSeconds) || 0;
+  const fraction = Date.parse(form.dataset.clockIso || '') % 1000 || 0;
+  const elapsedMillis = () => startSeconds*1000 + fraction + performance.now()-sampled;
   function clockText(format, showSeconds) {
-    const seconds = (startSeconds + Math.floor((performance.now()-sampled)/1000)) % 86400;
+    const seconds = Math.floor(elapsedMillis()/1000) % 86400;
     const hour = Math.floor(seconds/3600);
     const twelve = format === '12';
     const parts = [twelve ? String(hour%12 || 12) : String(hour).padStart(2,'0'), String(Math.floor(seconds/60)%60).padStart(2,'0')];
@@ -32,7 +34,16 @@ document.addEventListener('DOMContentLoaded', () => {
     clock.style.color = auto ? '#ffffff' : value('font_color','#ffffff');
     clock.classList.toggle('auto-contrast', auto);
     const text = clockText(value('clock_format','24'),checked('clock_show_seconds',true));
-    if (clock.textContent !== text) clock.textContent = text;
+    if (clock.textContent !== text) {
+      const nodes = text.split(/(:)/).map(part => {
+        if (part !== ':') return document.createTextNode(part);
+        const node = document.createElement('span');
+        node.className = 'overlay-preview-separator'; node.textContent = ':';
+        return node;
+      });
+      clock.replaceChildren(...nodes);
+    }
+    clock.classList.toggle('blink-hidden', checked('clock_blink_separators') && elapsedMillis()%1000 >= 500);
     if (!show || !screen.clientHeight) return;
     const nativeHeight = geometry.height * (1-(margins.top+margins.bottom)/100);
     const nativeWidth = geometry.width * (1-(margins.left+margins.right)/100);
@@ -56,13 +67,19 @@ document.addEventListener('DOMContentLoaded', () => {
     clock.style.transform = `translate(${x},${y})`;
   }
   const renderAll = () => previews.forEach(render);
-  form.addEventListener('input',renderAll);
-  form.addEventListener('change',renderAll);
+  form.addEventListener('input',() => { renderAll(); schedule(); });
+  form.addEventListener('change',() => { renderAll(); schedule(); });
   for (const preview of previews) new ResizeObserver(() => render(preview)).observe(preview);
   let timer;
-  function visibility() {
+  function schedule() {
     clearInterval(timer);
-    if (!document.hidden) { renderAll(); timer=setInterval(renderAll,1000); }
+    if (document.hidden) return;
+    const blink = previews.some(preview => form.elements.namedItem(preview.dataset.display+'_clock_enabled')?.checked && form.elements.namedItem(preview.dataset.display+'_clock_blink_separators')?.checked);
+    timer=setInterval(renderAll,blink ? 500 : 1000);
+  }
+  function visibility() {
+    if (!document.hidden) renderAll();
+    schedule();
   }
   document.addEventListener('visibilitychange',visibility);
   visibility();

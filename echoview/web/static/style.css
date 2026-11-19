@@ -397,3 +397,5 @@ form .schedule-folder-chip button { flex: 0 0 auto; border: 0; background: trans
 .overlay-preview-clock { position: absolute; white-space: nowrap; line-height: 1.2; font-family: system-ui,sans-serif; font-weight: 400; }
 .overlay-preview-clock.auto-contrast { mix-blend-mode: difference; }
 .overlay-preview-empty { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); padding: 6px 10px; border-radius: 6px; color: #edf2f7; background: #101620dd; font-size: 12px; white-space: nowrap; }
+
+.overlay-preview-clock.blink-hidden .overlay-preview-separator { visibility: hidden; }

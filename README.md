@@ -467,3 +467,9 @@ Clock overlays support **Show seconds** and a per-display **Clock format**:
 update the preview immediately and apply live. AM/PM is locale-independent;
 midnight is 12 AM and noon is 12 PM. Clock width adjusts as the text changes,
 keeping right/center alignment without touching media playback.
+
+**Blink separators** optionally flashes the clock’s colons once per second
+(half a second visible, half hidden). Digits and AM/PM remain steady, and hidden
+colons retain their space so the clock never shifts. It works with either clock
+format and with seconds hidden, updates the preview, and applies live. Blinking
+is off by default; disabled clocks retain the normal one-second timer.

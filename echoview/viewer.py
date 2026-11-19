@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME
 from echoview import scheduling
-from echoview.clock_overlay import format_clock
+from echoview.clock_overlay import format_clock, separators_visible
 
 from echoview.browser import qt_flags, chromium_flags
 from echoview.streaming import (capabilities as stream_capabilities, playback_environment,
@@ -190,7 +190,8 @@ class DisplayWindow(QMainWindow):
         self.foreground_label.setWordWrap(True)
 
         # Overlay label for clock
-        self.clock_label = NegativeTextLabel(self.main_widget)
+        from echoview.clock_label import ClockLabel
+        self.clock_label = ClockLabel(self.main_widget)
         self.clock_label.setText("00:00:00")
         self.clock_label.setAlignment(Qt.AlignCenter)
         self.clock_label.setStyleSheet("background: transparent;")
@@ -248,6 +249,7 @@ class DisplayWindow(QMainWindow):
         self.schedule_timer.setInterval(1000)
         self.schedule_timer.timeout.connect(self._check_schedule)
         self.clock_timer = QTimer(self)
+        self.clock_timer.setTimerType(Qt.PreciseTimer)
         self.clock_timer.timeout.connect(self.update_clock)
         self.clock_timer.start(1000)
 
@@ -1582,7 +1584,9 @@ class DisplayWindow(QMainWindow):
 
     def update_clock(self):
         settings = getattr(self, 'overlay_config', {})
-        text = format_clock(datetime.now(), settings)
+        now = datetime.now()
+        self.clock_label.setSeparatorsVisible(separators_visible(now, settings))
+        text = format_clock(now, settings)
         previous = self.clock_label.text()
         if text == previous:
             return
@@ -1785,6 +1789,9 @@ class DisplayWindow(QMainWindow):
         self._correct_label_font(self.clock_label, settings.get('clock_font_size', 24), self.presentation_rect())
         self.update_clock()
         self.clock_label.setVisible(bool(settings.get('clock_enabled', False)))
+        interval = 500 if settings.get('clock_blink_separators', False) and settings.get('clock_enabled', False) else 1000
+        if self.clock_timer.interval() != interval:
+            self.clock_timer.setInterval(interval)
         self.clock_label.update()
 
     def apply_overlay_settings(self, cfg):

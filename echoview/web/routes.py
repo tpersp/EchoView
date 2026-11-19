@@ -860,6 +860,10 @@ def overlay_config():
                                             ('clock_show_seconds', show_seconds, True)):
                     if key in old_overlay or value != default:
                         new_overlay[key] = value
+            if f'{monitor}_clock_blink_present' in request.form:
+                blink = f'{monitor}_clock_blink_separators' in request.form
+                if 'clock_blink_separators' in old_overlay or blink:
+                    new_overlay['clock_blink_separators'] = blink
             if new_overlay['clock_position'] not in positions:
                 return 'Choose a valid clock position.', 400
             if new_overlay != old_overlay:

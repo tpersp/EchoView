@@ -105,6 +105,18 @@ with tempfile.TemporaryDirectory(prefix='echoview-live-') as directory:
     assert apply(cfg,['fixture'],kind='overlay')
     assert window.clock_label.text()=='00:05:06'
     assert window.winId()==identity and window.slideshow_timer.interval()==timer
+    cfg['displays']['fixture']['overlay'].update(clock_blink_separators=True,clock_show_seconds=False)
+    Clock.value=RealDateTime(2026,1,1,0,5,6,0)
+    assert apply(cfg,['fixture'],kind='overlay')
+    assert window.clock_timer.interval()==500 and window.clock_label.separators_visible
+    text=window.clock_label.text();geometry=window.clock_label.geometry()
+    Clock.value=RealDateTime(2026,1,1,0,5,6,500000);window.update_clock()
+    assert not window.clock_label.separators_visible
+    assert window.clock_label.text()==text and window.clock_label.geometry()==geometry
+    cfg['displays']['fixture']['overlay']['clock_blink_separators']=False
+    assert apply(cfg,['fixture'],kind='overlay')
+    assert window.clock_timer.interval()==1000 and window.clock_label.separators_visible
+    assert window.slideshow_timer.interval()==timer and window.winId()==identity
     cfg['displays']['disconnected']={'mode':'random_image'}
     assert apply(cfg,['fixture','disconnected'],kind='overlay')
     assert not apply(cfg,['disconnected'],kind='overlay')

@@ -10,3 +10,7 @@ def format_clock(now, settings):
     if twelve:
         text += ' PM' if now.hour >= 12 else ' AM'
     return text
+
+
+def separators_visible(now, settings):
+    return not settings.get('clock_blink_separators', False) or now.microsecond < 500000

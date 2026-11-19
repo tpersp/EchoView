@@ -20,3 +20,11 @@ def test_clock_format(hour,minute,second,twelve,seconds,expected):
 
 def test_existing_clock_keeps_24_hour_seconds():
     assert format_clock(datetime(2026,1,1,13,2,3),{})=='13:02:03'
+
+
+@pytest.mark.parametrize('micros,blink,visible',[(0,True,True),(499999,True,True),(500000,True,False),(999999,True,False),(999999,False,True)])
+def test_separator_blink_phase(micros,blink,visible):
+    from echoview.clock_overlay import separators_visible
+    now=datetime(2026,1,1,13,5,9,micros)
+    assert separators_visible(now,{'clock_blink_separators':blink}) is visible
+    assert format_clock(now,{'clock_blink_separators':blink})=='13:05:09'
