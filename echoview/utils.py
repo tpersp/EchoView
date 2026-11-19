@@ -256,7 +256,7 @@ def get_system_stats():
     temp = "N/A"
     try:
         out = subprocess.check_output(["vcgencmd", "measure_temp"]).decode().strip()
-        temp = out
+        temp = out.removeprefix("temp=").replace("'C", "°C")
     except:
         pass
     return (cpu, mem_used_mb, mem_total_mb, load1, temp)
