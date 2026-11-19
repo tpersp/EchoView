@@ -307,3 +307,24 @@ def test_spotify_layout_saved_in_presets_and_validated(workflow):
     before = deepcopy(cfg)
     assert client.post('/', data=form).status_code == 400
     assert cfg == before
+
+
+def test_spotify_device_toggle_saves_and_survives_presets(workflow):
+    client, cfg, saves, restarts, root = workflow
+    form = {'action':'update_displays', 'HDMI-1_mode':'spotify', 'HDMI-1_spotify_show_device':'1'}
+    assert client.post('/',data=form).status_code == 302
+    assert cfg['displays']['HDMI-1']['spotify_show_device'] is True
+    preset = presets.snapshot(cfg)
+    del form['HDMI-1_spotify_show_device']
+    assert client.post('/',data=form).status_code == 302
+    assert cfg['displays']['HDMI-1']['spotify_show_device'] is False
+    assert presets.restore(cfg,preset)['displays']['HDMI-1']['spotify_show_device'] is True
+
+
+def test_old_preset_keeps_device_line_off(workflow):
+    client, cfg, saves, restarts, root = workflow
+    preset = presets.snapshot(cfg)
+    for settings in preset['displays'].values():
+        settings.pop('spotify_show_device', None)
+    cfg['displays']['HDMI-1']['spotify_show_device'] = True
+    assert presets.restore(cfg,preset)['displays']['HDMI-1']['spotify_show_device'] is False

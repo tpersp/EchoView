@@ -11,6 +11,7 @@
     {{ f.toggle(pre ~ 'spotify_show_song','Song title',dcfg.get('spotify_show_song',true)) }}
     {{ f.toggle(pre ~ 'spotify_show_artist','Artist',dcfg.get('spotify_show_artist',true)) }}
     {{ f.toggle(pre ~ 'spotify_show_album','Album',dcfg.get('spotify_show_album',true)) }}
+    {{ f.toggle(pre ~ 'spotify_show_device','Playing on device',dcfg.get('spotify_show_device',false)) }}
     {{ f.toggle(pre ~ 'spotify_show_progress','Playback progress',dcfg.get('spotify_show_progress',false)) }}
     {{ f.toggle(pre ~ 'spotify_negative_font','Automatic contrast',dcfg.get('spotify_negative_font',true),id=pre ~ 'spotify_negative_font',css='spotify-negative-font') }}
   </div>

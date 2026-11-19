@@ -14,7 +14,7 @@ class SpotifyCard(QWidget):
         self.artwork = QLabel(self)
         self.artwork.setAlignment(Qt.AlignCenter)
         self.artwork.setStyleSheet('background: #1c2634; color: #9ba9bc; border-radius: 8px;')
-        self.labels = [QLabel(self) for _ in range(3)]
+        self.labels = [QLabel(self) for _ in range(4)]
         for label in self.labels:
             label.setWordWrap(True)
             label.setTextFormat(Qt.PlainText)
@@ -35,8 +35,9 @@ class SpotifyCard(QWidget):
             self.pixmap = QPixmap(path) if path else QPixmap()
             if rotation and not self.pixmap.isNull():
                 self.pixmap = self.pixmap.transformed(QTransform().rotate(rotation), Qt.SmoothTransformation)
-        for label, name in zip(self.labels, ('song', 'artist', 'album')):
-            label.setText(info.get(name, '') if options.get('spotify_show_' + name, True) else '')
+        for label, name in zip(self.labels, ('song', 'artist', 'album', 'device')):
+            text = ('Playing on ' + info['device_name'] if info.get('device_name') else '') if name == 'device' else info.get(name, '')
+            label.setText(text if options.get('spotify_show_' + name, name != 'device') else '')
             label.setVisible(bool(label.text()))
         self.arrange()
 
@@ -79,7 +80,7 @@ class SpotifyCard(QWidget):
         color = '#edf2f7' if self.options.get('spotify_negative_font', True) else self.options.get('spotify_font_color', '#FFFFFF')
         for index, label in enumerate(self.labels):
             font = QFont(label.font())
-            font.setPixelSize(max(8, round(base * (1.8 if index == 0 else 1 if index == 1 else .85))))
+            font.setPixelSize(max(8, round(base * (1.8 if index == 0 else 1 if index == 1 else .85 if index == 2 else .75))))
             font.setBold(index == 0)
             font.setStretch(text_stretch(self.pixel_aspect))
             label.setFont(font)

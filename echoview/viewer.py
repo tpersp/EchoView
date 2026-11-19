@@ -1645,6 +1645,8 @@ class DisplayWindow(QMainWindow):
                 info_parts.append(self.spotify_info["artist"])
             if self.disp_cfg.get("spotify_show_album", True) and self.spotify_info and self.spotify_info.get("album"):
                 info_parts.append(self.spotify_info["album"])
+            if self.disp_cfg.get('spotify_show_device', False) and self.spotify_info.get('device_name'):
+                info_parts.append('Playing on ' + self.spotify_info['device_name'])
 
             pos = self.disp_cfg.get("spotify_info_position", "bottom-center")
             if "left" in pos or "right" in pos:
@@ -1749,6 +1751,7 @@ class DisplayWindow(QMainWindow):
         if result.status == "playing":
             self.spotify_info = {
                 "song": result.song, "artist": result.artist, "album": result.album,
+                "device_name": result.device_name,
                 "progress_ms": result.progress_ms, "duration_ms": result.duration_ms,
                 "fetched_time": result.fetched_time,
             }

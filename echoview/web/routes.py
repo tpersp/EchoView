@@ -1006,6 +1006,7 @@ def index():
                     dcfg["spotify_show_song"] = True if request.form.get(pre + "spotify_show_song") else False
                     dcfg["spotify_show_artist"] = True if request.form.get(pre + "spotify_show_artist") else False
                     dcfg["spotify_show_album"] = True if request.form.get(pre + "spotify_show_album") else False
+                    dcfg['spotify_show_device'] = bool(request.form.get(pre + 'spotify_show_device'))
                     try:
                         dcfg["spotify_font_size"] = int(request.form.get(pre + "spotify_font_size", "18"))
                     except:

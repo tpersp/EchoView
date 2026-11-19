@@ -398,7 +398,10 @@ in [audio setup](docs/audio.md).
 In **Displays → Spotify**, choose **Classic** (existing artwork/overlay),
 **Album card** (artwork beside a text panel; stacks on portrait screens), or
 **Poster** (centered artwork with track details below). Classic remains the
-default. Card and Poster place text and progress automatically, retain text
+default. Enable **Playing on device** alongside the title/artist/album toggles to
+show the active Spotify device on any layout (off by default; omitted when
+Spotify supplies no device name). This uses the existing playback response.
+Card and Poster place text and progress automatically, retain text
 visibility, size and color settings, and respect output safe area and physical
 pixel aspect. Layout selection is included in display presets.
 
