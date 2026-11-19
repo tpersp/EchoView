@@ -6,7 +6,7 @@
 {% set positions = [('top-left','Top left'),('top-center','Top center'),('top-right','Top right'),('bottom-left','Bottom left'),('bottom-center','Bottom center'),('bottom-right','Bottom right')] %}
 <div class="page-section">
   <header class="page-header">
-    <div><h1>Displays</h1><p>Set what plays on each screen.</p></div>
+    <div><h1>Displays</h1><p>Set what plays on each screen.</p><div class="device-identity" aria-label="Connected device"><span>Connected to</span><strong>{{ host }}</strong><code>{{ ipaddr }}</code></div></div>
     <div class="page-actions"><button type="button" class="quiet" data-open-details="display-presets"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Presets</button><a class="button" href="{{ url_for('main.upload_media') }}"><i class="fa-solid fa-folder-open" aria-hidden="true"></i> Browse media</a></div>
   </header>
   {% for message in get_flashed_messages() %}<div class="flash-message" role="status">{{ message }}</div>{% endfor %}
