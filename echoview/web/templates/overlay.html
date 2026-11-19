@@ -5,7 +5,7 @@
 <div class="page-section">
   <header class="page-header"><div><h1>Overlays</h1><p>A little useful information, right where you want it.</p></div><span class="pill">{{ monitors|length }} displays</span></header>
   {% for message in get_flashed_messages() %}<div class="flash-message" role="status">{{ message }}</div>{% endfor %}
-  <form id="overlay-settings-form" method="post" action="{{ url_for('main.overlay_config') }}">
+  <form id="overlay-settings-form" data-clock-seconds="{{ overlay_clock.seconds }}" method="post" action="{{ url_for('main.overlay_config') }}">
     <div class="panel-grid">
       {% for monitor_name, monitor_cfg in monitors.items() %}
       {% set over = monitor_cfg.overlay|default(overlay_defaults|default({})) %}
@@ -21,6 +21,14 @@
           {{ f.input(pre ~ 'font_color','Text color',over.font_color|default('#FFFFFF'),'color') }}
           <div class="full-width">{{ f.select(pre ~ 'clock_position','Clock position',over.clock_position|default('bottom-center'), [('top-left','Top left'),('top-center','Top center'),('top-right','Top right'),('center','Center'),('bottom-left','Bottom left'),('bottom-center','Bottom center'),('bottom-right','Bottom right')]) }}</div>
         </div>
+        <div class="overlay-preview" data-overlay-preview data-display="{{ monitor_name }}" data-geometry='{{ preview_geometry[monitor_name]|tojson }}'>
+          <h3>Clock preview</h3>
+          <div class="overlay-preview-screen" data-overlay-screen aria-label="Clock placement preview">
+            <div class="overlay-preview-safe" data-overlay-safe><span class="overlay-preview-clock" data-overlay-clock aria-hidden="true"></span></div>
+            <span class="overlay-preview-empty" data-overlay-empty>Clock hidden</span>
+          </div>
+          <p class="help-text">Sample background · device time {{ overlay_clock.zone }}. Placement is approximate; changes stay here until Apply.</p>
+        </div>
       </section>
       {% endfor %}
     </div>
@@ -30,6 +38,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='overlay_preview.js') }}"></script>
 <script>
   document.getElementById('overlay-settings-form').addEventListener('submit', event => {
     const button = event.target.querySelector('button[type="submit"]');

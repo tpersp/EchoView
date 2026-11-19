@@ -241,3 +241,20 @@ def test_invalid_overlay_position_never_saves(controller):
     before=deepcopy(cfg);data=overlay_form(cfg);data['Composite-1_clock_position']='invalid'
     assert client.post('/overlay_config',data=data).status_code==400
     assert not saved and cfg==before
+
+
+@pytest.mark.parametrize('name,display,monitor,ratio',[
+    ('HDMI-1',{}, {'current_mode':'1920x1080'},16/9),
+    ('Composite-1',{'display_aspect':'auto'},{'current_mode':'720x576i'},4/3),
+    ('HDMI-2',{'display_aspect':'9:16'},{'current_mode':'1080x1920'},9/16),
+])
+def test_clock_preview_matches_physical_screen_shape(name,display,monitor,ratio):
+    geometry=routes.clock_preview_geometry(display,name,monitor)
+    assert geometry['aspect']==pytest.approx(ratio)
+    assert geometry['width']>0 and geometry['height']>0
+
+
+def test_clock_preview_fallback_and_safe_area():
+    geometry=routes.clock_preview_geometry({'safe_area':{'left':10,'top':5}},'HDMI-1',{})
+    assert geometry['width']==1920 and geometry['height']==1080
+    assert geometry['safe_area']['left']==10 and geometry['safe_area']['top']==5

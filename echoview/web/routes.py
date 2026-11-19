@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import secrets
 import subprocess
 import requests
@@ -34,7 +35,7 @@ from echoview.live_settings import visual_changes, request_update
 from echoview.web.spotify_auth import DEFAULT_SCOPE, validate_config, cached_status, oauth_client, auth_method
 from echoview.presentation import safe_area_settings, RESOURCE_PROFILES, EDGES
 from echoview.displays import (discover_monitors, reconcile_displays, mode_choices,
-                               apply_output_mode, DISPLAY_ASPECTS)
+                               apply_output_mode, DISPLAY_ASPECTS, display_pixel_aspect)
 from echoview import embed_utils
 from echoview.web.media import folder_page, resolve_folder, resolve_file, parse_folder_order, IMAGE_EXT, SORTS
 from echoview import presets, scheduling
@@ -815,6 +816,17 @@ def spotify_check():
             return "Spotify rate or quota limit reached. Wait before checking again.", 429
         return "Spotify connection or refresh failed. Check network and credentials; reauthorize if access was revoked.", 503
 
+def clock_preview_geometry(display, name, monitor):
+    resolution = str(monitor.get('current_mode') or display.get('output_mode') or '')
+    match = re.match(r'(\d+)x(\d+)', resolution)
+    width, height = map(int, match.groups()) if match else (1920, 1080)
+    if width <= 0 or height <= 0:
+        width, height = 1920, 1080
+    pixel_aspect = display_pixel_aspect(display.get('display_aspect', 'auto'), width, height, name)
+    return dict(width=width, height=height, pixel_aspect=pixel_aspect,
+                aspect=width*pixel_aspect/height, safe_area=safe_area_settings(display.get('safe_area', {})))
+
+
 @main_bp.route("/overlay_config", methods=["GET", "POST"])
 def overlay_config():
     cfg = deepcopy(load_config())
@@ -861,11 +873,15 @@ def overlay_config():
         return redirect(url_for("main.overlay_config"))
     else:
         monitors_cfg = cfg.get("displays", {})
+        inventory = detect_monitors_extended()
         return render_template(
             "overlay.html",
             theme=cfg.get("theme", "dark"),
             monitors=monitors_cfg,
             overlay_defaults=cfg.get('overlay', {}),
+            preview_geometry={name: clock_preview_geometry(display, name, inventory.get(name, {}))
+                              for name, display in monitors_cfg.items()},
+            overlay_clock=scheduling.device_clock(),
         )
 
 @main_bp.route("/display/presentation", methods=["POST"])

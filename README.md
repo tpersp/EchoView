@@ -453,3 +453,10 @@ slideshow timers or changing Spotify progress. Settings for disconnected outputs
 are retained for their next connection. Applying unchanged settings is a no-op.
 The page confirms live application, or reports that settings were saved but the
 viewer could not confirm them. It never forces a restart on confirmation failure.
+
+Each display’s **Overlays** card also has a browser-only clock preview. It uses
+the device’s time, current output shape (or a standard fallback), physical aspect
+and saved safe area. Try visibility, size, color, contrast and position against
+a sample light/dark background before Apply. Placement is approximate; editing
+the preview never saves settings, accesses media or changes the running display.
+The local clock animation pauses while the browser tab is hidden.

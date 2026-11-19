@@ -388,3 +388,12 @@ form .schedule-folder-chip button { flex: 0 0 auto; border: 0; background: trans
 .spotify-preview-screen[data-layout="classic"][data-position$="left"] .spotify-preview-info { text-align: left; }
 .spotify-preview-screen[data-layout="classic"][data-position$="right"] .spotify-preview-info { text-align: right; }
 .spotify-preview-screen[data-layout="classic"].automatic-contrast .spotify-preview-info { mix-blend-mode: difference; text-shadow: none; }
+/* Local clock preview on a sample light/dark background */
+.overlay-preview { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border-muted); }
+.overlay-preview h3 { font-size: 13px; margin-bottom: 12px; }
+.overlay-preview-screen { position: relative; width: 100%; max-width: 640px; margin: 0 auto 10px; overflow: hidden; border-radius: 8px; border: 1px solid var(--input-border); background: linear-gradient(115deg,#172a3a 0%,#315064 46%,#c5d6df 46.2%,#f2f5f6 100%); isolation: isolate; }
+.overlay-preview-safe { position: absolute; }
+.overlay-preview-safe.has-safe-area { outline: 1px dashed #79909f; }
+.overlay-preview-clock { position: absolute; white-space: nowrap; line-height: 1.2; font-family: system-ui,sans-serif; font-weight: 400; }
+.overlay-preview-clock.auto-contrast { mix-blend-mode: difference; }
+.overlay-preview-empty { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); padding: 6px 10px; border-radius: 6px; color: #edf2f7; background: #101620dd; font-size: 12px; white-space: nowrap; }
