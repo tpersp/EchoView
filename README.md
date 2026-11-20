@@ -251,6 +251,14 @@ Feel free to open pull requests or issues. Any improvements to multi-monitor det
 
 ## Read-only runtime diagnostics
 
+The viewer also records event-loop heartbeat gaps of at least 0.75 seconds in
+`viewer.log` and the service journal, after the event loop recovers. A background
+watchdog checks four times per second; reports are limited to one per 30 seconds.
+Reports include the gap and up to eight Python function names/line numbers, never
+frame locals, media contents or credentials. Native Qt work may appear only as
+the application event loop; this detects pauses but does not by itself identify
+their cause. It does not restart playback or change media settings.
+
 Run this with the same Python environment as EchoView (normally `.venv`):
 
 ```bash

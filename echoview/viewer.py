@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME
 from echoview import scheduling
 from echoview.clock_overlay import format_clock, separators_visible
+from echoview.viewer_watchdog import ViewerWatchdog
 
 from echoview.browser import qt_flags, chromium_flags
 from echoview.streaming import (capabilities as stream_capabilities, playback_environment,
@@ -1841,6 +1842,13 @@ class EchoViewGUI:
         self.visual_timer = QTimer()
         self.visual_timer.timeout.connect(self.visual_updates.poll)
         self.visual_timer.start(250)
+        # Start after initial screen setup so startup is not reported as a stall.
+        self.watchdog = ViewerWatchdog(log_message)
+        self.heartbeat_timer = QTimer()
+        self.heartbeat_timer.timeout.connect(self.watchdog.beat)
+        self.heartbeat_timer.start(250)
+        self.app.aboutToQuit.connect(self.watchdog.stop)
+        self.watchdog.start()
 
     def _schedule_sync(self, *args):
         QTimer.singleShot(100, self._sync_screens)
