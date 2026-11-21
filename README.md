@@ -487,7 +487,7 @@ The page confirms live application, or reports that settings were saved but the
 viewer could not confirm them. It never forces a restart on confirmation failure.
 
 Each display’s **Overlays** card previews clock edits over a frame from the
-running viewer. **Live** refreshes the background approximately every two seconds
+running viewer. It fetches one frame by default. Enable **Live** to refresh approximately every two seconds
 while the preview is visible; turn it off to hold a frame, or use **Refresh**.
 The clock uses device time, physical aspect and saved safe area, with manual
 colour or difference blending over the actual background. Edits stay in the
