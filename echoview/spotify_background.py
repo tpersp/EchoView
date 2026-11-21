@@ -44,7 +44,7 @@ def background_colours(options, palette):
 def background_style(options, palette):
     mode = options.get('spotify_background_mode','black')
     if mode not in ('artwork','gradient'):
-        return '#101620'
+        return '#000000'
     first,second = background_colours(options,palette)
     if mode=='artwork':
         return first

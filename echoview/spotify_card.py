@@ -1,17 +1,19 @@
 """Artwork-first Spotify layouts; constructed only by the native viewer."""
 from PySide6.QtCore import Qt, QRect
-from PySide6.QtGui import QFont, QPixmap, QTransform
+from PySide6.QtGui import QFont, QPixmap, QTransform, QPainter, QBrush, QColor, QLinearGradient, QGradient
 from PySide6.QtWidgets import QWidget, QLabel
 from echoview.displays import fit_dimensions
 from echoview.presentation import text_stretch, bounded_int
-from echoview.spotify_background import background_style, foreground_colour
+from echoview.spotify_background import background_style, background_colours, foreground_colour
 
 
 class SpotifyCard(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName('spotify-card')
-        self.setStyleSheet('QWidget#spotify-card { background: #101620; } QLabel { background: transparent; color: #edf2f7; }')
+        self.setStyleSheet('QLabel { background: transparent; color: #edf2f7; }')
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
+        self.background_brush = QBrush(QColor('#000000'))
         self.artwork = QLabel(self)
         self.artwork.setAlignment(Qt.AlignCenter)
         self.artwork.setStyleSheet('background: #1c2634; color: #9ba9bc; border-radius: 8px;')
@@ -35,8 +37,17 @@ class SpotifyCard(QWidget):
         self.art_colors = info.get('art_colors',())
         background = background_style(options,self.art_colors)
         if background != self.background_key:
-            self.setStyleSheet('QWidget#spotify-card { background: '+background+'; } QLabel { background: transparent; color: #edf2f7; }')
+            if options.get('spotify_background_mode') == 'gradient':
+                first, second = background_colours(options,self.art_colors)
+                gradient = QLinearGradient(0,0,1,0)
+                gradient.setCoordinateMode(QGradient.CoordinateMode.ObjectBoundingMode)
+                gradient.setColorAt(0,QColor(first))
+                gradient.setColorAt(1,QColor(second))
+                self.background_brush = QBrush(gradient)
+            else:
+                self.background_brush = QBrush(QColor(background))
             self.background_key = background
+            self.update()
         rotation = bounded_int(options.get('rotate', 0), 0, -3600, 3600)
         if path != self.path or rotation != self.rotation:
             self.path, self.rotation, self.scaled_key = path, rotation, None
@@ -48,6 +59,12 @@ class SpotifyCard(QWidget):
             label.setText(text if options.get('spotify_show_' + name, name != 'device') else '')
             label.setVisible(bool(label.text()))
         self.arrange()
+
+    def paintEvent(self, event):
+        # Custom QWidget backgrounds must be painted during normal window
+        # painting, not merely when QWidget.grab()/render() forces a background.
+        painter = QPainter(self)
+        painter.fillRect(self.rect(),self.background_brush)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

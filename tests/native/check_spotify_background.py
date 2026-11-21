@@ -10,11 +10,26 @@ with tempfile.TemporaryDirectory(prefix='echoview-art-background-') as directory
     os.environ['VIEWER_HOME']=os.environ['IMAGE_DIR']=directory
     os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
     from PIL import Image
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QWidget
     from echoview.spotify_card import SpotifyCard
     from echoview.spotify_client import Playback
     from echoview import viewer
     app=QApplication([])
+    # Paint through a parent window, not card.grab(): direct grabs can force
+    # stylesheet backgrounds that a custom QWidget never paints on screen.
+    parent=QWidget();parent.resize(640,360);parent.setStyleSheet('background-color:black;')
+    child=SpotifyCard(parent);child.setGeometry(0,0,640,360)
+    child.set_track('',{'song':'Fixture','art_colors':('#ff0000','#0000ff')},
+                    {'spotify_background_mode':'gradient','spotify_background_dim':50},1)
+    parent.show();app.processEvents()
+    parent_image=parent.grab().toImage()
+    assert parent_image.pixelColor(2,2).red()>120
+    assert parent_image.pixelColor(637,2).blue()>120
+    child.set_track('',{'art_colors':('#ff0000','#0000ff')},
+                    {'spotify_background_mode':'artwork','spotify_background_dim':50},1)
+    app.processEvents()
+    assert parent.grab().toImage().pixelColor(637,2).red()>120
+    parent.close()
     path=Path(directory)/'art.png';Image.new('RGB',(64,64),'orange').save(path)
     info={'song':'Fixture','artist':'Artist','art_colors':('#ff0000','#0000ff')}
     card=SpotifyCard();card.resize(1280,720);card.show()
@@ -27,7 +42,7 @@ with tempfile.TemporaryDirectory(prefix='echoview-art-background-') as directory
                 app.processEvents()
                 image=card.grab().toImage()
                 left=image.pixelColor(2,2);right=image.pixelColor(image.width()-3,2)
-                if mode=='black':assert left.name()=='#101620'
+                if mode=='black':assert left.name()=='#000000'
                 else:assert left.red()>120 and left.blue()<5
                 if mode=='gradient':assert right.blue()>120 and right.red()<5
     key=card.pixmap.cacheKey()

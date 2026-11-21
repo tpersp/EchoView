@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const palette = raw.length ? [raw[0],raw[1] || raw[0]] : ['#263449','#171f2c'];
     const colours = palette.map(c => '#'+[1,3,5].map(i => Math.round(parseInt(c.slice(i,i+2),16)*(100-dim)/100).toString(16).padStart(2,'0')).join(''));
     if (backgroundMode!=='gradient') colours[1]=colours[0];
-    screen.style.background = backgroundMode==='gradient' ? `linear-gradient(90deg,${colours[0]},${colours[1]})` : backgroundMode==='artwork' ? colours[0] : '#101620';
+    screen.style.background = backgroundMode==='gradient' ? `linear-gradient(90deg,${colours[0]},${colours[1]})` : backgroundMode==='artwork' ? colours[0] : '#000000';
     for (const name of ['song','artist','album','device']) {
       const node = preview.querySelector(`[data-preview-${name}]`);
       const text = name === 'device' ? (data.device_name ? `Playing on ${data.device_name}` : '') : data[name] || '';

@@ -29,7 +29,7 @@ def test_dimming_and_static_styles(dim,expected):
 
 
 def test_black_default_missing_art_and_invalid_palettes_are_safe():
-    assert background_style({},())=='#101620'
+    assert background_style({},())=='#000000'
     options={'spotify_background_mode':'gradient','spotify_background_dim':65}
     assert background_style(options,())==background_style(options,['not-css','red; background:evil'])
 
