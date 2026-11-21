@@ -208,6 +208,8 @@ class SpotifyPoller:
                         if result.status == "playing":
                             path = self._artwork(result.art_url)
                             result = replace(result, art_path=path, art_colors=self.art_palettes.get(result.art_url,()) if path else ())
+                        elif result.status == "paused":
+                            result = replace(result, art_colors=self.art_palettes.get(result.art_url,()))
                         delay = POLL_SECONDS
                     self.failures = 0
             except Exception as exc:

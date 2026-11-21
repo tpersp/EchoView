@@ -173,6 +173,28 @@ def test_palette_failure_keeps_valid_artwork(tmp_path,monkeypatch):
         poller.close()
 
 
+def test_paused_track_reuses_palette_without_another_artwork_download(tmp_path):
+    now=[100]
+    current=playing('https://art/cover')
+    calls=[]
+    def download(url,**kwargs):
+        calls.append(url)
+        return Response(png())
+    client=SimpleNamespace(current_playback=lambda **kwargs: current)
+    poller=spotify.SpotifyPoller(settings,tmp_path/'token',clock=lambda:now[0],
+                                client_factory=lambda cfg:client,artwork_get=download)
+    try:
+        first=poller.fetch()
+        assert first.art_colors
+        current['is_playing']=False
+        now[0]+=6
+        paused=poller.fetch()
+        assert paused.status=='paused' and paused.art_colors==first.art_colors
+        assert len(calls)==1
+    finally:
+        poller.close()
+
+
 @pytest.mark.parametrize("data", [b"not an image", b"x" * (spotify.MAX_ART_BYTES + 1)])
 def test_invalid_or_oversized_art_keeps_metadata_and_throttles_retries(tmp_path, data):
     now, calls = [100], []
