@@ -1186,9 +1186,8 @@ class DisplayWindow(QMainWindow):
         return filtered
 
     def load_and_cache_image(self, fullpath):
-        # QImageReader/QImage are safe for preloading; QPixmap stays on the GUI.
-        # Read through Python first: slow network I/O must not happen inside
-        # Qt's metadata methods, which can hold the Python GIL even on a worker.
+        # Background decoding uses Pillow; Qt's image plugins stay on the GUI
+        # thread to avoid a codec-factory/GIL lock inversion with QMovie.
         from echoview.image_data import read_image_data
         return read_image_data(fullpath, self.resource_options)
 

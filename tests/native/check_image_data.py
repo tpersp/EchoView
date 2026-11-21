@@ -34,4 +34,16 @@ with tempfile.TemporaryDirectory(prefix='echoview-image-data-') as directory:
     broken.write_bytes(b'not an image')
     for path in (broken, root / 'missing.gif'):
         assert read_image_data(str(path), policy)['image'].isNull()
+    oriented = root / 'oriented.jpg'
+    exif = Image.Exif()
+    exif[274] = 6
+    Image.new('RGB', (80, 40), 'red').save(oriented, exif=exif)
+    rotated = read_image_data(str(oriented), policy)['image']
+    assert (rotated.width(), rotated.height()) == (40, 80)
+    transparent = root / 'transparent.png'
+    Image.new('RGBA', (16, 16), (20, 40, 60, 80)).save(transparent)
+    pixel = read_image_data(str(transparent), policy)['image'].pixelColor(0, 0)
+    assert (pixel.red(), pixel.green(), pixel.blue(), pixel.alpha()) == (20, 40, 60, 80)
+    scaled = read_image_data(str(transparent), dict(policy, decode_pixels=64, decode_side=8))['image']
+    assert scaled.width() == scaled.height() == 8
 print('Image staging: static/GIF decode, byte accounting, oversized fallback, corrupt/missing files passed.')

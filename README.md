@@ -258,6 +258,8 @@ Reports include the gap and up to eight Python function names/line numbers, neve
 frame locals, media contents or credentials. Native Qt work may appear only as
 the application event loop; this detects pauses but does not by itself identify
 their cause. It does not restart playback or change media settings.
+If native code permanently holds the Python GIL, the Python watchdog cannot run
+either; an external thread-stack capture is needed to investigate that case.
 
 Both the normal image slideshow and Spotify's fallback slideshow preload their
 next image using one reusable background worker per display. GIFs up to 32 MiB
@@ -265,6 +267,9 @@ next image using one reusable background worker per display. GIFs up to 32 MiB
 within the existing image-cache budget, so animation playback does not need NAS
 reads. This caches encoded data, not every decoded frame. Larger GIFs retain
 file-backed playback. Source media is never rewritten by this caching.
+Preloading decodes first frames with Pillow and hands detached pixel data to
+Qt. Qt image plugins are kept off preload threads to avoid a plugin-lock/Python
+GIL deadlock with GIF playback. EXIF orientation and decode-size limits apply.
 
 Run this with the same Python environment as EchoView (normally `.venv`):
 

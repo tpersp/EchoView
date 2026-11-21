@@ -1,8 +1,10 @@
 """Bounded encoded-image staging; only QImage crosses worker boundaries."""
 import os
+from io import BytesIO
 
-from PySide6.QtCore import QBuffer, QIODevice, QSize
-from PySide6.QtGui import QImageReader
+from PIL import Image, ImageOps
+from PySide6.QtCore import QByteArray
+from PySide6.QtGui import QImage
 
 from echoview.presentation import decode_size
 
@@ -18,22 +20,30 @@ def read_image_data(path, policy):
                 if len(value) <= limit:
                     payload = value
     except OSError:
-        pass  # QImageReader supplies the usual null image for missing files.
-    buffer = None
-    if payload is not None:
-        buffer = QBuffer()
-        buffer.setData(payload)
-        buffer.open(QIODevice.ReadOnly)
-    reader = QImageReader(buffer) if buffer is not None else QImageReader(path)
-    reader.setAutoDetectImageFormat(True)
-    reader.setAutoTransform(True)
-    size = reader.size()
-    width, height = decode_size(size.width(), size.height(), policy)
-    if width > 0 and height > 0:
-        reader.setScaledSize(QSize(width, height))
-    image = reader.read()
+        pass
+    # Do not call Qt's image plugins from a Python worker. Their factory mutex
+    # can be held by QMovie while a Python-created device tries to acquire the
+    # GIL, causing lock inversion with QImageReader.size() on another thread.
+    # Pillow decodes; Qt receives only a detached array of pixels.
+    image = QImage()
+    try:
+        with Image.open(BytesIO(payload) if payload is not None else path) as source:
+            width, height = decode_size(*source.size, policy)
+            source.draft('RGB', (width, height))
+            if source.size != (width, height):
+                source.thumbnail((width, height), Image.Resampling.BILINEAR)
+            oriented = ImageOps.exif_transpose(source)
+            width, height = decode_size(*oriented.size, policy)
+            rgba = oriented.convert('RGBA')
+            if rgba.size != (width, height):
+                rgba = rgba.resize((width, height), Image.Resampling.BILINEAR)
+            pixels = rgba.tobytes()
+            # copy() detaches storage before the Python bytes are released.
+            image = QImage(pixels, width, height, width * 4, QImage.Format_RGBA8888).copy()
+    except (OSError, ValueError, Image.DecompressionBombError):
+        pass  # Keep the existing null-image failure path.
     gif = path.lower().endswith('.gif')
-    encoded = buffer.data() if gif and buffer is not None else None
+    encoded = QByteArray(payload) if gif and payload is not None and not image.isNull() else None
     return {'type': 'gif' if gif else 'static', 'path': path,
             'first_frame': image, 'image': image, 'encoded': encoded,
             'bytes': int(image.sizeInBytes()) + (encoded.size() if encoded is not None else 0)}
