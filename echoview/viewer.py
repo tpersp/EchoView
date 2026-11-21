@@ -1927,6 +1927,12 @@ class EchoViewGUI:
         self.visual_timer = QTimer()
         self.visual_timer.timeout.connect(self.visual_updates.poll)
         self.visual_timer.start(250)
+        from echoview.overlay_preview import FrameReceiver
+        self.preview_encoder = ImagePreloader(name='preview-encoder')
+        self.preview_requests = FrameReceiver(state_directory(VIEWER_HOME) / 'overlay-preview',
+                                              self._capture_preview, self.preview_encoder.submit)
+        self.visual_timer.timeout.connect(self.preview_requests.poll)
+        self.app.aboutToQuit.connect(self.preview_encoder.close)
         # Start after initial screen setup so startup is not reported as a stall.
         self.watchdog = ViewerWatchdog(log_message)
         self.heartbeat_timer = QTimer()
@@ -1937,6 +1943,13 @@ class EchoViewGUI:
 
     def _schedule_sync(self, *args):
         QTimer.singleShot(100, self._sync_screens)
+
+    def _capture_preview(self, display):
+        from echoview.preview_capture import capture_background
+        window = self.window_by_connector.get(display)
+        if window is None:
+            raise ValueError('Display unavailable')
+        return capture_background(window)
 
     def _screen_added(self, screen):
         screen.geometryChanged.connect(self._schedule_sync)

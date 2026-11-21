@@ -486,12 +486,26 @@ are retained for their next connection. Applying unchanged settings is a no-op.
 The page confirms live application, or reports that settings were saved but the
 viewer could not confirm them. It never forces a restart on confirmation failure.
 
-Each display’s **Overlays** card also has a browser-only clock preview. It uses
-the device’s time, current output shape (or a standard fallback), physical aspect
-and saved safe area. Try visibility, size, color, contrast and position against
-a sample light/dark background before Apply. Placement is approximate; editing
-the preview never saves settings, accesses media or changes the running display.
-The local clock animation pauses while the browser tab is hidden.
+Each display’s **Overlays** card previews clock edits over a frame from the
+running viewer. **Live** refreshes the background approximately every two seconds
+while the preview is visible; turn it off to hold a frame, or use **Refresh**.
+The clock uses device time, physical aspect and saved safe area, with manual
+colour or difference blending over the actual background. Edits stay in the
+browser until Apply; capture never hides or changes the display's real clock.
+Browser fonts and downsampling can differ from the physical display.
+
+Images, GIFs and Spotify layouts are rendered from existing viewer pixels with
+the clock excluded. Qt video uses its current video-sink frame. External players
+use the assigned screen's screenshot support; unsupported capture backends or
+hardware video planes can limit those previews. Unavailable/delayed captures are
+reported beside the preview, with the last frame retained when possible.
+
+Frames are limited to 640 pixels per side, encoded with Pillow off the Qt thread
+and passed through bounded, private shared-memory files (temporary-directory
+fallback). The controller serves JPEGs with `Cache-Control: no-store`. Capture
+is capped at two per second across clients and occurs only on browser requests;
+hidden/offscreen previews stop polling. The preview does not reopen source media,
+decode another video, call Spotify, save settings or restart playback.
 
 Clock overlays support **Show seconds** and a per-display **Clock format**:
 **24-hour** (`13:05` / `13:05:09`) or **12-hour · AM/PM** (`1:05 PM` /

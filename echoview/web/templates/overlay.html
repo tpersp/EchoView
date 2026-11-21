@@ -25,13 +25,14 @@
           {{ f.input(pre ~ 'font_color','Text color',over.font_color|default('#FFFFFF'),'color') }}
           <div class="full-width">{{ f.select(pre ~ 'clock_position','Clock position',over.clock_position|default('bottom-center'), [('top-left','Top left'),('top-center','Top center'),('top-right','Top right'),('center','Center'),('bottom-left','Bottom left'),('bottom-center','Bottom center'),('bottom-right','Bottom right')]) }}</div>
         </div>
-        <div class="overlay-preview" data-overlay-preview data-display="{{ monitor_name }}" data-geometry='{{ preview_geometry[monitor_name]|tojson }}'>
-          <h3>Clock preview</h3>
+        <div class="overlay-preview" data-overlay-preview data-display="{{ monitor_name }}" data-frame-url="{{ url_for('main.overlay_preview_frame', display=monitor_name) }}" data-geometry='{{ preview_geometry[monitor_name]|tojson }}'>
+          <div class="section-heading"><h3>Clock preview</h3><div class="form-actions"><label><input type="checkbox" data-preview-live checked> Live</label><button type="button" class="quiet" data-preview-refresh>Refresh</button></div></div>
           <div class="overlay-preview-screen" data-overlay-screen aria-label="Clock placement preview">
+            <img class="overlay-preview-frame" data-overlay-frame alt="Current display background" hidden>
             <div class="overlay-preview-safe" data-overlay-safe><span class="overlay-preview-clock" data-overlay-clock aria-hidden="true"></span></div>
             <span class="overlay-preview-empty" data-overlay-empty>Clock hidden</span>
           </div>
-          <p class="help-text">Device time · {{ overlay_clock.zone }}</p>
+          <div class="section-heading"><small data-preview-status role="status">Connecting…</small><small>Device time · {{ overlay_clock.zone }}</small></div>
         </div>
       </section>
       {% endfor %}

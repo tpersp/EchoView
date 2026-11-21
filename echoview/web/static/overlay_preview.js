@@ -1,4 +1,4 @@
-// Clock previews use device time embedded in the page. No media or API requests.
+// Clock edits stay local; background frames come from the running viewer.
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('overlay-settings-form');
   const previews = [...document.querySelectorAll('[data-overlay-preview]')];
@@ -70,6 +70,56 @@ document.addEventListener('DOMContentLoaded', () => {
   form.addEventListener('input',() => { renderAll(); schedule(); });
   form.addEventListener('change',() => { renderAll(); schedule(); });
   for (const preview of previews) new ResizeObserver(() => render(preview)).observe(preview);
+  const frames = new Map(previews.map(preview => [preview, {visible: false, timer: null, request: null, url: null}]));
+  async function refreshFrame(preview, manual=false) {
+    const state = frames.get(preview);
+    clearTimeout(state.timer); state.timer = null;
+    if (document.hidden || state.request || (!manual && !state.visible)) return;
+    const live = preview.querySelector('[data-preview-live]').checked;
+    if (!manual && !live && state.url) return;
+    const controller = new AbortController(); state.request = controller;
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const status = preview.querySelector('[data-preview-status]');
+    try {
+      const response = await fetch(preview.dataset.frameUrl, {cache:'no-store', signal:controller.signal});
+      if (!response.ok || !response.headers.get('Content-Type')?.includes('image/jpeg')) throw new Error('Unavailable');
+      const url = URL.createObjectURL(await response.blob());
+      const decoded = new Image(); decoded.src = url;
+      try { await decoded.decode(); } catch (error) { URL.revokeObjectURL(url); throw error; }
+      if (controller.signal.aborted || document.hidden) { URL.revokeObjectURL(url); return; }
+      const image = preview.querySelector('[data-overlay-frame]'), previous = state.url;
+      image.src = url; image.hidden = false; state.url = url;
+      if (previous) URL.revokeObjectURL(previous);
+      status.textContent = live ? 'Current frame' : 'Paused preview';
+    } catch (_) {
+      if (controller.signal.aborted) return;
+      status.textContent = state.url ? 'Preview delayed' : 'Preview unavailable';
+    } finally {
+      clearTimeout(timeout); state.request = null;
+      if (!document.hidden && state.visible && preview.querySelector('[data-preview-live]').checked) {
+        state.timer = setTimeout(() => refreshFrame(preview), 2000);
+      }
+    }
+  }
+  function stopFrame(preview) {
+    const state = frames.get(preview);
+    clearTimeout(state.timer); state.timer = null; state.request?.abort();
+  }
+  const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+    const state = frames.get(entry.target); state.visible = entry.isIntersecting;
+    if (state.visible) refreshFrame(entry.target); else stopFrame(entry.target);
+  }));
+  for (const preview of previews) {
+    observer.observe(preview);
+    preview.querySelector('[data-preview-refresh]').addEventListener('click', () => refreshFrame(preview,true));
+    preview.querySelector('[data-preview-live]').addEventListener('change', event => {
+      if (event.target.checked) refreshFrame(preview);
+      else { stopFrame(preview); preview.querySelector('[data-preview-status]').textContent = 'Paused preview'; }
+    });
+  }
+  window.addEventListener('pagehide', () => {
+    for (const [preview,state] of frames) { stopFrame(preview); if (state.url) URL.revokeObjectURL(state.url); }
+  });
   let timer;
   function schedule() {
     clearInterval(timer);
@@ -79,8 +129,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function visibility() {
     if (!document.hidden) renderAll();
+    for (const preview of previews) {
+      if (document.hidden) stopFrame(preview); else refreshFrame(preview);
+    }
     schedule();
   }
   document.addEventListener('visibilitychange',visibility);
+  window.addEventListener('pageshow',visibility);
   visibility();
 });

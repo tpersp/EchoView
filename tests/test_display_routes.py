@@ -142,6 +142,22 @@ def test_presentation_page_has_calibration_and_safe_area_controls(controller):
     assert b'name="safe_left"' in response.data
 
 
+def test_overlay_frame_is_read_only_private_and_validates_display(controller, monkeypatch):
+    from echoview import overlay_preview
+    client, cfg, found, saved, applied = controller
+    calls = []
+    monkeypatch.setattr(overlay_preview, 'request_frame', lambda directory, display: calls.append(display) or b'jpeg')
+    response = client.get('/overlay_preview/Composite-1')
+    assert response.status_code == 200 and response.data == b'jpeg'
+    assert response.mimetype == 'image/jpeg'
+    assert response.headers['Cache-Control'] == 'no-store'
+    assert response.headers['X-Content-Type-Options'] == 'nosniff'
+    assert client.get('/overlay_preview/unknown').status_code == 404
+    assert calls == ['Composite-1'] and not saved and not applied
+    monkeypatch.setattr(overlay_preview, 'request_frame', lambda *a: (_ for _ in ()).throw(overlay_preview.PreviewUnavailable()))
+    assert client.get('/overlay_preview/Composite-1').status_code == 503
+
+
 def test_invalid_clock_font_size_is_rejected_without_saving(controller):
     client, cfg, found, saved, applied = controller
     response = client.post("/overlay_config", data={"Composite-1_clock_font_size": "nan"})

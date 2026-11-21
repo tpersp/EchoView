@@ -898,6 +898,23 @@ def overlay_config():
             overlay_clock=scheduling.device_clock(),
         )
 
+
+@main_bp.route('/overlay_preview/<display>')
+def overlay_preview_frame(display):
+    from io import BytesIO
+    from echoview.overlay_preview import request_frame, PreviewUnavailable
+    if display not in load_config().get('displays', {}):
+        return 'Unknown display', 404
+    try:
+        frame = request_frame(state_directory(VIEWER_HOME) / 'overlay-preview', display)
+        response = send_file(BytesIO(frame), mimetype='image/jpeg', max_age=0)
+    except (OSError, PreviewUnavailable):
+        response = jsonify(error='Preview unavailable')
+        response.status_code = 503
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
 @main_bp.route("/display/presentation", methods=["POST"])
 def configure_presentation():
     cfg = load_config()
