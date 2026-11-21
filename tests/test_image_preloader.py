@@ -47,3 +47,22 @@ def test_queue_is_bounded_and_close_does_not_wait_for_slow_io():
         worker.close()
         worker.thread.join(timeout=1)
     assert not calls and not worker.thread.is_alive()
+
+
+def test_latest_requests_replace_queued_work_without_waiting_for_running_io():
+    worker = ImagePreloader()
+    started, release, finished = threading.Event(), threading.Event(), threading.Event()
+    calls = []
+    try:
+        assert worker.submit(lambda: (started.set(), release.wait(3)))
+        assert started.wait(2)
+        for i in range(10):
+            assert worker.submit(lambda n=i: (calls.append(n), finished.set()), replace_pending=True)
+        assert worker.tasks.qsize() == 1
+        release.set()
+        assert finished.wait(2)
+        assert calls == [9]
+    finally:
+        release.set()
+        worker.close()
+        worker.thread.join(timeout=1)

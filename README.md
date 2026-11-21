@@ -270,6 +270,11 @@ file-backed playback. Source media is never rewritten by this caching.
 Preloading decodes first frames with Pillow and hands detached pixel data to
 Qt. Qt image plugins are kept off preload threads to avoid a plugin-lock/Python
 GIL deadlock with GIF playback. EXIF orientation and decode-size limits apply.
+File-existence checks and cache-miss loading for slideshow and classic Spotify
+artwork transitions also run in a background worker. Existing media keeps playing
+until the result is ready. Pending requests are bounded to the latest selection;
+late results after a mode change or window closure are discarded. A missing file
+still displays the existing error message, including when its pixels were cached.
 
 Run this with the same Python environment as EchoView (normally `.venv`):
 

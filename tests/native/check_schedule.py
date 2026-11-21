@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 
 
 def main():
@@ -44,13 +45,20 @@ def main():
         before = deepcopy(cfg)
         viewer.load_config = lambda: cfg
         app = QApplication([])
+        def wait_for(predicate):
+            deadline = time.monotonic() + 3
+            while not predicate() and time.monotonic() < deadline:
+                app.processEvents()
+                time.sleep(.005)
+            assert predicate()
         window = viewer.DisplayWindow('fixture', display, app.primaryScreen())
-        app.processEvents()
+        wait_for(lambda: window.current_movie is not None)
         identity = window.winId()
         assert window.current_mode == 'mixed' and window.current_movie is not None
         assert window.last_displayed_path.endswith('animation.gif')
         Clock.value = datetime(2026, 11, 18, 14)
         window._check_schedule()
+        wait_for(lambda: window.current_pixmap is not None)
         assert window.current_movie is None
         assert window.last_displayed_path.endswith('photo.png')
         assert window.winId() == identity

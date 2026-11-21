@@ -307,7 +307,7 @@ def test_next_image_starts_from_first(monkeypatch):
     dw.fallback_image_list = []
     dw.fallback_index = -1
     recorded = []
-    dw.show_foreground_image = lambda path, is_spotify=False: recorded.append(path)
+    dw.request_foreground_image = lambda path, is_spotify=False: recorded.append(path)
     dw.prefetch_next_image = lambda: None
     dw.clock_label = types.SimpleNamespace(update=lambda: None)
 

@@ -114,6 +114,7 @@ def detect_monitors():
 class DisplayWindow(QMainWindow):
     spotify_result = Signal(int, object)
     stream_event = Signal(int, str)
+    image_ready = Signal(int, object)
 
     def __init__(self, disp_name, disp_cfg, assigned_screen=None):
         super().__init__()
@@ -140,6 +141,9 @@ class DisplayWindow(QMainWindow):
         self.cache_lock = threading.Lock()
         self.preload_count = 1
         self.image_preloader = ImagePreloader()
+        self.image_loader = ImagePreloader(name='image-loader')
+        self.image_request_id = 0
+        self.image_ready.connect(self._handle_image_ready, Qt.QueuedConnection)
 
         self.last_displayed_path = None
         self.current_pixmap = None
@@ -953,6 +957,8 @@ class DisplayWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.running = False
+        self.image_request_id += 1
+        self.image_loader.close()
         self.image_preloader.close()
         self._cancel_stream()
         self.spotify_fetch_id += 1
@@ -966,6 +972,7 @@ class DisplayWindow(QMainWindow):
 
     @Slot()
     def reload_settings(self, cfg=None):
+        self.image_request_id += 1
         next_cfg = load_config() if cfg is None else cfg
         self._cancel_stream()
         self.spotify_fetch_id += 1
@@ -1271,12 +1278,13 @@ class DisplayWindow(QMainWindow):
         new_path = self.image_list[self.index]
         self.last_displayed_path = new_path
 
-        self.show_foreground_image(new_path)
+        self.request_foreground_image(new_path)
         self.prefetch_next_image()
         if self.overlay_config.get("auto_negative_font", False):
             self.clock_label.update()
 
     def clear_foreground_label(self, message):
+        self.image_request_id += 1
         self.current_pixmap = None
         self.current_drawn_image = None
         self.stop_current_video()
@@ -1313,10 +1321,52 @@ class DisplayWindow(QMainWindow):
         self.spotify_progress_bar.hide()
         self.spotify_progress_timer.stop()
 
-    def show_foreground_image(self, fullpath, is_spotify=False):
-        if not os.path.exists(fullpath):
-            self.clear_foreground_label("Missing file")
+    def request_foreground_image(self, fullpath, is_spotify=False):
+        self.image_request_id += 1
+        request_id = self.image_request_id
+        generation = self.cache_generation
+        emit = self.image_ready.emit
+
+        def worker():
+            try:
+                if (not self.running or request_id != self.image_request_id
+                        or generation != self.cache_generation):
+                    return
+                if not os.path.exists(fullpath):
+                    result = (generation, fullpath, is_spotify, None, 'Missing file')
+                else:
+                    if (request_id != self.image_request_id
+                            or generation != self.cache_generation):
+                        return
+                    data = self.get_cached_image(fullpath)
+                    result = (generation, fullpath, is_spotify, data, None)
+            except Exception:
+                result = (generation, fullpath, is_spotify, None, 'Image could not be loaded')
+            try:
+                emit(request_id, result)
+            except RuntimeError:
+                pass  # The window closed while NAS I/O was pending.
+
+        # Current media keeps playing during the check/load. Keep only the
+        # latest queued request if an unavailable NAS spans several transitions.
+        self.image_loader.submit(worker, replace_pending=True)
+
+    @Slot(int, object)
+    def _handle_image_ready(self, request_id, result):
+        generation, path, is_spotify, data, error = result
+        if (not self.running or request_id != self.image_request_id
+                or generation != self.cache_generation):
             return
+        if error:
+            self.clear_foreground_label(error)
+        else:
+            self.show_foreground_image(path, is_spotify, data=data)
+
+    def show_foreground_image(self, fullpath, is_spotify=False, data=None):
+        # Production callers prepare data off-thread; the direct form is also
+        # useful for local synthetic/native checks.
+        if data is None:
+            data = self.get_cached_image(fullpath)
 
         if self.current_movie:
             try:
@@ -1330,7 +1380,6 @@ class DisplayWindow(QMainWindow):
             self.current_movie = None
             self.handling_gif_frames = False
 
-        data = self.get_cached_image(fullpath)
         if data["image"].isNull():
             self.clear_foreground_label("Image could not be decoded")
             return
@@ -1368,7 +1417,7 @@ class DisplayWindow(QMainWindow):
             if data["type"] == "static":
                 self.current_pixmap = QPixmap.fromImage(data["image"])
             else:
-                self.current_pixmap = QPixmap(fullpath)
+                self.current_pixmap = QPixmap.fromImage(data['image'])
             self.handling_gif_frames = False
             self.updateForegroundScaled()
             blurred = self.make_background(self.current_pixmap)
@@ -1621,6 +1670,7 @@ class DisplayWindow(QMainWindow):
         if self.spotify_info:
             card = getattr(self, 'spotify_card', None)
             if card and self.disp_cfg.get('spotify_layout', 'classic') in ('album_card', 'poster'):
+                self.image_request_id += 1
                 if self.current_movie:
                     self.current_movie.stop()
                     self.current_movie = None
@@ -1646,7 +1696,7 @@ class DisplayWindow(QMainWindow):
                 self.bg_label.show()
                 self.spotify_art_path = None
             if path and path != getattr(self, "spotify_art_path", None):
-                self.show_foreground_image(path, is_spotify=True)
+                self.request_foreground_image(path, is_spotify=True)
             elif not path:
                 self.bg_label.clear()
                 self.clear_foreground_label("Artwork unavailable")
@@ -1722,7 +1772,7 @@ class DisplayWindow(QMainWindow):
                     self.fallback_index = (self.fallback_index + 1) % len(self.fallback_image_list)
                     new_path = self.fallback_image_list[self.fallback_index]
                     self.last_displayed_path = new_path
-                    self.show_foreground_image(new_path)
+                    self.request_foreground_image(new_path)
                     self.prefetch_next_image(self.fallback_image_list, self.fallback_index)
                     self.spotify_fallback_due = time.monotonic() + max(1, int(self.disp_cfg.get("image_interval", 60)))
                 self.spotify_info_label.setText("")

@@ -4,17 +4,24 @@ import threading
 
 
 class ImagePreloader:
-    def __init__(self):
+    def __init__(self, name='image-preloader'):
         self.tasks = queue.Queue(maxsize=2)
         self.closed = threading.Event()
         self.gate = threading.Lock()
-        self.thread = threading.Thread(target=self._run, name='image-preloader', daemon=True)
+        self.thread = threading.Thread(target=self._run, name=name, daemon=True)
         self.thread.start()
 
-    def submit(self, task):
+    def submit(self, task, *, replace_pending=False):
         with self.gate:
             if self.closed.is_set():
                 return False
+            if replace_pending:
+                while True:
+                    try:
+                        self.tasks.get_nowait()
+                        self.tasks.task_done()
+                    except queue.Empty:
+                        break
             try:
                 self.tasks.put_nowait(task)
                 return True

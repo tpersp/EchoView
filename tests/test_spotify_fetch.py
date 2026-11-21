@@ -235,7 +235,7 @@ def test_fallback_rotation_does_not_slow_polling(monkeypatch):
     dw.disp_cfg = {"fallback_mode": "random_image", "image_interval": 60}
     dw.fallback_image_list = ["first", "second"]
     dw.fallback_index = -1
-    dw.show_foreground_image = shown.append
+    dw.request_foreground_image = shown.append
     prefetched = []
     dw.prefetch_next_image = lambda paths, index: prefetched.append((list(paths), index))
     dw.slideshow_timer = types.SimpleNamespace(setInterval=lambda ms: (_ for _ in ()).throw(AssertionError("polling slowed")))
@@ -405,6 +405,59 @@ def test_prefetch_skips_cached_and_pending_and_wraps_fallback():
     dw.image_preloader = types.SimpleNamespace(submit=lambda task: False)
     dw.prefetch_next_image(paths, 1)
     assert not dw.prefetch_pending
+
+
+def test_image_request_defers_io_and_rejects_stale_results(monkeypatch):
+    from echoview import viewer
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.running, dw.image_request_id, dw.cache_generation = True, 0, 1
+    tasks, emitted, rendered, errors, checked = [], [], [], [], []
+    dw.image_loader = types.SimpleNamespace(submit=lambda task, **opts: tasks.append(task) or True)
+    dw.image_ready = types.SimpleNamespace(emit=lambda *args: emitted.append(args))
+    dw.get_cached_image = lambda path: {'path': path}
+    dw.show_foreground_image = lambda *args, **kwargs: rendered.append((args, kwargs))
+    dw.clear_foreground_label = errors.append
+    monkeypatch.setattr(viewer.os.path, 'exists', lambda path: checked.append(path) or path != 'missing')
+    dw.request_foreground_image('cached')
+    assert not checked and not rendered
+    tasks.pop()()
+    assert checked == ['cached']
+    first = emitted.pop()
+    dw.request_foreground_image('newer')
+    dw._handle_image_ready(*first)
+    assert not rendered
+    tasks.pop()()
+    latest = emitted.pop()
+    dw._handle_image_ready(*latest)
+    assert rendered == [(('newer', False), {'data': {'path': 'newer'}})]
+    dw.cache_generation += 1
+    dw._handle_image_ready(*latest)
+    assert len(rendered) == 1
+    dw.request_foreground_image('missing')
+    tasks.pop()()
+    dw._handle_image_ready(*emitted.pop())
+    assert errors == ['Missing file']
+    dw.request_foreground_image('closed')
+    dw.running = False
+    tasks.pop()()
+    assert not emitted and 'closed' not in checked
+
+
+def test_image_request_load_failure_is_reported_and_obsolete_work_is_skipped(monkeypatch):
+    from echoview import viewer
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.running, dw.image_request_id, dw.cache_generation = True, 0, 1
+    tasks, emitted = [], []
+    dw.image_loader = types.SimpleNamespace(submit=lambda task, **opts: tasks.append(task) or True)
+    dw.image_ready = types.SimpleNamespace(emit=lambda *args: emitted.append(args))
+    monkeypatch.setattr(viewer.os.path, 'exists', lambda _: True)
+    dw.get_cached_image = lambda _: (_ for _ in ()).throw(OSError('synthetic read failure'))
+    dw.request_foreground_image('old')
+    dw.request_foreground_image('new')
+    tasks.pop(0)()
+    assert not emitted
+    tasks.pop()()
+    assert emitted[0][1][-1] == 'Image could not be loaded'
 
 
 def test_external_browser_safe_area_preserves_negative_screen_origin():
