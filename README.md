@@ -437,6 +437,20 @@ Card and Poster place text and progress automatically, retain text
 visibility, size and color settings, and respect output safe area and physical
 pixel aspect. Layout selection is included in display presets.
 
+**Background appearance** offers **Black**, **Artwork colour**, and **Artwork
+gradient**, plus a **Dimming** slider (0–95%). Black preserves the existing
+background for each layout. Artwork colours are extracted from a 48-pixel
+thumbnail once per downloaded cover, on the existing Spotify worker, and cached
+alongside at most eight covers. Gradients are static; there is no animated effect,
+extra Spotify polling, per-frame analysis or NAS access. Missing artwork uses a
+neutral palette, and palette-analysis failure never prevents valid artwork from
+displaying. Card layouts automatically choose light/dark text when automatic
+contrast is enabled; manual text colours remain available.
+
+Changes preview before Apply, apply live without resetting playback/progress,
+and are included in presets. Spotify fallback media retains its normal image or
+video appearance. Older presets restore the default background settings.
+
 The **Spotify** web page includes a read-only **Now playing** panel with artwork,
 track/episode information, elapsed/total time, device name and shuffle/repeat
 status. It reads a small local snapshot produced by the viewer's existing poll;

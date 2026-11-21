@@ -13,11 +13,12 @@ def test_snapshot_interpolation_privacy_and_staleness(tmp_path):
     cfg = {'client_id': 'id', 'client_secret': 'private-secret'}
     publisher = StatePublisher(tmp_path, clock=lambda: 100, monotonic=lambda: 12)
     result = Playback('playing', song='<script>Title</script>', progress_ms=1000,
-                      duration_ms=10000, fetched_time=10, device_name='Kitchen')
+                      duration_ms=10000, fetched_time=10, device_name='Kitchen', art_colors=('#ff0000','#0000ff'))
     publisher(result, cfg)
     state = read_state(tmp_path, cfg, True, now=103)
     assert state['progress_ms'] == 6000
     assert state['device_name'] == 'Kitchen'
+    assert state['art_colors']==['#ff0000','#0000ff']
     assert 'account' not in state and 'sampled_at' not in state
     assert 'private-secret' not in (tmp_path/'state.json').read_text()
     assert (tmp_path/'state.json').stat().st_mode & 0o777 == 0o600

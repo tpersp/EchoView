@@ -313,6 +313,31 @@ def test_spotify_time_toggle_saves_presets_and_preserves_cached_forms(workflow):
     assert presets.restore(cfg, snapshot)['displays']['HDMI-1']['spotify_show_time'] is True
 
 
+def test_spotify_background_saved_live_keys_and_legacy_forms_and_presets(workflow):
+    client,cfg,saves,restarts,root=workflow
+    form={'action':'update_displays','HDMI-1_mode':'spotify','HDMI-1_spotify_background_mode':'gradient','HDMI-1_spotify_background_dim':'40'}
+    assert client.post('/',data=form).status_code==302
+    snapshot=presets.snapshot(cfg)
+    assert cfg['displays']['HDMI-1']['spotify_background_dim']==40
+    assert client.post('/',data={'action':'update_displays','HDMI-1_mode':'spotify'}).status_code==302
+    assert cfg['displays']['HDMI-1']['spotify_background_mode']=='gradient'
+    cfg['displays']['HDMI-1']['spotify_background_mode']='black'
+    assert presets.restore(cfg,snapshot)['displays']['HDMI-1']['spotify_background_mode']=='gradient'
+    del snapshot['displays']['HDMI-1']['spotify_background_mode']
+    del snapshot['displays']['HDMI-1']['spotify_background_dim']
+    restored=presets.restore(cfg,snapshot)['displays']['HDMI-1']
+    assert restored['spotify_background_mode']=='black' and restored['spotify_background_dim']==65
+
+
+@pytest.mark.parametrize('key,value', [('mode','animated'),('dim','-1'),('dim','96'),('dim','bad')])
+def test_spotify_background_invalid_settings_never_save(workflow,key,value):
+    client,cfg,saves,restarts,root=workflow
+    before=deepcopy(cfg)
+    form={'action':'update_displays','HDMI-1_mode':'spotify','HDMI-1_spotify_background_'+key:value}
+    assert client.post('/',data=form).status_code==400
+    assert not saves and not restarts and cfg==before
+
+
 def test_spotify_layout_saved_in_presets_and_validated(workflow):
     client, cfg, saves, restarts, root = workflow
     form = {'action': 'update_displays', 'HDMI-1_mode': 'spotify', 'HDMI-1_spotify_layout': 'album_card'}

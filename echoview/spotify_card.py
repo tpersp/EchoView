@@ -4,6 +4,7 @@ from PySide6.QtGui import QFont, QPixmap, QTransform
 from PySide6.QtWidgets import QWidget, QLabel
 from echoview.displays import fit_dimensions
 from echoview.presentation import text_stretch, bounded_int
+from echoview.spotify_background import background_style, foreground_colour
 
 
 class SpotifyCard(QWidget):
@@ -25,10 +26,17 @@ class SpotifyCard(QWidget):
         self.layout_name = 'album_card'
         self.options = {}
         self.pixel_aspect = 1.0
+        self.background_key = None
+        self.art_colors = ()
 
     def set_track(self, path, info, options, pixel_aspect):
         self.options, self.pixel_aspect = options, pixel_aspect
         self.layout_name = options.get('spotify_layout', 'album_card')
+        self.art_colors = info.get('art_colors',())
+        background = background_style(options,self.art_colors)
+        if background != self.background_key:
+            self.setStyleSheet('QWidget#spotify-card { background: '+background+'; } QLabel { background: transparent; color: #edf2f7; }')
+            self.background_key = background
         rotation = bounded_int(options.get('rotate', 0), 0, -3600, 3600)
         if path != self.path or rotation != self.rotation:
             self.path, self.rotation, self.scaled_key = path, rotation, None
@@ -77,7 +85,7 @@ class SpotifyCard(QWidget):
         base = bounded_int(self.options.get('spotify_font_size', 18), 18, 8, max(8, h//12))
         visible = [label for label in self.labels if label.text()]
         heights = []
-        color = '#edf2f7' if self.options.get('spotify_negative_font', True) else self.options.get('spotify_font_color', '#FFFFFF')
+        color = foreground_colour(self.options,self.art_colors)
         for index, label in enumerate(self.labels):
             font = QFont(label.font())
             font.setPixelSize(max(8, round(base * (1.8 if index == 0 else 1 if index == 1 else .85 if index == 2 else .75))))

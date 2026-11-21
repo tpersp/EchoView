@@ -980,6 +980,8 @@ class DisplayWindow(QMainWindow):
     @Slot()
     def reload_settings(self, cfg=None):
         self.image_request_id += 1
+        self._spotify_background_key = None
+        self.bg_label.setStyleSheet('background-color: black;')
         next_cfg = load_config() if cfg is None else cfg
         self._cancel_stream()
         self.spotify_fetch_id += 1
@@ -1429,8 +1431,13 @@ class DisplayWindow(QMainWindow):
                 self.current_pixmap = QPixmap.fromImage(data['image'])
             self.handling_gif_frames = False
             self.updateForegroundScaled()
-            blurred = self.make_background(self.current_pixmap)
-            self.bg_label.setPixmap(blurred if blurred else QPixmap())
+            if is_spotify and self.disp_cfg.get('spotify_background_mode','black') != 'black':
+                self.bg_label.clear()
+                self._apply_spotify_background()
+            else:
+                self.bg_label.setStyleSheet('background-color: black;')
+                blurred = self.make_background(self.current_pixmap)
+                self.bg_label.setPixmap(blurred if blurred else QPixmap())
         self.spotify_info_label.raise_()
 
     def _movie_from_data(self, data):
@@ -1675,6 +1682,24 @@ class DisplayWindow(QMainWindow):
                 self._place_overlay_label(self.clock_label, settings.get('clock_position', 'bottom-center'), rect)
 
 
+    def _apply_spotify_background(self):
+        from echoview.spotify_background import background_style
+        mode = self.disp_cfg.get('spotify_background_mode','black')
+        style = background_style(self.disp_cfg, self.spotify_info.get('art_colors',()) if self.spotify_info else ())
+        key = (mode,style)
+        previous = getattr(self,'_spotify_background_key',None)
+        if key == previous:
+            return
+        self._spotify_background_key = key
+        if mode == 'black':
+            self.bg_label.setStyleSheet('background-color: black;')
+            if previous is not None and previous[0] != 'black' and self.current_pixmap:
+                background = self.make_background(self.current_pixmap)
+                self.bg_label.setPixmap(background if background else QPixmap())
+        else:
+            self.bg_label.clear()
+            self.bg_label.setStyleSheet('background: '+style+';')
+
     def render_spotify(self, path):
         if self.spotify_info:
             card = getattr(self, 'spotify_card', None)
@@ -1713,6 +1738,7 @@ class DisplayWindow(QMainWindow):
                 self.bg_label.clear()
                 self.clear_foreground_label("Artwork unavailable")
             self.spotify_art_path = path
+            self._apply_spotify_background()
             self.spotify_info_label.show()
             if self.disp_cfg.get("spotify_show_progress", False) or self.disp_cfg.get("spotify_show_time", False):
                 self.spotify_progress_bar.show()
@@ -1757,6 +1783,9 @@ class DisplayWindow(QMainWindow):
             self.spotify_info_label.raise_()
             self.setup_layout()
         else:
+            if getattr(self,'_spotify_background_key',None) is not None:
+                self._spotify_background_key = None
+                self.bg_label.setStyleSheet('background-color: black;')
             card = getattr(self, 'spotify_card', None)
             if card:
                 card.hide()
@@ -1845,6 +1874,7 @@ class DisplayWindow(QMainWindow):
             self.spotify_info = {
                 "song": result.song, "artist": result.artist, "album": result.album,
                 "device_name": result.device_name,
+                "art_colors": result.art_colors,
                 "progress_ms": result.progress_ms, "duration_ms": result.duration_ms,
                 "fetched_time": result.fetched_time,
             }

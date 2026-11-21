@@ -17,6 +17,12 @@ def test_spotify_time_toggle_is_a_live_visual_change():
     assert visual_changes(before, after) == ['one']
 
 
+def test_spotify_background_is_live_and_does_not_change_modes():
+    before=config();after=deepcopy(before)
+    after['displays']['one'].update(spotify_background_mode='gradient',spotify_background_dim=40)
+    assert visual_changes(before,after)==['one']
+
+
 def test_only_spotify_visual_changes_are_eligible():
     before=config(); after=deepcopy(before)
     after['displays']['one']['spotify_font_size']=24

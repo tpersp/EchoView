@@ -1087,6 +1087,16 @@ def index():
                     if layout not in ('classic', 'album_card', 'poster'):
                         return 'Invalid Spotify layout.', 400
                     dcfg['spotify_layout'] = layout
+                    background_mode = request.form.get(pre+'spotify_background_mode', dcfg.get('spotify_background_mode','black'))
+                    if background_mode not in ('black','artwork','gradient'):
+                        return 'Invalid Spotify background.', 400
+                    try:
+                        background_dim = int(request.form.get(pre+'spotify_background_dim',dcfg.get('spotify_background_dim',65)))
+                    except (TypeError,ValueError):
+                        return 'Background dimming must be an integer from 0 to 95.', 400
+                    if not 0 <= background_dim <= 95:
+                        return 'Background dimming must be an integer from 0 to 95.', 400
+                    dcfg.update(spotify_background_mode=background_mode, spotify_background_dim=background_dim)
                     dcfg["fallback_mode"] = request.form.get(pre + "fallback_mode", dcfg.get("fallback_mode", "random_image"))
                     dcfg["spotify_show_song"] = True if request.form.get(pre + "spotify_show_song") else False
                     dcfg["spotify_show_artist"] = True if request.form.get(pre + "spotify_show_artist") else False

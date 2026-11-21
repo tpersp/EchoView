@@ -13,6 +13,7 @@ VISUAL_KEYS = frozenset({
     'spotify_show_song', 'spotify_show_artist', 'spotify_show_album', 'spotify_show_device',
     'spotify_negative_font', 'spotify_show_progress', 'spotify_show_time', 'spotify_progress_position',
     'spotify_progress_theme', 'spotify_smooth_progress', 'spotify_progress_update_interval',
+    'spotify_background_mode', 'spotify_background_dim',
 })
 
 

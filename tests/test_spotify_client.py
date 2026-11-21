@@ -134,7 +134,11 @@ class Response:
         yield self.data
 
 
-def test_artwork_is_reused_bounded_and_cleaned_up(tmp_path):
+def test_artwork_is_reused_bounded_and_cleaned_up(tmp_path, monkeypatch):
+    from echoview import spotify_background
+    palette_calls=[]
+    original=spotify_background.extract_palette
+    monkeypatch.setattr(spotify_background,'extract_palette',lambda image: palette_calls.append(1) or original(image))
     calls = []
     def get(url, **kwargs):
         assert kwargs["timeout"] == (3, 5)
@@ -145,13 +149,28 @@ def test_artwork_is_reused_bounded_and_cleaned_up(tmp_path):
     assert Path(first).exists()
     assert poller._artwork("https://art/0") == first
     assert len(calls) == 1
+    assert len(palette_calls)==1 and len(poller.art_palettes['https://art/0'])==2
     for i in range(1, 9):
         poller._artwork(f"https://art/{i}")
     assert len(poller.art_cache) == 8
+    assert len(poller.art_palettes)==8 and 'https://art/0' not in poller.art_palettes
     assert not Path(first).exists()
     directory = Path(poller.art_dir.name)
     poller.close()
+    assert not poller.art_palettes
     assert not directory.exists()
+
+
+def test_palette_failure_keeps_valid_artwork(tmp_path,monkeypatch):
+    from echoview import spotify_background
+    monkeypatch.setattr(spotify_background,'extract_palette',lambda _: (_ for _ in ()).throw(RuntimeError()))
+    poller=spotify.SpotifyPoller(settings,tmp_path/'token',artwork_get=lambda *a,**kw: Response(png()))
+    try:
+        path=poller._artwork('https://art/valid')
+        assert path and Path(path).exists()
+        assert poller.art_palettes['https://art/valid']==()
+    finally:
+        poller.close()
 
 
 @pytest.mark.parametrize("data", [b"not an image", b"x" * (spotify.MAX_ART_BYTES + 1)])

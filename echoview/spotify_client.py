@@ -31,6 +31,7 @@ class Playback:
     device_type: str = ""
     shuffle: bool = False
     repeat: str = "off"
+    art_colors: tuple = ()
 
 
 def number(value):
@@ -111,6 +112,7 @@ class SpotifyPoller:
         self.failures = 0
         self.art_dir = None
         self.art_cache = OrderedDict()
+        self.art_palettes = {}
         self.art_retry = {}
 
     def _client(self, cfg):
@@ -153,9 +155,17 @@ class SpotifyPoller:
                 if max(image.width, image.height) > 4096:
                     raise ValueError("Artwork dimensions exceeded")
                 image.verify()
+            try:
+                from echoview.spotify_background import extract_palette
+                with Image.open(path) as image:
+                    self.art_palettes[url] = extract_palette(image)
+            except Exception:
+                # Palette analysis is optional; valid artwork must still play.
+                self.art_palettes[url] = ()
             self.art_cache[url] = str(path)
             while len(self.art_cache) > 8:
-                _, old = self.art_cache.popitem(last=False)
+                old_url, old = self.art_cache.popitem(last=False)
+                self.art_palettes.pop(old_url, None)
                 Path(old).unlink(missing_ok=True)
             self.art_retry.pop(url, None)
             return str(path)
@@ -196,7 +206,8 @@ class SpotifyPoller:
                         request_started = self.clock()
                         result = normalize_playback(client.current_playback(additional_types="track,episode"), self.clock())
                         if result.status == "playing":
-                            result = replace(result, art_path=self._artwork(result.art_url))
+                            path = self._artwork(result.art_url)
+                            result = replace(result, art_path=path, art_colors=self.art_palettes.get(result.art_url,()) if path else ())
                         delay = POLL_SECONDS
                     self.failures = 0
             except Exception as exc:
@@ -237,6 +248,7 @@ class SpotifyPoller:
             if self.art_dir:
                 self.art_dir.cleanup()
             self.art_cache.clear()
+            self.art_palettes.clear()
 
 
 _shared = None

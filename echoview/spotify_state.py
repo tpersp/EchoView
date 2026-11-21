@@ -46,7 +46,7 @@ class StatePublisher:
         # Explicit allowlist: never serialize the API payload, credentials or tokens.
         state = {name: getattr(result, name) for name in
                  ('status', 'song', 'artist', 'album', 'progress_ms', 'duration_ms',
-                  'device_name', 'device_type', 'shuffle', 'repeat')}
+                  'device_name', 'device_type', 'shuffle', 'repeat', 'art_colors')}
         state.update(published_at=now, sampled_at=now-max(0, self.monotonic()-result.fetched_time),
                      account=fingerprint(cfg), artwork=key)
         self._atomic(self.directory / 'state.json', lambda stream: stream.write(json.dumps(state).encode()))

@@ -44,6 +44,8 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); opacity: 1; 
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 input[type="checkbox"], input[type="radio"] { width: 17px; height: 17px; accent-color: var(--accent); vertical-align: middle; flex-shrink: 0; }
 input[type="color"] { padding: 5px !important; max-width: 120px; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+[data-background-dim-value] { float: right; font-variant-numeric: tabular-nums; }
 select option { background: var(--input-bg); color: var(--text-normal); }
 form { margin: 0; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }

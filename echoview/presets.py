@@ -13,6 +13,7 @@ PLAYBACK_KEYS = {
     'spotify_negative_font', 'spotify_font_color', 'spotify_info_position',
     'spotify_layout', 'spotify_show_progress', 'spotify_show_time', 'spotify_progress_position', 'spotify_progress_theme',
     'spotify_progress_update_interval', 'spotify_smooth_progress',
+    'spotify_background_mode', 'spotify_background_dim',
 }
 
 
@@ -51,6 +52,9 @@ def restore(cfg, preset):
             result['displays'][target]['spotify_show_device'] = False
         if 'spotify_show_time' not in settings and result['displays'][target].get('spotify_show_time'):
             result['displays'][target]['spotify_show_time'] = False
+        for key,default in (('spotify_background_mode','black'),('spotify_background_dim',65)):
+            if key not in settings and result['displays'][target].get(key,default)!=default:
+                result['displays'][target][key] = default
         matched += 1
     if not matched:
         raise ValueError('This preset has no matching configured displays.')
