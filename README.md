@@ -366,6 +366,13 @@ honored, and quota exhaustion uses a minimum five-minute pause. Authorization
 and access failures retry after one minute; network errors use bounded backoff.
 These statuses are logged without provider exception details.
 
+Enable **Elapsed / total time** in a display's Spotify options to show a timer
+such as `0:24/3:14`. It works in Classic, Album card and Poster layouts, either
+beside the progress bar or on its own. It is off by default, previews before
+applying, saves with presets and applies live. The existing local playback
+timeline drives both indicators; time-only mode updates once per second without
+extra Spotify requests. Long tracks use hours and unknown duration shows a dash.
+
 Tracks and episodes can display metadata even when artwork is missing. Paused,
 unavailable and failed playback use the configured fallback. Artwork is reused
 by URL, limited to eight images of at most 4 MiB and 4096×4096 pixels each, and

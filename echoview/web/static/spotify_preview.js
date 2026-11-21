@@ -43,6 +43,17 @@ document.addEventListener('DOMContentLoaded', () => {
     bar.firstElementChild.style.width = `${data.duration_ms > 0 ? Math.min(100, data.progress_ms/data.duration_ms*100) : 0}%`;
     const pos = value('spotify_progress_position','bottom-center');
     bar.classList.toggle('at-top', layout === 'classic' && ['above_info','top-center'].includes(pos));
+    const timing = preview.querySelector('[data-preview-time]');
+    const clock = ms => {
+      const seconds = Math.floor(Math.max(0, ms || 0) / 1000);
+      const h = Math.floor(seconds / 3600), m = Math.floor(seconds / 60) % 60, s = seconds % 60;
+      return h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+    };
+    timing.hidden = !enabled('spotify_show_time',false);
+    timing.textContent = data.duration_ms > 0 ? `${clock(Math.min(data.duration_ms, data.progress_ms))}/${clock(data.duration_ms)}` : '0:00/–:––';
+    timing.classList.toggle('at-top', bar.classList.contains('at-top'));
+    timing.classList.toggle('time-only', !enabled('spotify_show_progress',false));
+    bar.style.right = timing.hidden ? '4%' : '30%';
     preview.querySelector('[data-preview-note]').textContent = data === example ? 'Example track. Edit settings to preview them, then Apply to update the display.' : 'Using the cached track. Preview changes stay here until you Apply. Placement is approximate.';
   }
   function renderAll() { previews.filter(preview => preview.open).forEach(render); }

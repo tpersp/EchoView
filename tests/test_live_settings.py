@@ -10,6 +10,13 @@ def config():
     return {'displays': {'one': {'mode':'spotify','spotify_font_size':18}, 'two':{'mode':'videos'}}}
 
 
+def test_spotify_time_toggle_is_a_live_visual_change():
+    before = config()
+    after = deepcopy(before)
+    after['displays']['one']['spotify_show_time'] = True
+    assert visual_changes(before, after) == ['one']
+
+
 def test_only_spotify_visual_changes_are_eligible():
     before=config(); after=deepcopy(before)
     after['displays']['one']['spotify_font_size']=24

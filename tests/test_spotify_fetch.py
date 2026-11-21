@@ -208,7 +208,8 @@ def test_playback_progress_uses_monotonic_time(monkeypatch):
     from echoview import viewer
     values = []
     dw = DisplayWindow.__new__(DisplayWindow)
-    dw.spotify_progress_bar = types.SimpleNamespace(setFraction=values.append)
+    dw.spotify_progress_bar = types.SimpleNamespace(setFraction=values.append, setPlaybackText=lambda *a: None)
+    dw.disp_cfg = {}
     dw.spotify_info = {"progress_ms": 1000, "duration_ms": 10000, "fetched_time": 10}
     from echoview.spotify_progress import ProgressTimeline
     dw.spotify_timeline = ProgressTimeline()
@@ -594,7 +595,8 @@ def test_progress_moves_between_whole_percentage_points(monkeypatch):
     from echoview import viewer
     values = []
     dw = DisplayWindow.__new__(DisplayWindow)
-    dw.spotify_progress_bar = types.SimpleNamespace(setFraction=values.append)
+    dw.spotify_progress_bar = types.SimpleNamespace(setFraction=values.append, setPlaybackText=lambda *a: None)
+    dw.disp_cfg = {}
     dw.spotify_info = {'progress_ms': 18000, 'duration_ms': 180000, 'fetched_time': 10}
     from echoview.spotify_progress import ProgressTimeline
     dw.spotify_timeline = ProgressTimeline()

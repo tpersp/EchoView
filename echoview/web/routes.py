@@ -1084,6 +1084,8 @@ def index():
                     dcfg["spotify_info_position"] = request.form.get(pre + "spotify_info_position", dcfg.get("spotify_info_position", "bottom-center"))
                     # New: store the live progress bar option and its settings
                     dcfg["spotify_show_progress"] = True if request.form.get(pre + "spotify_show_progress") else False
+                    if request.form.get(pre + 'spotify_time_present'):
+                        dcfg['spotify_show_time'] = bool(request.form.get(pre + 'spotify_show_time'))
                     dcfg["spotify_smooth_progress"] = bool(request.form.get(pre + "spotify_smooth_progress"))
                     dcfg["spotify_progress_position"] = request.form.get(pre + "spotify_progress_position", dcfg.get("spotify_progress_position", "below_info"))
                     dcfg["spotify_progress_theme"] = request.form.get(pre + "spotify_progress_theme", dcfg.get("spotify_progress_theme", "default"))

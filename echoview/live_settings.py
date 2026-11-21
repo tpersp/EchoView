@@ -11,7 +11,7 @@ from echoview.web.spotify_auth import fingerprint
 VISUAL_KEYS = frozenset({
     'spotify_layout', 'spotify_font_size', 'spotify_info_position', 'spotify_font_color',
     'spotify_show_song', 'spotify_show_artist', 'spotify_show_album', 'spotify_show_device',
-    'spotify_negative_font', 'spotify_show_progress', 'spotify_progress_position',
+    'spotify_negative_font', 'spotify_show_progress', 'spotify_show_time', 'spotify_progress_position',
     'spotify_progress_theme', 'spotify_smooth_progress', 'spotify_progress_update_interval',
 })
 

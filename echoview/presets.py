@@ -11,7 +11,7 @@ PLAYBACK_KEYS = {
     'shuffle_videos', 'video_mute', 'video_volume', 'video_play_to_end', 'video_max_seconds',
     'spotify_show_song', 'spotify_show_artist', 'spotify_show_album', 'spotify_show_device', 'spotify_font_size',
     'spotify_negative_font', 'spotify_font_color', 'spotify_info_position',
-    'spotify_layout', 'spotify_show_progress', 'spotify_progress_position', 'spotify_progress_theme',
+    'spotify_layout', 'spotify_show_progress', 'spotify_show_time', 'spotify_progress_position', 'spotify_progress_theme',
     'spotify_progress_update_interval', 'spotify_smooth_progress',
 }
 
@@ -49,6 +49,8 @@ def restore(cfg, preset):
         result['displays'][target].update({key: deepcopy(value) for key, value in settings.items() if key in PLAYBACK_KEYS})
         if 'spotify_show_device' not in settings and result['displays'][target].get('spotify_show_device'):
             result['displays'][target]['spotify_show_device'] = False
+        if 'spotify_show_time' not in settings and result['displays'][target].get('spotify_show_time'):
+            result['displays'][target]['spotify_show_time'] = False
         matched += 1
     if not matched:
         raise ValueError('This preset has no matching configured displays.')

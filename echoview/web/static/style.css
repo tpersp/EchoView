@@ -378,6 +378,9 @@ form .schedule-folder-chip button { flex: 0 0 auto; border: 0; background: trans
 .spotify-preview-progress { position: absolute; bottom: 5%; left: 4%; right: 4%; height: 3px; border-radius: 2px; overflow: hidden; }
 .spotify-preview-progress span { display: block; height: 100%; }
 .spotify-preview-progress.at-top { top: 5%; bottom: auto; }
+.spotify-preview-time { position: absolute; right: 4%; bottom: 4%; padding: 2px 5px; border-radius: 4px; background: #161616; color: white; font-size: max(8px, var(--preview-font)); font-variant-numeric: tabular-nums; }
+.spotify-preview-time.at-top { top: 4%; bottom: auto; }
+.spotify-preview-time.time-only { left: 50%; right: auto; transform: translateX(-50%); white-space: nowrap; }
 .spotify-preview-screen[data-layout="poster"] .spotify-preview-content, .spotify-preview-screen[data-layout="album_card"].portrait .spotify-preview-content { flex-direction: column; gap: 5%; text-align: center; }
 .spotify-preview-screen[data-layout="poster"] .spotify-preview-art, .spotify-preview-screen[data-layout="album_card"].portrait .spotify-preview-art { flex: 0 0 60%; height: 60%; max-width: 100%; }
 .spotify-preview-screen[data-layout="classic"] .spotify-preview-art { position: absolute; inset: 0; height: 100%; width: 100%; background: transparent; aspect-ratio: auto; }

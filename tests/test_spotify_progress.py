@@ -2,6 +2,17 @@ import pytest
 from echoview.spotify_progress import ProgressTimeline
 
 
+@pytest.mark.parametrize('position,duration,text', [
+    (24000, 194000, '0:24/3:14'), (24999, 194000, '0:24/3:14'),
+    (25000, 194000, '0:25/3:14'), (-1000, 194000, '0:00/3:14'),
+    (999999, 194000, '3:14/3:14'), (3723000, 7200000, '1:02:03/2:00:00'),
+    (10000, 0, '0:00/–:––'),
+])
+def test_playback_time_format(position, duration, text):
+    from echoview.spotify_progress import format_playback_time
+    assert format_playback_time(position, duration) == text
+
+
 def test_progress_continues_locally_without_more_samples():
     p = ProgressTimeline()
     p.sample('a', 1000, 180000, 10, 10)

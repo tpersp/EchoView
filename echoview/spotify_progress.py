@@ -35,3 +35,15 @@ class ProgressTimeline:
         self.progress, self.sample_time = progress, sampled_at
         self.correction = delta if smooth else 0
         self.corrected_at = now
+
+
+def format_playback_time(position_ms, duration_ms):
+    """Whole seconds from the same local timeline as the progress bar."""
+    duration = max(0, int(duration_ms or 0))
+    position = max(0, min(duration, int(position_ms or 0)))
+    def clock(milliseconds):
+        seconds = milliseconds // 1000
+        hours, seconds = divmod(seconds, 3600)
+        minutes, seconds = divmod(seconds, 60)
+        return f'{hours}:{minutes:02}:{seconds:02}' if hours else f'{minutes}:{seconds:02}'
+    return f'{clock(position)}/{clock(duration)}' if duration else '0:00/–:––'

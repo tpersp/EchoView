@@ -296,6 +296,23 @@ def test_smooth_progress_preference_saves_and_survives_presets(workflow):
     assert presets.restore(cfg, preset)['displays']['HDMI-1']['spotify_smooth_progress'] is True
 
 
+def test_spotify_time_toggle_saves_presets_and_preserves_cached_forms(workflow):
+    client, cfg, saves, restarts, root = workflow
+    form = {'action': 'update_displays', 'HDMI-1_mode': 'spotify',
+            'HDMI-1_spotify_time_present': '1', 'HDMI-1_spotify_show_time': '1'}
+    assert client.post('/', data=form).status_code == 302
+    assert cfg['displays']['HDMI-1']['spotify_show_time'] is True
+    snapshot = presets.snapshot(cfg)
+    del form['HDMI-1_spotify_time_present']
+    del form['HDMI-1_spotify_show_time']
+    assert client.post('/', data=form).status_code == 302
+    assert cfg['displays']['HDMI-1']['spotify_show_time'] is True
+    form['HDMI-1_spotify_time_present'] = '1'
+    assert client.post('/', data=form).status_code == 302
+    assert cfg['displays']['HDMI-1']['spotify_show_time'] is False
+    assert presets.restore(cfg, snapshot)['displays']['HDMI-1']['spotify_show_time'] is True
+
+
 def test_spotify_layout_saved_in_presets_and_validated(workflow):
     client, cfg, saves, restarts, root = workflow
     form = {'action': 'update_displays', 'HDMI-1_mode': 'spotify', 'HDMI-1_spotify_layout': 'album_card'}
