@@ -386,14 +386,12 @@ form .schedule-folder-chip button { flex: 0 0 auto; border: 0; background: trans
 .spotify-preview-time.time-only { left: 50%; right: auto; transform: translateX(-50%); white-space: nowrap; }
 .spotify-preview-screen[data-layout="poster"] .spotify-preview-content, .spotify-preview-screen[data-layout="album_card"].portrait .spotify-preview-content { flex-direction: column; gap: 5%; text-align: center; }
 .spotify-preview-screen[data-layout="poster"] .spotify-preview-art, .spotify-preview-screen[data-layout="album_card"].portrait .spotify-preview-art { flex: 0 0 60%; height: 60%; max-width: 100%; }
-.spotify-preview-screen[data-layout="classic"] .spotify-preview-art { position: absolute; inset: 0; height: 100%; width: 100%; background: transparent; aspect-ratio: auto; }
-.spotify-preview-screen[data-layout="classic"] .spotify-preview-info { position: absolute; bottom: 0; width: 100%; text-align: center; font-size: var(--preview-font,10px); text-shadow: 0 1px 3px #000; }
-.spotify-preview-screen[data-layout="classic"] .spotify-preview-info > div { display: inline; margin-right: .5em; font-size: inherit; font-weight: 400; }
-.spotify-preview-screen[data-layout="classic"] .spotify-preview-info > div[hidden] { display: none; }
-.spotify-preview-screen[data-layout="classic"][data-position^="top"] .spotify-preview-info { top: 0; bottom: auto; }
-.spotify-preview-screen[data-layout="classic"][data-position$="left"] .spotify-preview-info { text-align: left; }
-.spotify-preview-screen[data-layout="classic"][data-position$="right"] .spotify-preview-info { text-align: right; }
-.spotify-preview-screen[data-layout="classic"].automatic-contrast .spotify-preview-info { mix-blend-mode: difference; text-shadow: none; }
+.spotify-preview-screen[data-layout="classic"] .spotify-preview-content { inset: 0; display: block; }
+.spotify-preview-screen[data-layout="classic"] .spotify-preview-art { position: absolute; background: transparent; aspect-ratio: auto; overflow: hidden; }
+.spotify-preview-screen[data-layout="classic"] .spotify-preview-info { position: absolute; box-sizing: border-box; border-radius: 8px; overflow: hidden; }
+.spotify-preview-screen[data-layout="classic"] .spotify-preview-info > div { display: block; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 400; }
+.spotify-preview-screen[data-layout="classic"] .spotify-preview-info > [data-preview-song] { font-weight: 700; }
+.spotify-preview-screen[data-layout="classic"] .spotify-preview-info > [hidden] { display: none; }
 /* Local clock preview on a sample light/dark background */
 .overlay-preview { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border-muted); }
 .overlay-preview h3 { font-size: 13px; margin-bottom: 12px; }

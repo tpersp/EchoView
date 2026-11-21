@@ -427,7 +427,7 @@ in [audio setup](docs/audio.md).
 
 ### Spotify layouts and web now playing
 
-In **Displays → Spotify**, choose **Classic** (existing artwork/overlay),
+In **Displays → Spotify**, choose **Classic** (maximum-size artwork with track details over it),
 **Album card** (artwork beside a text panel; stacks on portrait screens), or
 **Poster** (centered artwork with track details below). Classic remains the
 default. Enable **Playing on device** alongside the title/artist/album toggles to
@@ -436,6 +436,13 @@ Spotify supplies no device name). This uses the existing playback response.
 Card and Poster place text and progress automatically, retain text
 visibility, size and color settings, and respect output safe area and physical
 pixel aspect. Layout selection is included in display presets.
+
+Classic is suited to smaller screens: the cover retains its full available size,
+with a compact translucent track panel over the artwork. The title is emphasized;
+long fields use an ellipsis rather than covering the screen. Track position, text
+size, visibility and manual colours remain configurable. Automatic contrast uses
+light text on a dark panel; dark manual text gets a light panel. Its web preview
+uses the same cover fit, panel spacing, safe area and progress placement.
 
 **Background appearance** offers **Black**, **Artwork colour**, **Artwork
 gradient**, and **Blurred artwork**, plus a **Dimming** slider (0–95%). Black preserves the existing

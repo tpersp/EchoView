@@ -1,6 +1,6 @@
 """Artwork-first Spotify layouts; constructed only by the native viewer."""
-from PySide6.QtCore import Qt, QRect
-from PySide6.QtGui import QFont, QPixmap, QTransform, QPainter, QBrush, QColor, QLinearGradient, QGradient
+from PySide6.QtCore import Qt, QRect, QSize
+from PySide6.QtGui import QFont, QPixmap, QTransform, QPainter, QBrush, QColor, QLinearGradient, QGradient, QFontMetrics
 from PySide6.QtWidgets import QWidget, QLabel
 from echoview.displays import fit_dimensions
 from echoview.presentation import text_stretch, bounded_int
@@ -134,3 +134,60 @@ class SpotifyCard(QWidget):
         for label, height in zip(visible, heights):
             label.setGeometry(text_rect.x(), top, text_rect.width(), max(1,round(height*scale)))
             top += round((height+8)*scale)
+
+
+class SpotifyClassicLabel(QLabel):
+    """Compact track information painted over the full-sized Classic cover."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.useDifference = False  # Kept for the viewer's existing font controls.
+        self.rows = []
+        self.options = {}
+
+    def set_track(self, info, options):
+        self.options = options
+        self.rows = []
+        for name, factor in (('song',1.25),('artist',1),('album',.85),('device',.75)):
+            text = ('Playing on '+info['device_name'] if info.get('device_name') else '') if name=='device' else info.get(name,'')
+            if text and options.get('spotify_show_'+name,name!='device'):
+                # Metadata is always plain text; one bounded row per field.
+                self.rows.append((' '.join(text.split()),factor,name=='song'))
+        self.updateGeometry()
+        self.update()
+
+    def row_fonts(self, scale=1):
+        for text,factor,bold in self.rows:
+            font=QFont(self.font())
+            font.setPixelSize(max(1,round(self.font().pixelSize()*factor*scale)))
+            font.setBold(bold)
+            yield text,font
+
+    def heightForWidth(self, width):
+        return 16+sum(round(font.pixelSize()*1.4) for _,font in self.row_fonts()) if self.rows else 0
+
+    def sizeHint(self):
+        return QSize(320,self.heightForWidth(320))
+
+    def paintEvent(self, event):
+        if not self.rows:
+            return
+        painter=QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        color=QColor('#edf2f7' if self.options.get('spotify_negative_font',True)
+                     else self.options.get('spotify_font_color','#ffffff'))
+        panel=QColor(0,0,0,184) if color.lightness()>=128 else QColor(255,255,255,210)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(panel)
+        painter.drawRoundedRect(self.rect(),8,8)
+        painter.setPen(color)
+        natural=max(1,self.heightForWidth(self.width())-16)
+        scale=min(1,max(1,self.height()-16)/natural)
+        y=8
+        horizontal=self.alignment() & Qt.AlignHorizontal_Mask
+        for text,font in self.row_fonts(scale):
+            height=round(font.pixelSize()*1.4)
+            painter.setFont(font)
+            metrics=QFontMetrics(font)
+            text=metrics.elidedText(text,Qt.ElideRight,max(1,self.width()-16))
+            painter.drawText(QRect(8,y,max(1,self.width()-16),height),horizontal|Qt.AlignVCenter,text)
+            y+=height

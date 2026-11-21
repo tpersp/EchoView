@@ -208,7 +208,8 @@ class DisplayWindow(QMainWindow):
         self.spotify_fetch_id = 0
         self.spotify_fetch_pending = None
         self.spotify_result.connect(self.handle_spotify_result, Qt.QueuedConnection)
-        self.spotify_info_label = NegativeTextLabel(self.main_widget)
+        from echoview.spotify_card import SpotifyClassicLabel
+        self.spotify_info_label = SpotifyClassicLabel(self.main_widget)
         self.spotify_info_label.setAlignment(Qt.AlignCenter)
         self.spotify_info_label.setStyleSheet("background: transparent;")
         self.spotify_info_label.hide()  # Hidden unless in spotify mode
@@ -319,6 +320,12 @@ class DisplayWindow(QMainWindow):
 
         self._correct_label_font(self.spotify_info_label, self.disp_cfg.get("spotify_font_size", 18), rect)
         info_rect = QRect(rect)
+        if self.current_mode == 'spotify' and self.spotify_info:
+            # Keep the panel on the artwork without taking space away from it.
+            width,height = (self.current_pixmap.width(),self.current_pixmap.height()) if self.current_pixmap else (1,1)
+            rotation=QTransform().rotate(self.disp_cfg.get('rotate',0)).mapRect(QRect(0,0,width,height))
+            art_w,art_h=self.calc_fill_size(rotation.width(),rotation.height(),rect.width(),rect.height())
+            info_rect=QRect(rect.x()+(rect.width()-art_w)//2,rect.y()+(rect.height()-art_h)//2,art_w,art_h)
         if self.spotify_progress_bar.isVisible() and rect.height() > 40:
             reserved_height = (bounded_int(self.disp_cfg.get("spotify_font_size", 18), 18, 10, 32) + 13 if self.disp_cfg.get("spotify_show_time", False) else 15)
             progress_position = self.disp_cfg.get("spotify_progress_position", "bottom-center")
@@ -1443,6 +1450,8 @@ class DisplayWindow(QMainWindow):
                 blurred = self.make_background(self.current_pixmap)
                 self.bg_label.setPixmap(blurred if blurred else QPixmap())
         self.spotify_info_label.raise_()
+        if is_spotify:
+            self.setup_layout()
 
     def _movie_from_data(self, data):
         encoded = data.get('encoded')
@@ -1783,6 +1792,8 @@ class DisplayWindow(QMainWindow):
             else:
                 text = " | ".join(info_parts)
             self.spotify_info_label.setText(text)
+            self.spotify_info_label.set_track(self.spotify_info,self.disp_cfg)
+            self.spotify_info_label.setVisible(bool(self.spotify_info_label.rows))
             font_size = self.disp_cfg.get("spotify_font_size", 18)
             if self.disp_cfg.get("spotify_negative_font", True):
                 self.spotify_info_label.useDifference = True
