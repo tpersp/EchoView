@@ -179,3 +179,83 @@ def test_missing_environment_is_not_recreated(installation):
         updates.update(repo,'dev',config,token)
     assert not (repo/'.env').exists()
     assert not calls
+
+
+def test_low_storage_refuses_update_before_fetch_or_backup(installation, monkeypatch):
+    repo, config, token, calls, _ = installation
+    monkeypatch.setattr(updates.shutil, 'disk_usage', lambda path: SimpleNamespace(free=100))
+    with pytest.raises(updates.UpdateError, match='512 MiB'):
+        updates.update(repo, 'main', config, token)
+    assert not calls
+    assert not (repo / '.update-backups').exists()
+
+
+@pytest.mark.parametrize('failure', ['missing-checker', 'system-python', 'viewer-python'])
+def test_incompatible_release_never_replaces_code_or_restarts(installation, monkeypatch, failure):
+    import sys
+
+    repo, config, token, calls, normal = installation
+    def fail(args, **kwargs):
+        is_checker = args[:2] == ['git', 'show']
+        rejected_python = 'python3' if failure == 'system-python' else sys.executable
+        if ((failure == 'missing-checker' and is_checker)
+                or (failure != 'missing-checker' and args[0] == rejected_python)):
+            calls.append(args)
+            raise subprocess.CalledProcessError(1, args, stderr='private output')
+        return normal(args, **kwargs)
+    monkeypatch.setattr(updates, 'run', fail)
+    with pytest.raises(updates.UpdateError, match='Installed code and dependencies were not changed'):
+        updates.update(repo, 'dev', config, token)
+    assert not any('reset' in call or 'setup.sh' in call or 'systemctl' in call
+                   or 'systemd-run' in call for call in calls)
+
+
+def test_preflight_runs_incoming_checker_before_reset(installation, monkeypatch):
+    import sys
+
+    repo, config, token, calls, normal = installation
+    incoming = '# incoming release compatibility rules\n'
+    def run(args, **kwargs):
+        result = normal(args, **kwargs)
+        if args[:2] == ['git', 'show']:
+            return SimpleNamespace(stdout=incoming)
+        if '--installer' in args:
+            assert Path(args[1]).read_text() == incoming
+            assert Path(args[1]).stat().st_mode & 0o777 == 0o600
+            assert not any('reset' in call for call in calls)
+        return result
+    monkeypatch.setattr(updates, 'run', run)
+    updates.update(repo, 'dev', config, token)
+    assert ['git', 'show', f'{"a" * 40}:echoview/runtime_check.py'] in calls
+    assert {call[0] for call in calls if '--installer' in call} == {'python3', sys.executable}
+
+
+def test_preflight_rejection_with_real_git_and_python(tmp_path, monkeypatch):
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    def git(*args):
+        return subprocess.run(['git', *args], cwd=repo, check=True,
+                              capture_output=True, text=True)
+    git('init', '-b', 'main')
+    (repo / '.gitignore').write_text('.env\n.update*\n')
+    (repo / 'echoview').mkdir()
+    (repo / 'echoview/runtime_check.py').write_text('raise SystemExit(1)\n')
+    git('add', '.')
+    git('-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+        'commit', '-m', 'Fixture release')
+    previous = git('rev-parse', 'HEAD').stdout
+    git('remote', 'add', 'origin', str(repo))
+    (repo / '.env').write_text('VIEWER_HOME=/custom\n')
+    original_run = updates.run
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        assert args[0] != 'sudo'
+        return original_run(args, **kwargs)
+    monkeypatch.setattr(updates, 'run', run)
+    with pytest.raises(updates.UpdateError, match='Release compatibility check failed'):
+        updates.update(repo, 'main', repo / 'viewerconfig.json', repo / 'token')
+    assert git('rev-parse', 'HEAD').stdout == previous
+    assert not any('reset' in call for call in calls)
+    logs = list((repo / '.update-backups').glob('before-*/preflight-*.log'))
+    assert logs and all(log.stat().st_mode & 0o777 == 0o600 for log in logs)

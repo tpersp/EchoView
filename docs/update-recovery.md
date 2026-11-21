@@ -6,6 +6,22 @@ requirements changed. Update restarts services; Full Update requests a reboot.
 The checkout stays on its existing branch. Application updates do not change the
 selected boot profile, OS version or X11/Wayland session.
 
+Before replacing installed code, the updater extracts the incoming release's
+standalone `echoview/runtime_check.py` and runs its installer compatibility checks
+with both `python3` and the controller's Python interpreter. Missing checkers or
+incompatible OS, architecture, Python or glibc stop the update before Git reset,
+dependency installation or service restart. Private `preflight-*.log` files in
+the attempt's backup directory record compatibility failures. This checks runtime
+compatibility, not package availability, disk space or successful hardware playback.
+
+Future releases must retain this stdlib-only, read-only checker and its
+`--installer` interface. Configuration migrations must preserve existing values
+and be safe to repeat. Before publishing a release, test an update from the
+previous supported release on a Pi, including settings/token preservation,
+dependency installation, service return and playback. OS migrations remain a
+separate maintenance operation. This preflight protection is available once a
+device has been installed with a release containing it.
+
 Before resetting code, the updater refuses local tracked changes and configuration
 files tracked by either current or target Git revision. Save development work
 separately before updating. Ignored/untracked media and configuration are kept;
@@ -24,7 +40,12 @@ or planned service restart. The response identifies the failed stage without
 printing captured command output or credentials. Changes to packages, code or
 services already made by setup are not automatically rolled back. A request
 interrupted by a network/proxy timeout has an unknown outcome: inspect the device
-before retrying. The web request can take up to 30 minutes for setup.
+before retrying. Setup can take up to 30 minutes. JavaScript-enabled Settings runs
+installation in a background thread so a browser/proxy timeout does not end the
+worker; a controller exit or power loss can still interrupt it. `.update-state.json`
+contains the latest attempt's progress, branch, timing and result with owner-only
+permissions. `.update-job.lock` prevents concurrent background jobs; the existing
+`.update.lock` also protects the installer from synchronous update requests.
 
 On Update, viewer restart is checked and the controller restart is queued without
 waiting for the controller to terminate its own worker. HTTP 202 means the request

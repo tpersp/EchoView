@@ -10,4 +10,6 @@ __pycache__/
 
 .streaming-enabled
 .update.lock
+.update-job.lock
+.update-state*
 .update-backups/

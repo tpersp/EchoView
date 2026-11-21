@@ -47,7 +47,13 @@
       </form>
       <p id="branch-status" class="help-text form-actions" role="status">Saved branch: {{ update_branch }}. Save a selection before starting an update.</p>
       <hr>
-      <div class="update-actions"><form method="post" action="{{ url_for('main.update_app') }}"><button type="submit" class="primary">Update application</button><small>Back up settings, install the selected branch and its dependencies, then restart services.</small></form><form method="post" action="{{ url_for('main.full_update') }}"><button type="submit">Full update &amp; reboot</button><small>Install the selected branch, then restart the device.</small></form></div>
+      <div class="form-actions"><button type="button" id="check-update">Check for updates</button><span id="release-status" role="status" aria-live="polite">Check the saved branch before installing.</span></div>
+      <ul id="release-changes"></ul>
+      <div class="update-actions" data-saved-branch="{{ update_branch }}"><form method="post" action="{{ url_for('main.update_app') }}"><button type="submit" class="primary">Update application</button><small>Back up settings, install the selected branch and its dependencies, then restart services.</small></form><form method="post" action="{{ url_for('main.full_update') }}"><button type="submit">Full update &amp; reboot</button><small>Install the selected branch, then restart the device.</small></form></div>
+      <div id="update-progress" class="form-actions" hidden>
+        <div><strong id="update-stage" role="status" aria-live="polite"></strong><p id="update-detail" class="help-text"></p><small id="update-elapsed"></small></div>
+      </div>
+      <p class="help-text">Settings and media are retained. Keep the device powered during installation. Full update installs the same application and dependencies, then reboots; it does not upgrade the operating system.</p>
       <div class="form-actions"><a class="button quiet" href="{{ url_for('main.download_log') }}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download log</a></div>
     </section>
     <details class="card foldout danger-panel full-width"><summary><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Reset configuration</summary><p class="help-text">Return all application settings to their defaults.</p><form method="post" action="{{ url_for('main.clear_config') }}" onsubmit="return confirm('Are you sure you want to completely reset the config to defaults?')"><button type="submit" class="danger">Reset entire configuration</button></form></details>
@@ -55,6 +61,7 @@
 </div>
 {% endblock %}
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='updates.js') }}" defer></script>
 <script>
 (() => {
   const select = document.getElementById('update-branch');

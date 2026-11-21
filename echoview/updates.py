@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 from echoview.branches import valid_branch
 
@@ -42,19 +43,27 @@ def restart_services():
         raise UpdateError('Service restart failed. Inspect the service journal and retry.') from exc
 
 
-def update(repo, branch, config_path, token_path, reboot=False):
+def update(repo, branch, config_path, token_path, reboot=False, progress=None):
     if not valid_branch(branch):
         raise UpdateError("Invalid update branch.")
     repo = Path(repo)
     stage = 'Update lock'
     backup = None
+    def report(message):
+        if progress is not None:
+            progress(message)
     try:
         with (repo / '.update.lock').open('a') as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
                 raise UpdateError('Another update is already running.') from exc
+            stage = 'Disk space check'
+            report('Checking available storage')
+            if shutil.disk_usage(repo).free < 512 * 1024 * 1024:
+                raise UpdateError('At least 512 MiB of free space is required on the application disk. Free some space before updating; installed code was not changed.')
             stage = 'Configuration backup'
+            report('Backing up device settings')
             if not (repo / '.env').is_file():
                 raise UpdateError('Existing .env is missing; restore it before updating.')
             # Never allow reset to overwrite tracked installation data or local work.
@@ -78,6 +87,7 @@ def update(repo, branch, config_path, token_path, reboot=False):
                     shutil.copyfile(path, target)
                     target.chmod(0o600)
             stage = 'Git fetch'
+            report('Downloading release information')
             run(['git', 'fetch', 'origin', f'+refs/heads/{branch}:refs/remotes/origin/{branch}'], cwd=repo, timeout=180)
             revision = run(['git', 'rev-parse', '--verify', f'refs/remotes/origin/{branch}^{{commit}}'], cwd=repo).stdout.strip()
             for path in files:
@@ -86,13 +96,28 @@ def update(repo, branch, config_path, token_path, reboot=False):
                         raise UpdateError('Target revision tracks installation configuration; update refused.')
             previous = run(['git', 'rev-parse', 'HEAD'], cwd=repo).stdout.strip()
             (backup / 'previous-revision').write_text(previous + '\n')
+            # Check the incoming release, not the currently installed rules.
+            # This standalone checker must stay stdlib-only and read-only so it
+            # can run before replacing code or changing installed dependencies.
+            stage = 'Release compatibility check'
+            report('Checking release compatibility')
+            checker = run(['git', 'show', f'{revision}:echoview/runtime_check.py'], cwd=repo).stdout
+            check_path = backup / 'runtime_check.py'
+            check_path.write_text(checker)
+            check_path.chmod(0o600)
+            for index, interpreter in enumerate(dict.fromkeys(('python3', sys.executable))):
+                run([interpreter, str(check_path), '--installer'], cwd=repo,
+                    log_path=backup / f'preflight-{index}.log')
             stage = 'Git reset'
+            report('Installing application code')
             run(['git', 'reset', '--hard', revision], cwd=repo)
             # Always reconcile dependencies: requirements/constraints/helpers can change alone.
             stage = 'Installer'
+            report('Installing and verifying dependencies. This can take several minutes.')
             run(['sudo', '-n', 'bash', 'setup.sh', '--auto-update'], cwd=repo,
                 timeout=1800, log_path=backup / 'installer.log')
             stage = 'Reboot request' if reboot else 'Service restart'
+            report('Preparing device reboot' if reboot else 'Restarting services')
             if reboot:
                 schedule_system_action('reboot')
             else:
@@ -104,5 +129,8 @@ def update(repo, branch, config_path, token_path, reboot=False):
         details = f' Backup directory: {backup}.' if backup is not None else ''
         if stage == 'Installer' and backup is not None:
             details += f' Installer output: {backup / "installer.log"}.'
+        if stage == 'Release compatibility check' and backup is not None:
+            details += (' Installed code and dependencies were not changed. '
+                        f'Compatibility logs: {backup}/preflight-*.log.')
         raise UpdateError(f'{stage} failed. No completion was reported.{details} '
                           'Inspect the device logs before retrying.') from exc

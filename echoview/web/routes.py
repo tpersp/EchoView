@@ -1173,9 +1173,16 @@ def index():
 def _update_response(reboot=False):
     from echoview.updates import update, UpdateError
     try:
+        if request.accept_mimetypes.best == 'application/json':
+            from echoview.update_jobs import start
+            state = start(VIEWER_HOME, selected_branch(load_config(), UPDATE_BRANCH),
+                          CONFIG_PATH, SPOTIFY_CACHE_PATH, reboot=reboot)
+            return jsonify(state), 202
         update(VIEWER_HOME, selected_branch(load_config(), UPDATE_BRANCH), CONFIG_PATH, SPOTIFY_CACHE_PATH, reboot=reboot)
     except UpdateError as exc:
         log_message(str(exc))
+        if request.accept_mimetypes.best == 'application/json':
+            return jsonify(error=str(exc)), 409
         return render_template("maintenance.html", message=str(exc), pending=False), 500
     message = ("Installation completed. Reboot requested; wait for the device to return."
                if reboot else "Installation completed and viewer is active. Controller restart queued.")
@@ -1206,3 +1213,22 @@ def restart_services():
 def update_branches():
     branch = selected_branch(load_config(), UPDATE_BRANCH)
     return jsonify(branch_options(VIEWER_HOME, branch, remote=True))
+
+
+@main_bp.route('/update_status', methods=['GET'])
+def update_status():
+    from echoview.update_jobs import status
+    response = jsonify(**status(VIEWER_HOME), version=APP_VERSION)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@main_bp.route('/check_update', methods=['POST'])
+def check_update():
+    from echoview.update_jobs import check_release
+    from echoview.updates import UpdateError
+    try:
+        result = check_release(VIEWER_HOME, selected_branch(load_config(), UPDATE_BRANCH))
+    except UpdateError as exc:
+        return jsonify(error=str(exc)), 503
+    return jsonify(result)

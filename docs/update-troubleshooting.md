@@ -3,6 +3,33 @@
 Choose and save the update branch in Settings before updating. Installing a
 checkout from `dev` does not itself change the saved update preference.
 
+Use **Check for updates** to fetch the saved branch's release version, revision
+and up to eight recent commit subjects. Checking does not install files or restart
+services. Different revisions are offered even if their version strings match;
+selecting an older branch can offer an older release. An unchanged revision can
+still be reinstalled to repair dependencies.
+
+With JavaScript enabled, starting either update returns immediately and installs
+in a background worker. Settings shows the current stage and elapsed time,
+including dependency installation. Progress is stored privately on the device
+and restored after refreshing or returning to Settings. Changing the branch
+selection disables checking/installing until that selection has been saved.
+Duplicate background starts are refused by a process lock, and the browser
+never automatically resubmits an installation request after a connection error.
+
+After installation, Settings waits for a different controller process to answer
+before reporting that the controller is back online. This confirms controller
+return, not video or audio readiness; check the physical display. A reboot or
+controller exit during installation marks an abandoned attempt as interrupted
+when status is next read. There is no automatic retry or rollback. If the device
+cannot be reached for five minutes, the page asks you to check connectivity and
+reload rather than reporting success. Without JavaScript, update forms retain
+the synchronous maintenance-page flow described below.
+
+Updates require at least 512 MiB free on the application filesystem before
+starting. This is a minimum guard, not an estimate of every release's storage
+requirements; apt and pip may require more space on other filesystems.
+
 An update backs up configuration, fetches the selected branch, installs runtime
 dependencies and restarts the viewer. The controller restart (or full-update
 reboot) is scheduled through a systemd timer five seconds later so the browser
