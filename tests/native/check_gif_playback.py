@@ -42,6 +42,14 @@ def main():
         window.show_foreground_image(str(fixture))
         movie = window.current_movie
         assert movie is not None, (profile, rotation, 'GIF animation missing')
+        cached = window.image_cache[str(fixture)]
+        assert cached['encoded'] is not None
+        assert cached['bytes'] == cached['image'].sizeInBytes() + fixture.stat().st_size
+        assert movie.device() is not None and movie.fileName() == ''
+        # Animation must survive cache eviction and source removal. Only this
+        # temporary synthetic file is deleted; never use real media in the test.
+        window.image_cache.clear()
+        fixture.unlink()
         assert movie.speed() == 100 and movie.loopCount() == -1
         events, colours = [], set()
 

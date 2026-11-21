@@ -236,8 +236,11 @@ def test_fallback_rotation_does_not_slow_polling(monkeypatch):
     dw.fallback_image_list = ["first", "second"]
     dw.fallback_index = -1
     dw.show_foreground_image = shown.append
+    prefetched = []
+    dw.prefetch_next_image = lambda paths, index: prefetched.append((list(paths), index))
     dw.slideshow_timer = types.SimpleNamespace(setInterval=lambda ms: (_ for _ in ()).throw(AssertionError("polling slowed")))
     dw.render_spotify("")
+    assert prefetched == [(['first', 'second'], 0)]
     assert shown == ["first"]
     now[0] += 5
     dw.render_spotify("")
@@ -371,6 +374,37 @@ def test_image_cache_byte_limit_and_profile_generation():
     dw.load_and_cache_image = old_worker
     dw.get_cached_image("old")
     assert not dw.image_cache
+
+
+def test_prefetch_skips_cached_and_pending_and_wraps_fallback():
+    import threading
+    dw = DisplayWindow.__new__(DisplayWindow)
+    dw.running = True
+    dw.preload_count = 1
+    dw.image_list, dw.index = ['unused'], 0
+    dw.cache_lock = threading.Lock()
+    dw.cache_generation = 0
+    dw.image_cache = {'next': {}}
+    dw.prefetch_pending = set()
+    tasks, loaded = [], []
+    dw.image_preloader = types.SimpleNamespace(submit=lambda task: tasks.append(task) or True)
+    dw.get_cached_image = loaded.append
+    paths = ['next', 'current']
+    dw.prefetch_next_image(paths, 1)
+    assert not tasks
+    dw.image_cache.clear()
+    dw.prefetch_next_image(paths, 1)
+    dw.prefetch_next_image(paths, 1)
+    assert len(tasks) == 1 and dw.prefetch_pending == {'next'}
+    tasks.pop()()
+    assert loaded == ['next'] and not dw.prefetch_pending
+    dw.prefetch_next_image(paths, 1)
+    dw.cache_generation += 1
+    tasks.pop()()
+    assert loaded == ['next'] and not dw.prefetch_pending
+    dw.image_preloader = types.SimpleNamespace(submit=lambda task: False)
+    dw.prefetch_next_image(paths, 1)
+    assert not dw.prefetch_pending
 
 
 def test_external_browser_safe_area_preserves_negative_screen_origin():

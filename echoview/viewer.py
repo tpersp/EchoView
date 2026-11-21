@@ -24,6 +24,7 @@ from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME
 from echoview import scheduling
 from echoview.clock_overlay import format_clock, separators_visible
 from echoview.viewer_watchdog import ViewerWatchdog
+from echoview.image_preloader import ImagePreloader
 
 from echoview.browser import qt_flags, chromium_flags
 from echoview.streaming import (capabilities as stream_capabilities, playback_environment,
@@ -41,7 +42,7 @@ def controller_origin():
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = qt_flags(os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS"))
 
 from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl, Signal
-from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
+from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QTransform, QFont
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel,
     QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
@@ -57,7 +58,7 @@ from echoview.live_settings import VISUAL_KEYS, VisualSettingsReceiver
 from echoview.spotify_state import state_directory
 from echoview.web.spotify_auth import fingerprint
 from echoview.presentation import (safe_bounds, safe_area_settings, overlay_bounds, text_stretch,
-                                   resource_settings, decode_size, trim_image_cache,
+                                   resource_settings, trim_image_cache,
                                    player_presentation_flags, bounded_int, runtime_display_settings)
 from echoview.displays import (discover_monitors, reconcile_displays, screen_assignments,
                                apply_output_mode, display_pixel_aspect, fit_dimensions, DISPLAY_ASPECTS)
@@ -138,6 +139,7 @@ class DisplayWindow(QMainWindow):
         self.prefetch_pending = set()
         self.cache_lock = threading.Lock()
         self.preload_count = 1
+        self.image_preloader = ImagePreloader()
 
         self.last_displayed_path = None
         self.current_pixmap = None
@@ -951,6 +953,7 @@ class DisplayWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.running = False
+        self.image_preloader.close()
         self._cancel_stream()
         self.spotify_fetch_id += 1
         self.slideshow_timer.stop()
@@ -1184,18 +1187,10 @@ class DisplayWindow(QMainWindow):
 
     def load_and_cache_image(self, fullpath):
         # QImageReader/QImage are safe for preloading; QPixmap stays on the GUI.
-        policy = self.resource_options
-        reader = QImageReader(fullpath)
-        reader.setAutoDetectImageFormat(True)
-        reader.setAutoTransform(True)
-        size = reader.size()
-        width, height = decode_size(size.width(), size.height(), policy)
-        if width > 0 and height > 0:
-            reader.setScaledSize(QSize(width, height))
-        image = reader.read()
-        gif = fullpath.lower().endswith(".gif")
-        return {"type": "gif" if gif else "static", "path": fullpath,
-                "first_frame": image, "image": image, "bytes": int(image.sizeInBytes())}
+        # Read through Python first: slow network I/O must not happen inside
+        # Qt's metadata methods, which can hold the Python GIL even on a worker.
+        from echoview.image_data import read_image_data
+        return read_image_data(fullpath, self.resource_options)
 
     def get_cached_image(self, fullpath):
         with self.cache_lock:
@@ -1210,19 +1205,26 @@ class DisplayWindow(QMainWindow):
                 self.cache_bytes = trim_image_cache(self.image_cache, self.cache_capacity, self.cache_budget)
         return data
 
-    def prefetch_next_image(self):
-        if not self.image_list or self.preload_count <= 0:
+    def prefetch_next_image(self, paths=None, index=None):
+        paths = self.image_list if paths is None else paths
+        index = self.index if index is None else index
+        if not self.running or not paths or self.preload_count <= 0:
             return
-        total = len(self.image_list)
+        total = len(paths)
         for offset in range(1, self.preload_count + 1):
-            next_path = self.image_list[(self.index + offset) % total]
+            next_path = paths[(index + offset) % total]
             with self.cache_lock:
-                if next_path in self.prefetch_pending or len(self.prefetch_pending) >= self.preload_count:
+                if (next_path in self.image_cache or next_path in self.prefetch_pending
+                        or len(self.prefetch_pending) >= self.preload_count):
                     continue
                 self.prefetch_pending.add(next_path)
+                generation = self.cache_generation
 
-            def worker(path=next_path):
+            def worker(path=next_path, expected_generation=generation):
                 try:
+                    with self.cache_lock:
+                        if not self.running or expected_generation != self.cache_generation:
+                            return
                     self.get_cached_image(path)
                 except Exception:
                     pass
@@ -1230,7 +1232,9 @@ class DisplayWindow(QMainWindow):
                     with self.cache_lock:
                         self.prefetch_pending.discard(path)
 
-            threading.Thread(target=worker, daemon=True).start()
+            if not self.image_preloader.submit(worker):
+                with self.cache_lock:
+                    self.prefetch_pending.discard(next_path)
 
     def make_background(self, pixmap):
         """Generate a blurred/scaled background from the given pixmap."""
@@ -1334,7 +1338,7 @@ class DisplayWindow(QMainWindow):
         if data["type"] == "gif" and not is_spotify:
             self.current_pixmap = None
             if self.fg_scale_percent == 100 and not self.disp_cfg.get("rotate", 0):
-                self.current_movie = QMovie(data["path"])
+                self.current_movie = self._movie_from_data(data)
                 ff = data["first_frame"]
                 self.gif_source_size = (ff.width(), ff.height())
                 bw, bh = self.calc_bounding_for_window(ff)
@@ -1348,7 +1352,7 @@ class DisplayWindow(QMainWindow):
                     blurred = self.make_background(pm)
                     self.bg_label.setPixmap(blurred if blurred else QPixmap())
             else:
-                self.current_movie = QMovie(data["path"])
+                self.current_movie = self._movie_from_data(data)
                 self.handling_gif_frames = True
                 ff = data["first_frame"]
                 if ff.isNull():
@@ -1371,6 +1375,18 @@ class DisplayWindow(QMainWindow):
             blurred = self.make_background(self.current_pixmap)
             self.bg_label.setPixmap(blurred if blurred else QPixmap())
         self.spotify_info_label.raise_()
+
+    def _movie_from_data(self, data):
+        encoded = data.get('encoded')
+        if encoded is None:
+            return QMovie(data['path'])  # Preserve support for oversized files.
+        from PySide6.QtCore import QBuffer, QIODevice
+        buffer = QBuffer()
+        buffer.setData(encoded)
+        buffer.open(QIODevice.ReadOnly)
+        movie = QMovie(buffer)
+        buffer.setParent(movie)  # Keep the device alive until its movie is deleted.
+        return movie
 
     def on_gif_frame_changed(self, frame_index):
         if not self.current_movie or not self.handling_gif_frames:
@@ -1708,6 +1724,7 @@ class DisplayWindow(QMainWindow):
                     new_path = self.fallback_image_list[self.fallback_index]
                     self.last_displayed_path = new_path
                     self.show_foreground_image(new_path)
+                    self.prefetch_next_image(self.fallback_image_list, self.fallback_index)
                     self.spotify_fallback_due = time.monotonic() + max(1, int(self.disp_cfg.get("image_interval", 60)))
                 self.spotify_info_label.setText("")
                 self.spotify_info_label.hide()

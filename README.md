@@ -259,6 +259,13 @@ frame locals, media contents or credentials. Native Qt work may appear only as
 the application event loop; this detects pauses but does not by itself identify
 their cause. It does not restart playback or change media settings.
 
+Both the normal image slideshow and Spotify's fallback slideshow preload their
+next image using one reusable background worker per display. GIFs up to 32 MiB
+(8 MiB with the Pi 3 resource profile) also retain their compressed source bytes
+within the existing image-cache budget, so animation playback does not need NAS
+reads. This caches encoded data, not every decoded frame. Larger GIFs retain
+file-backed playback. Source media is never rewritten by this caching.
+
 Run this with the same Python environment as EchoView (normally `.venv`):
 
 ```bash
