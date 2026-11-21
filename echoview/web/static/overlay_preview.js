@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const sampled = performance.now();
   const startSeconds = Number(form.dataset.clockSeconds) || 0;
   const fraction = Date.parse(form.dataset.clockIso || '') % 1000 || 0;
+  const context=document.createElement('canvas').getContext('2d');
+  context.textRendering='geometricPrecision';
   const elapsedMillis = () => startSeconds*1000 + fraction + performance.now()-sampled;
   function clockText(format, showSeconds) {
     const seconds = Math.floor(elapsedMillis()/1000) % 86400;
@@ -45,19 +47,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     clock.classList.toggle('blink-hidden', checked('clock_blink_separators') && elapsedMillis()%1000 >= 500);
     if (!show || !screen.clientHeight) return;
-    const nativeHeight = geometry.height * (1-(margins.top+margins.bottom)/100);
-    const nativeWidth = geometry.width * (1-(margins.left+margins.right)/100);
+    const nativeLeft = Math.round(geometry.width*margins.left/100);
+    const nativeRight = Math.round(geometry.width*margins.right/100);
+    const nativeTop = Math.round(geometry.height*margins.top/100);
+    const nativeBottom = Math.round(geometry.height*margins.bottom/100);
+    const nativeHeight = Math.max(1,geometry.height-nativeTop-nativeBottom);
+    const nativeWidth = Math.max(1,geometry.width-nativeLeft-nativeRight);
     const scale = screen.clientHeight / geometry.height;
-    const requested = Number(value('clock_font_size',26)) || 26;
-    const size = Math.max(8, Math.min(512, Math.floor(nativeHeight/4), requested));
+    const requested = Math.trunc(Number(value('clock_font_size',26))) || 26;
+    let size = Math.max(8, Math.min(Math.max(8,Math.min(512,Math.floor(nativeHeight/4))),requested));
+    // Fit in native pixels before scaling the preview, just like the viewer.
+    const stretch=Math.max(1,Math.min(4000,Math.round(100/geometry.pixel_aspect)))/100;
+    const measure=()=>{context.font=`${size}px "EchoView Clock"`;return context.measureText(text);};
+    const width=Math.round(measure().width*stretch);
+    if (width>Math.max(1,nativeWidth-20)) size=Math.max(8,Math.trunc(size*Math.max(1,nativeWidth-20)/width));
+    const metrics=measure();
     clock.style.fontSize = `${size*scale}px`;
-    const margin = Math.max(0, Math.min(10, Math.floor(nativeWidth/4), Math.floor(nativeHeight/4)));
+    const lineHeight=Number.isFinite(metrics.fontBoundingBoxAscent+metrics.fontBoundingBoxDescent) ? Math.round(metrics.fontBoundingBoxAscent+metrics.fontBoundingBoxDescent)+2 : Math.round(size*1.1640625)+2;
+    clock.style.lineHeight = `${lineHeight*scale}px`;
+    const margin = Math.max(0,Math.min(10,Math.floor(nativeWidth/10),Math.floor(nativeHeight/10)));
     const mx = margin*geometry.pixel_aspect*scale, my = margin*scale;
-    const available = Math.max(1,safe.clientWidth-2*mx);
-    if (clock.getBoundingClientRect().width>available) {
-      clock.style.fontSize = `${Math.max(8*scale,size*scale*available/clock.getBoundingClientRect().width)}px`;
-    }
+    clock.style.width = `${Math.min(Math.max(1,nativeWidth-2*margin),Math.round(metrics.width*stretch)+2)*geometry.pixel_aspect*scale}px`;
+    clock.style.overflow='hidden';
     const position = value('clock_position','bottom-center');
+    clock.style.textAlign=position.includes('left')?'left':position.includes('right')?'right':'center';
     clock.style.left = position.includes('left') ? `${mx}px` : position.includes('right') ? 'auto' : '50%';
     clock.style.right = position.includes('right') ? `${mx}px` : 'auto';
     clock.style.top = position.includes('top') ? `${my}px` : position.includes('bottom') ? 'auto' : '50%';
@@ -67,6 +80,8 @@ document.addEventListener('DOMContentLoaded', () => {
     clock.style.transform = `translate(${x},${y})`;
   }
   const renderAll = () => previews.forEach(render);
+  // Font arrival changes measurements; never retain a fallback-font layout.
+  document.fonts.load('26px "EchoView Clock"').then(renderAll).catch(() => {});
   form.addEventListener('input',() => { renderAll(); schedule(); });
   form.addEventListener('change',() => { renderAll(); schedule(); });
   for (const preview of previews) new ResizeObserver(() => render(preview)).observe(preview);

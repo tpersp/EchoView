@@ -9,7 +9,8 @@ from echoview.clock_label import ClockLabel
 app=QApplication([])
 parent=QWidget();parent.resize(400,80);parent.setStyleSheet('background:#304050;')
 label=ClockLabel(parent);label.setGeometry(0,0,400,80)
-font=QFont('DejaVu Sans Mono');font.setPixelSize(30);label.setFont(font)
+assert label.font().family()=='DejaVu Sans'
+font=QFont(label.font());font.setPixelSize(30);label.setFont(font)
 label.setAlignment(Qt.AlignLeft|Qt.AlignVCenter)
 label.setStyleSheet('color:#ffffff;background:transparent;')
 parent.show();app.processEvents()

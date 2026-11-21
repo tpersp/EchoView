@@ -1,12 +1,29 @@
 """Clock text with separators that can disappear without changing its layout."""
+from functools import lru_cache
+from pathlib import Path
+
 from PySide6.QtCore import Qt, QPointF
-from PySide6.QtGui import QColor, QPainter, QTextLayout, QTextOption, QTextCharFormat
+from PySide6.QtGui import QColor, QPainter, QTextLayout, QTextOption, QTextCharFormat, QFontDatabase, QFont
 from PySide6.QtWidgets import QLabel
+
+
+@lru_cache(maxsize=1)
+def clock_font_family():
+    path=Path(__file__).parent/'web/static/fonts/DejaVuSans.ttf'
+    identifier=QFontDatabase.addApplicationFont(str(path))
+    families=QFontDatabase.applicationFontFamilies(identifier) if identifier>=0 else []
+    return families[0] if families else 'DejaVu Sans'
 
 
 class ClockLabel(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
+        font=self.font()
+        font.setFamily(clock_font_family())
+        font.setHintingPreference(QFont.PreferNoHinting)
+        font.setBold(False)
+        font.setItalic(False)
+        self.setFont(font)
         self.useDifference = False
         self.separators_visible = True
 

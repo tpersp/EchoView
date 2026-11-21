@@ -400,10 +400,12 @@ form .schedule-folder-chip button { flex: 0 0 auto; border: 0; background: trans
 .overlay-preview-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
 .overlay-preview .section-heading .form-actions { margin-top: 0; gap: 10px; }
 .overlay-preview-safe.has-safe-area { outline: 1px dashed #79909f; }
-.overlay-preview-clock { position: absolute; white-space: nowrap; line-height: 1.2; font-family: system-ui,sans-serif; font-weight: 400; }
+.overlay-preview-clock { position: absolute; white-space: nowrap; line-height: 1.2; font-family: "EchoView Clock",sans-serif; font-weight: 400; text-rendering: geometricPrecision; }
 .overlay-preview-clock.auto-contrast { mix-blend-mode: difference; }
 .overlay-preview-empty { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); padding: 6px 10px; border-radius: 6px; color: #edf2f7; background: #101620dd; font-size: 12px; white-space: nowrap; }
 
 .overlay-preview-clock.blink-hidden .overlay-preview-separator { visibility: hidden; }
 
 .spotify-preview-blur { position: absolute; inset: -12%; background-size: cover; background-position: center; pointer-events: none; }
+
+@font-face { font-family: 'EchoView Clock'; src: url('fonts/DejaVuSans.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; }

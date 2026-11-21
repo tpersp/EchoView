@@ -515,6 +515,8 @@ viewer could not confirm them. It never forces a restart on confirmation failure
 Each display’s **Overlays** card previews clock edits over a frame from the
 running viewer. It fetches one frame by default. Enable **Live** to refresh approximately every two seconds
 while the preview is visible; turn it off to hold a frame, or use **Refresh**.
+The viewer and preview share a bundled local clock font and use matching text
+fitting, so clock width does not depend on the browser’s system font.
 The clock uses device time, physical aspect and saved safe area, with manual
 colour or difference blending over the actual background. Edits stay in the
 browser until Apply; capture never hides or changes the display's real clock.
