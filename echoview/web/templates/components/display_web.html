@@ -13,7 +13,7 @@
     <span id="{{ dname }}_embed_status" class="embed-status muted">{{ (meta.embed_type|default('iframe')|capitalize) ~ ' detected' if meta else 'No metadata cached' }}</span>
     <span id="{{ dname }}_embed_error" class="embed-error"></span>
   </div>
-  {{ f.toggle(pre ~ 'web_use_external_browser','Open in Chromium',dcfg.get('web_use_external_browser',false),help='Use the external browser for heavier websites or embedded video.') }}
+  {{ f.toggle(pre ~ 'web_use_external_browser','Open in Chromium',dcfg.get('web_use_external_browser',false)) }}
   <div id="{{ dname }}_embed_metadata" class="embed-metadata">
     {% if meta %}
       {% if meta.title %}<strong>{{ meta.title }}</strong>{% endif %}
@@ -28,5 +28,5 @@
     {{ f.toggle(pre ~ 'youtube_captions','Closed captions',dcfg.get('youtube_captions',false),value='on') }}
     {{ f.select(pre ~ 'youtube_quality','Video quality',dcfg.get('youtube_quality','default'), [('default','Default'),('small','144p'),('medium','360p'),('large','480p'),('hd720','720p'),('hd1080','1080p'),('highres','Highest available')]) }}
   </div>
-  {{ f.toggle(pre ~ 'save_web','Remember this website',false,help='Saved websites appear as suggestions on all displays.') }}
+  {{ f.toggle(pre ~ 'save_web','Remember this website',false) }}
 </div>

@@ -133,12 +133,12 @@ def test_invalid_presentation_input_does_not_save_or_apply(controller, data):
     assert not saved and not applied and cfg == before
 
 
-def test_presentation_page_explains_gif_tradeoff_and_calibration(controller):
+def test_presentation_page_has_calibration_and_safe_area_controls(controller):
     client, cfg, found, saved, applied = controller
     response = client.get("/")
     assert response.status_code == 200
     assert b'name="resource_profile"' not in response.data
-    assert b"Calibration Pattern" in response.data
+    assert b'value="calibration"' in response.data
     assert b'name="safe_left"' in response.data
 
 

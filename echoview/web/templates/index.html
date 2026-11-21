@@ -6,7 +6,7 @@
 {% set positions = [('top-left','Top left'),('top-center','Top center'),('top-right','Top right'),('bottom-left','Bottom left'),('bottom-center','Bottom center'),('bottom-right','Bottom right')] %}
 <div class="page-section">
   <header class="page-header">
-    <div><h1>Displays</h1><p>Set what plays on each screen.</p><div class="device-identity" aria-label="Connected device"><span>Connected to</span><strong>{{ host }}</strong><code>{{ ipaddr }}</code></div></div>
+    <div><h1>Displays</h1><div class="device-identity" aria-label="Connected device"><span>Connected to</span><strong>{{ host }}</strong><code>{{ ipaddr }}</code></div></div>
     <div class="page-actions"><button type="button" class="quiet" data-open-details="display-presets"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Presets</button><a class="button" href="{{ url_for('main.upload_media') }}"><i class="fa-solid fa-folder-open" aria-hidden="true"></i> Browse media</a></div>
   </header>
   {% for message in get_flashed_messages() %}<div class="flash-message" role="status">{{ message }}</div>{% endfor %}
@@ -74,7 +74,6 @@
   </form>
   <div class="utility-panels">
     <details class="card foldout display-presets" id="display-presets"><summary><i class="fa-regular fa-bookmark" aria-hidden="true"></i> Saved display presets</summary>
-      <p class="help-text">Keep named playback setups. Output resolution, safe area, device performance and credentials stay as configured.</p>
       <form method="post" action="{{ url_for('main.display_presets') }}" id="save-preset-form"><input type="hidden" name="action" value="save"><label class="field"><span class="field-label">Preset name</span><input name="name" maxlength="48" required placeholder="Evening slideshow"></label><div class="form-actions"><button type="submit">Save applied setup</button><small>Apply unsaved display changes first.</small></div></form>
       {% if cfg.display_presets %}<hr><form method="post" action="{{ url_for('main.display_presets') }}"><label class="field"><span class="field-label">Choose a preset</span><select name="name">{% for name in cfg.display_presets %}<option value="{{ name }}">{{ name }}</option>{% endfor %}</select></label><div class="form-actions"><button type="submit" name="action" value="apply">Apply preset</button><button type="submit" name="action" value="delete" class="quiet danger-text" onclick="return confirm('Delete this preset? Media files and playback will stay unchanged.')">Delete preset</button></div></form>{% else %}<p class="help-text form-actions">No presets saved yet.</p>{% endif %}
     </details>
@@ -88,15 +87,14 @@
           <label class="field"><span class="field-label">Output resolution and refresh rate</span><select name="output_mode"><option value="auto"{% if dcfg.output_mode|default('auto') == 'auto' %} selected{% endif %}>Automatic / preferred mode</option>{% set choices = output.available_modes|default([]) %}{% for choice in choices %}<option value="{{ choice.value }}"{% if dcfg.output_mode == choice.value %} selected{% endif %}>{{ choice.label }}</option>{% endfor %}{% if dcfg.output_mode|default('auto') != 'auto' and dcfg.output_mode not in choices|map(attribute='value')|list %}<option value="{{ dcfg.output_mode }}" selected>{{ dcfg.output_mode }} (not currently advertised)</option>{% endif %}</select></label>
           <label class="field"><span class="field-label">Physical display aspect ratio</span><select name="display_aspect">{% for aspect in display_aspects %}<option value="{{ aspect }}"{% if dcfg.display_aspect|default('auto') == aspect %} selected{% endif %}>{{ 'Auto (composite 4:3; otherwise square pixels)' if aspect == 'auto' else aspect }}</option>{% endfor %}</select></label>
         </div>
-        <p class="help-text form-actions">Match the aspect setting to your physical screen. It corrects images, GIFs, Spotify artwork and video; web-page layout follows the output raster.</p>
-        {% if output.kind == 'composite' %}<p class="help-text">RCA exposes standard-definition modes only. Choose PAL/NTSC with the boot-profile helper; this control cannot create an HDMI resolution on RCA.</p>{% endif %}
+        {% if output.kind == 'composite' %}<p class="help-text">Composite output uses PAL/NTSC modes from the boot profile.</p>{% endif %}
         <div class="form-actions"><button type="submit"{% if not output.connected %} disabled{% endif %}>Apply output settings</button></div>
       </form>
       <form method="post" action="{{ url_for('main.configure_presentation') }}" class="output-form">
-        <h3>{{ dname }} — Safe area</h3><p class="help-text">Inset the edges to keep media and overlays clear of TV overscan.</p>
+        <h3>{{ dname }} — Safe area</h3>
         <input type="hidden" name="display" value="{{ dname }}">{% set margins = dcfg.safe_area if dcfg.safe_area is mapping else {} %}
         <div class="fields-grid">{% for edge in ['left','right','top','bottom'] %}{{ f.input('safe_' ~ edge,edge|capitalize ~ ' (%)',margins.get(edge,0),'number',min=0,max=20,step='any',required=true) }}{% endfor %}</div>
-        <p class="help-text form-actions">Use Calibration Pattern in the viewer mode selector to check the visible boundary, circles and grid. External browser fullscreen may ignore window insets. Device performance options are in <a href="{{ url_for('main.settings') }}">Settings</a>.</p>
+        <p class="help-text form-actions">Chromium fullscreen may ignore safe area settings.</p>
         <div class="form-actions"><button type="submit">Save presentation settings</button></div>
       </form>
       {% endfor %}

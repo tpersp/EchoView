@@ -3,7 +3,6 @@
            data-folders='{{ subfolders|tojson }}' data-clock='{{ schedule_clock|tojson }}'
            data-clock-url="{{ url_for('main.schedule_clock') }}">
     <h4>Daily playback schedule</h4>
-    <p>Each slot plays until the next start time. The last slot continues past midnight. Repeats every day.</p>
     <p class="schedule-device-clock"></p>
     <input type="hidden" name="{{ dname }}_schedule" value='{{ dcfg.schedule|default([])|tojson }}'>
     <div class="schedule-preview" aria-live="polite"></div>
@@ -13,6 +12,6 @@
       <button type="button" class="schedule-example">Start with 06:00 / 14:00 / 18:00</button>
     </div>
     <p class="schedule-error" role="alert" tabindex="-1"></p>
-    <small>This previews your changes. Use Apply to displays to activate them. At a start time, scheduled videos stop even if Play to End is enabled.</small>
+    <small>Videos switch at the next slot, even with Play to end enabled.</small>
   </section>
 </div>

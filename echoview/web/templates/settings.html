@@ -3,11 +3,11 @@
 {% block title %}Settings{% endblock %}
 {% block content %}
 <div class="page-section">
-  <header class="page-header"><div><h1>Settings</h1><p>Appearance, performance, and keeping your device up to date.</p></div><span class="pill">v{{ version }}</span></header>
+  <header class="page-header"><div><h1>Settings</h1></div><span class="pill">v{{ version }}</span></header>
   {% for message in get_flashed_messages() %}<div class="flash-message" role="status">{{ message }}</div>{% endfor %}
   <div class="settings-grid">
     <section class="card">
-      <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-solid fa-palette" aria-hidden="true"></i></span><div><h2>Appearance</h2><p>A comfortable view of your workspace.</p></div></div></header>
+      <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-solid fa-palette" aria-hidden="true"></i></span><div><h2>Appearance</h2></div></div></header>
       <form method="post" enctype="multipart/form-data">
         <div class="appearance-choices">
           {% for value,label,icon in [('dark','Dark','moon'),('light','Light','sun'),('custom','Custom','image')] %}
@@ -19,15 +19,15 @@
       </form>
     </section>
     <section class="card">
-      <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i></span><div><h2>Device performance</h2><p>One resource profile for all displays.</p></div></div></header>
+      <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i></span><div><h2>Device performance</h2></div></div></header>
       <form method="post"><input type="hidden" name="action" value="resource_profile">
         <label class="field"><span class="field-label">Resource profile (all displays)</span><select id="resource-profile" name="resource_profile"><option value="standard"{% if cfg.resource_profile|default('standard') == 'standard' %} selected{% endif %}>Standard</option><option value="pi3"{% if cfg.resource_profile == 'pi3' %} selected{% endif %}>Pi 3 low resource</option></select></label>
-        <p class="help-text form-actions">Pi 3: no background blur or preloading, smaller decoded images and caches, and fewer video decoder threads. GIFs and videos play normally. Video quality follows the display’s chosen setting.</p>
+        <details class="playback-options"><summary>Profile details</summary><p>Pi 3 disables blur and preloading, and reduces image size, cache size and video decoder threads.</p></details>
         <div class="form-actions"><button type="submit">Save device performance</button></div>
       </form>
     </section>
     <section class="card full-width">
-      <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-solid fa-sliders" aria-hidden="true"></i></span><div><h2>Image rendering</h2><p>Balance visual detail with memory and processing.</p></div></div></header>
+      <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-solid fa-sliders" aria-hidden="true"></i></span><div><h2>Image rendering</h2></div></div></header>
       <form method="post" enctype="multipart/form-data"><input type="hidden" name="theme" value="{{ cfg.theme }}">
         <div class="fields-grid rendering-fields">
           {{ f.input('background_blur_radius','Background blur radius',cfg.gui.background_blur_radius|default(20),'number',min=0) }}
@@ -36,7 +36,7 @@
           {{ f.input('cache_capacity','Cached images',cfg.cache_capacity|default(15),'number',min=1,max=100) }}
           {{ f.input('preload_count','Preloaded media',cfg.preload_count|default(1),'number',min=0,max=50) }}
         </div>
-        <div class="form-actions"><button type="submit">Save rendering settings</button><small>Higher values can use more memory and processing.</small></div>
+        <div class="form-actions"><button type="submit">Save rendering settings</button></div>
       </form>
     </section>
     <section class="card full-width">
@@ -45,18 +45,18 @@
         <label class="field"><span class="field-label">Update branch</span><select id="update-branch" name="update_branch">{% for branch in branches %}<option value="{{ branch }}"{% if branch == update_branch %} selected{% endif %}>{{ branch }}</option>{% endfor %}</select></label>
         <button type="submit">Save update branch</button><button type="button" class="quiet" id="refresh-branches">Refresh branches</button>
       </form>
-      <p id="branch-status" class="help-text form-actions" role="status">Saved branch: {{ update_branch }}. Save a selection before starting an update.</p>
+      <p id="branch-status" class="help-text form-actions" role="status">Saved branch: {{ update_branch }}.</p>
       <hr>
-      <div class="form-actions"><button type="button" id="check-update">Check for updates</button><span id="release-status" role="status" aria-live="polite">Check the saved branch before installing.</span></div>
+      <div class="form-actions"><button type="button" id="check-update">Check for updates</button><span id="release-status" role="status" aria-live="polite"></span></div>
       <ul id="release-changes"></ul>
-      <div class="update-actions" data-saved-branch="{{ update_branch }}"><form method="post" action="{{ url_for('main.update_app') }}"><button type="submit" class="primary">Update application</button><small>Back up settings, install the selected branch and its dependencies, then restart services.</small></form><form method="post" action="{{ url_for('main.full_update') }}"><button type="submit">Full update &amp; reboot</button><small>Install the selected branch, then restart the device.</small></form></div>
+      <div class="update-actions" data-saved-branch="{{ update_branch }}"><form method="post" action="{{ url_for('main.update_app') }}"><button type="submit" class="primary">Update application</button></form><form method="post" action="{{ url_for('main.full_update') }}"><button type="submit">Full update &amp; reboot</button></form></div>
       <div id="update-progress" class="form-actions" hidden>
         <div><strong id="update-stage" role="status" aria-live="polite"></strong><p id="update-detail" class="help-text"></p><small id="update-elapsed"></small></div>
       </div>
-      <p class="help-text">Settings and media are retained. Keep the device powered during installation. Full update installs the same application and dependencies, then reboots; it does not upgrade the operating system.</p>
+      <p class="help-text">Keep the device powered during installation. Full update reboots the device; it does not upgrade the operating system.</p>
       <div class="form-actions"><a class="button quiet" href="{{ url_for('main.download_log') }}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download log</a></div>
     </section>
-    <details class="card foldout danger-panel full-width"><summary><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Reset configuration</summary><p class="help-text">Return all application settings to their defaults.</p><form method="post" action="{{ url_for('main.clear_config') }}" onsubmit="return confirm('Are you sure you want to completely reset the config to defaults?')"><button type="submit" class="danger">Reset entire configuration</button></form></details>
+    <details class="card foldout danger-panel full-width"><summary><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Reset configuration</summary><form method="post" action="{{ url_for('main.clear_config') }}" onsubmit="return confirm('Are you sure you want to completely reset the config to defaults?')"><button type="submit" class="danger">Reset entire configuration</button></form></details>
   </div>
 </div>
 {% endblock %}
@@ -76,7 +76,7 @@
       const chosen = select.value;
       const names = [...new Set([...Array.from(select.options, option => option.value), ...data.branches, chosen])].sort();
       select.replaceChildren(...names.map(name => new Option(name, name, false, name === chosen)));
-      status.textContent = data.available ? 'Branches loaded. Save your selection before starting an update.' : 'Origin unavailable; showing saved and locally known branches.';
+      status.textContent = data.available ? 'Branches loaded.' : 'Origin unavailable; showing saved and locally known branches.';
     } catch (_) { status.textContent = 'Branch lookup unavailable; existing choices remain available.'; }
     finally { button.disabled = false; }
   });

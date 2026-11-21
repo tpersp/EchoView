@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     timing.classList.toggle('at-top', bar.classList.contains('at-top'));
     timing.classList.toggle('time-only', !enabled('spotify_show_progress',false));
     bar.style.right = timing.hidden ? '4%' : '30%';
-    preview.querySelector('[data-preview-note]').textContent = data === example ? 'Example track. Edit settings to preview them, then Apply to update the display.' : 'Using the cached track. Preview changes stay here until you Apply. Placement is approximate.';
+    preview.querySelector('[data-preview-note]').textContent = data === example ? 'Example track' : 'Now playing';
   }
   function renderAll() { previews.filter(preview => preview.open).forEach(render); }
   async function refresh() {
