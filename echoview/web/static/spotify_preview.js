@@ -30,6 +30,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const colours = palette.map(c => '#'+[1,3,5].map(i => Math.round(parseInt(c.slice(i,i+2),16)*(100-dim)/100).toString(16).padStart(2,'0')).join(''));
     if (backgroundMode!=='gradient') colours[1]=colours[0];
     screen.style.background = backgroundMode==='gradient' ? `linear-gradient(90deg,${colours[0]},${colours[1]})` : backgroundMode==='artwork' ? colours[0] : '#000000';
+    const blur = preview.querySelector('.spotify-preview-blur');
+    blur.hidden = backgroundMode!=='blurred' || !data.artwork;
+    blur.style.backgroundImage = blur.hidden ? 'none' : `url(${JSON.stringify(data.artwork)})`;
+    blur.style.filter = `blur(${Math.max(2,screen.clientWidth*8/96)}px) brightness(${(100-dim)/100})`;
     for (const name of ['song','artist','album','device']) {
       const node = preview.querySelector(`[data-preview-${name}]`);
       const text = name === 'device' ? (data.device_name ? `Playing on ${data.device_name}` : '') : data[name] || '';
@@ -44,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const scale = Math.max(.1, screen.clientHeight / height);
     screen.style.setProperty('--preview-font', `${Math.max(5, (Number(value('spotify_font_size',18)) || 18)*scale)}px`);
     let textColour = '#edf2f7';
-    if (backgroundMode!=='black' && layout!=='classic') {
+    if (['artwork','gradient'].includes(backgroundMode) && layout!=='classic') {
       const luminance = c => [1,3,5].map(i => parseInt(c.slice(i,i+2),16)/255).map(v => v<=.04045 ? v/12.92 : ((v+.055)/1.055)**2.4).reduce((sum,v,i) => sum+v*[.2126,.7152,.0722][i],0);
       const levels=colours.map(luminance);
       if (Math.min(...levels.map(v => (v+.05)/(luminance('#101620')+.05))) > Math.min(...levels.map(v => 1.05/(v+.05)))) textColour='#101620';

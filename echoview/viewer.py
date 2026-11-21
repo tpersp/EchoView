@@ -296,6 +296,10 @@ class DisplayWindow(QMainWindow):
         rect = self.presentation_rect()
         margin = max(0, min(10, rect.width() // 10, rect.height() // 10))
         self.bg_label.setGeometry(rect)
+        if (self.current_mode == "spotify" and self.spotify_info
+                and self.disp_cfg.get("spotify_background_mode") == "blurred"
+                and self.disp_cfg.get("spotify_layout", "classic") == "classic"):
+            self._apply_spotify_background()
         self.foreground_label.setGeometry(rect)
         if self.web_view.isVisible():
             self.web_view.setGeometry(rect)
@@ -1687,6 +1691,17 @@ class DisplayWindow(QMainWindow):
         mode = self.disp_cfg.get('spotify_background_mode','black')
         style = background_style(self.disp_cfg, self.spotify_info.get('art_colors',()) if self.spotify_info else ())
         key = (mode,style)
+        if mode == 'blurred':
+            from echoview.spotify_background import BlurredArtwork
+            if not hasattr(self,'_spotify_blurred_artwork'):
+                self._spotify_blurred_artwork = BlurredArtwork()
+            background = self._spotify_blurred_artwork.get(self.current_pixmap,self.disp_cfg.get('spotify_background_dim',65),self.bg_label.size())
+            self.bg_label.setStyleSheet('background-color: black;')
+            self.bg_label.setPixmap(background)
+            self._spotify_background_key = key
+            return
+        if hasattr(self,'_spotify_blurred_artwork'):
+            del self._spotify_blurred_artwork
         previous = getattr(self,'_spotify_background_key',None)
         if key == previous:
             return
@@ -1736,6 +1751,7 @@ class DisplayWindow(QMainWindow):
                 self.request_foreground_image(path, is_spotify=True)
             elif not path:
                 self.bg_label.clear()
+                self.current_pixmap = None
                 self.clear_foreground_label("Artwork unavailable")
             self.spotify_art_path = path
             self._apply_spotify_background()
@@ -1791,6 +1807,8 @@ class DisplayWindow(QMainWindow):
                 card.hide()
                 self.foreground_label.show()
                 self.bg_label.show()
+            if hasattr(self,'_spotify_blurred_artwork'):
+                del self._spotify_blurred_artwork
             self.spotify_art_path = None
             self.spotify_info_label.setText("")
             self.spotify_info_label.hide()

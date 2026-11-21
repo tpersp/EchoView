@@ -4,7 +4,7 @@ from PySide6.QtGui import QFont, QPixmap, QTransform, QPainter, QBrush, QColor, 
 from PySide6.QtWidgets import QWidget, QLabel
 from echoview.displays import fit_dimensions
 from echoview.presentation import text_stretch, bounded_int
-from echoview.spotify_background import background_style, background_colours, foreground_colour
+from echoview.spotify_background import background_style, background_colours, foreground_colour, BlurredArtwork
 
 
 class SpotifyCard(QWidget):
@@ -30,6 +30,8 @@ class SpotifyCard(QWidget):
         self.pixel_aspect = 1.0
         self.background_key = None
         self.art_colors = ()
+        self.blurred_artwork = BlurredArtwork()
+        self.blurred_pixmap = QPixmap()
 
     def set_track(self, path, info, options, pixel_aspect):
         self.options, self.pixel_aspect = options, pixel_aspect
@@ -65,6 +67,13 @@ class SpotifyCard(QWidget):
         # painting, not merely when QWidget.grab()/render() forces a background.
         painter = QPainter(self)
         painter.fillRect(self.rect(),self.background_brush)
+        if not self.blurred_pixmap.isNull():
+            painter.drawPixmap(0,0,self.blurred_pixmap)
+
+    def hideEvent(self, event):
+        self.blurred_artwork = BlurredArtwork()
+        self.blurred_pixmap = QPixmap()
+        super().hideEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -74,6 +83,12 @@ class SpotifyCard(QWidget):
         if not hasattr(self, 'labels'):
             return
         w, h = self.width(), self.height()
+        if self.options.get("spotify_background_mode") == "blurred":
+            self.blurred_pixmap = self.blurred_artwork.get(self.pixmap,self.options.get("spotify_background_dim",65),self.size())
+        else:
+            self.blurred_pixmap = QPixmap()
+            self.blurred_artwork = BlurredArtwork()
+        self.update()
         margin = max(8, min(40, min(w, h) // 15))
         gap = max(8, margin)
         # Reserve the bottom edge for progress and display safe-area insets.

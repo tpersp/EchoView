@@ -1088,7 +1088,7 @@ def index():
                         return 'Invalid Spotify layout.', 400
                     dcfg['spotify_layout'] = layout
                     background_mode = request.form.get(pre+'spotify_background_mode', dcfg.get('spotify_background_mode','black'))
-                    if background_mode not in ('black','artwork','gradient'):
+                    if background_mode not in ('black','artwork','gradient','blurred'):
                         return 'Invalid Spotify background.', 400
                     try:
                         background_dim = int(request.form.get(pre+'spotify_background_dim',dcfg.get('spotify_background_dim',65)))

@@ -21,7 +21,7 @@
   <details class="playback-options">
     <summary>Background appearance</summary>
     <div class="fields-grid">
-      {{ f.select(pre ~ 'spotify_background_mode','Background',dcfg.get('spotify_background_mode','black'), [('black','Black'),('artwork','Artwork colour'),('gradient','Artwork gradient')]) }}
+      {{ f.select(pre ~ 'spotify_background_mode','Background',dcfg.get('spotify_background_mode','black'), [('black','Black'),('artwork','Artwork colour'),('gradient','Artwork gradient'),('blurred','Blurred artwork')]) }}
       <label class="field"><span class="field-label">Dimming <output data-background-dim-value>{{ dcfg.get('spotify_background_dim',65) }}%</output></span><input type="range" name="{{ pre }}spotify_background_dim" value="{{ dcfg.get('spotify_background_dim',65) }}" min="0" max="95" step="1" data-background-dim></label>
     </div>
   </details>

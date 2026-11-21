@@ -36,15 +36,34 @@ with tempfile.TemporaryDirectory(prefix='echoview-art-background-') as directory
     for layout in ('album_card','poster'):
         for width,height in ((1280,720),(720,1280)):
             card.resize(width,height)
-            for mode in ('black','artwork','gradient'):
+            for mode in ('black','artwork','gradient','blurred'):
                 options={'spotify_layout':layout,'spotify_background_mode':mode,'spotify_background_dim':50}
                 card.set_track(str(path),info,options,1)
                 app.processEvents()
                 image=card.grab().toImage()
                 left=image.pixelColor(2,2);right=image.pixelColor(image.width()-3,2)
                 if mode=='black':assert left.name()=='#000000'
+                elif mode=='blurred':assert 120<=left.red()<=129 and 75<=left.green()<=90 and left.blue()<5
                 else:assert left.red()>120 and left.blue()<5
                 if mode=='gradient':assert right.blue()>120 and right.red()<5
+    from echoview.spotify_background import BlurredArtwork
+    from PySide6.QtCore import QSize
+    cached=BlurredArtwork()
+    result=cached.get(card.pixmap,50,QSize(640,360))
+    assert cached.image.width()<=96 and cached.image.height()<=96
+    assert cached.get(card.pixmap,50,QSize(640,360)).cacheKey()==result.cacheKey()
+    assert cached.get(card.pixmap,80,QSize(640,360)).toImage().pixelColor(2,2).red()<60
+    from PySide6.QtGui import QPixmap
+    assert cached.get(QPixmap(),50,QSize(640,360)).isNull()
+    assert cached.image is None and cached.output is None
+    from PIL import ImageDraw
+    split=Image.new('RGB',(96,96),'red');ImageDraw.Draw(split).rectangle((48,0,95,95),fill='blue')
+    split_path=Path(directory)/'split.png';split.save(split_path)
+    softened=cached.get(QPixmap(str(split_path)),0,QSize(96,96)).toImage()
+    centre=softened.pixelColor(48,48)
+    assert centre.red()>80 and centre.blue()>80, 'Cover boundary must be genuinely blurred'
+    assert softened.pixelColor(2,2).red()>240
+
     key=card.pixmap.cacheKey()
     card.set_track(str(path),info,options,1)
     assert card.pixmap.cacheKey()==key
@@ -69,7 +88,7 @@ with tempfile.TemporaryDirectory(prefix='echoview-art-background-') as directory
     assert window.bg_label.pixmap().isNull()
     image=window.bg_label.grab().toImage()
     assert image.pixelColor(2,2).red()>120 and image.pixelColor(image.width()-3,2).blue()>120
-    for mode,dim in (('artwork',30),('gradient',80),('black',65)):
+    for mode,dim in (('blurred',50),('artwork',30),('gradient',80),('black',65)):
         window.apply_spotify_visual_settings(dict(window.disp_cfg,spotify_background_mode=mode,spotify_background_dim=dim))
         assert window.winId()==identity and window.spotify_timeline is timeline
         assert window.slideshow_timer.interval()==timer and window.current_pixmap.cacheKey()==pixmap
