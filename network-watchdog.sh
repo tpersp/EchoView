@@ -7,8 +7,6 @@ set -euo pipefail
 PING_BIN="/bin/ping"
 IP_BIN="/usr/sbin/ip"
 AWK_BIN="/usr/bin/awk"
-DATE_BIN="/bin/date"
-TEE_BIN="/usr/bin/tee"
 MKDIR_BIN="/bin/mkdir"
 CHOWN_BIN="/bin/chown"
 CHMOD_BIN="/bin/chmod"
@@ -40,7 +38,15 @@ is_positive_int() {
 
 log() {
   local msg="${1:-}"
-  printf '%s - %s\n' "$("$DATE_BIN" -Iseconds)" "$msg" | "$TEE_BIN" -a "$WATCHDOG_LOG" >/dev/null
+  local app_dir python writer
+  app_dir=$(cd -- "$("$DIRNAME_BIN" "${BASH_SOURCE[0]}")" && pwd)
+  if [[ "$app_dir" == */bin ]]; then app_dir=$("$DIRNAME_BIN" "$app_dir"); fi
+  python="${WATCHDOG_PYTHON:-$app_dir/.venv/bin/python3}"
+  writer="${WATCHDOG_LOG_WRITER:-$app_dir/echoview/log_store.py}"
+  if ! printf '%s' "$msg" | "$python" "$writer" "$WATCHDOG_LOG"; then
+    # Never fall back to an unbounded append. systemd handles stderr retention.
+    printf 'Network watchdog: %s\n' "$msg" >&2
+  fi
 }
 
 ensure_log_file() {

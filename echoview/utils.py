@@ -10,7 +10,6 @@ import psutil
 import shutil
 import tempfile
 from functools import lru_cache
-from datetime import datetime
 
 from echoview.config import (
     APP_VERSION,
@@ -238,9 +237,8 @@ def save_config(cfg):
             os.unlink(temp_path)
 
 def log_message(msg):
-    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
-    with open(LOG_PATH, "a") as f:
-        f.write(f"{datetime.now()}: {msg}\n")
+    from echoview.log_store import append_log
+    append_log(LOG_PATH,msg)
     print(msg)
 
 def get_system_stats():

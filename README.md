@@ -547,3 +547,14 @@ keeping right/center alignment without touching media playback.
 colons retain their space so the clock never shifts. It works with either clock
 format and with seconds hidden, updates the preview, and applies live. Blinking
 is off by default; disabled clocks retain the normal one-second timer.
+
+
+### Bounded playback diagnostics
+
+EchoView keeps a 5 MiB current log and three rotated copies (20 MiB maximum
+retained log content). Old reports are removed automatically, including when
+running unattended for years. Existing oversized logs are trimmed on the next
+write. Video, GIF, image, Spotify and browser diagnostics use bounded local
+reporting without extra media scans or Spotify requests. See
+[playback diagnostics and retention](docs/playback-diagnostics.md) for coverage,
+limits and validation.

@@ -122,6 +122,17 @@ class DisplayWindow(QMainWindow):
         self.disp_cfg = disp_cfg
         self.assigned_screen = assigned_screen
         self.running = True
+        from echoview.playback_diagnostics import Diagnostics
+        from echoview.log_store import append_log
+        label=re.sub(r'[^A-Za-z0-9_.:-]','_',disp_name)[:80]
+        self.diagnostics=Diagnostics(lambda message:append_log(LOG_PATH,f'Diagnostic [{label}] {message}'))
+        self.diag_image_started=0
+        self.diag_gif_due=0
+        self.diag_gif_frames=0
+        self.diag_web_started=0
+        self.mpv_diag_socket=None
+        self.mpv_diag_started=0
+        self.mpv_diag_path=None
         self.stream_generation = 0
         self.stream_source = None
         self.stream_metadata = None
@@ -232,6 +243,8 @@ class DisplayWindow(QMainWindow):
         self.web_view = QWebEngineView(self.main_widget)
         self.web_view.hide()
         self.web_view.loadFinished.connect(self._on_web_load_finished)
+        self.web_view.loadStarted.connect(lambda:setattr(self,'diag_web_started',time.monotonic()))
+        self.web_view.page().renderProcessTerminated.connect(self._diagnostic_web_exit)
 
         # Dedicated HLS playback components (hidden unless needed)
         self.hls_video_widget = QVideoWidget(self.main_widget)
@@ -282,6 +295,10 @@ class DisplayWindow(QMainWindow):
         # Load config and start
         self.cfg = load_config()
         self.reload_settings()
+        self.diagnostic_timer=QTimer(self)
+        self.diagnostic_timer.setInterval(2000)
+        self.diagnostic_timer.timeout.connect(self._diagnostic_snapshot)
+        self.diagnostic_timer.start()
         self.next_image(force=True)
         QTimer.singleShot(1000, self.setup_layout)
 
@@ -395,6 +412,71 @@ class DisplayWindow(QMainWindow):
         self.spotify_progress_bar.setGeometry(x, y, width, height)
         self.spotify_progress_bar.raise_()
 
+    def _diagnostic(self, category, detail):
+        diagnostics=getattr(self,'diagnostics',None)
+        if diagnostics is not None:diagnostics.event(category,detail)
+
+    def _mpv_diagnostic_command(self, cmd):
+        if getattr(self,'diagnostics',None) is None:return cmd
+        try:
+            import hashlib
+            directory=state_directory(VIEWER_HOME)
+            directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+            identity=hashlib.sha256(self.disp_name.encode()).hexdigest()[:12]
+            path=directory/f'mpv-{identity}.sock'
+            path.unlink(missing_ok=True)
+            self.mpv_diag_path=path
+            self.mpv_diag_socket=str(path)
+            self.mpv_diag_started=time.monotonic()
+            return cmd[:-2]+['--input-ipc-server='+str(path)]+cmd[-2:]
+        except OSError:
+            self._diagnostic('video-telemetry-unavailable','could not prepare private IPC socket')
+            return cmd
+
+    def _diagnostic_gif_frame(self, frame):
+        movie=self.current_movie
+        if movie:
+            # Respect intentionally long GIF frame delays; do not decode again.
+            self.diag_gif_frames=min(2,self.diag_gif_frames+1)
+            self.diag_gif_due=time.monotonic()+max(0,movie.nextFrameDelay())/1000
+
+    def _diagnostic_web_exit(self, status, code):
+        if (self.running and self.current_mode=='web_page' and self.web_view.isVisible()
+                and getattr(status,'value',status)!=0):
+            self._diagnostic('web-renderer-exited',f'exit_code={code}')
+
+    @Slot()
+    def _diagnostic_gif_error(self):
+        movie=self.current_movie
+        # Some Qt GIF readers signal at a loop boundary and immediately resume.
+        # A zero-argument native slot also avoids enum-conversion issues in Qt.
+        QTimer.singleShot(0,lambda:self._diagnostic('gif-decode-error','GIF decoder stopped after an error')
+                          if self.current_movie is movie and movie and movie.state()==QMovie.NotRunning else None)
+
+    def _diagnostic_snapshot(self):
+        if not self.running:return
+        movie=self.current_movie
+        gif_due=self.diag_gif_due if movie and movie.state()==QMovie.Running and self.diag_gif_frames>=2 else 0
+        proc=self.current_video_proc
+        browser=self.external_browser_proc
+        if browser is not None and browser.poll() is not None:
+            self._diagnostic('chromium-exited',f'exit_code={browser.returncode}')
+        if self.diag_web_started and self.web_view.isVisible() and time.monotonic()-self.diag_web_started>30:
+            self._diagnostic('web-load-slow','page load pending for over 30s')
+        if self.current_mode=='spotify' and self.spotify_fetch_pending is not None:
+            started=getattr(self,'diag_spotify_started',time.monotonic())
+            if time.monotonic()-started>30:self._diagnostic('spotify-request-slow','local fetch pending for over 30s')
+        image_started=self.diag_image_started if self.image_request_id==getattr(self,'diag_image_request',self.image_request_id) else 0
+        qt_video=None
+        if self._hls_active:
+            qt_video={'time-pos':self.hls_player.position()/1000,
+                      'pause':self.hls_player.playbackState()!=QMediaPlayer.PlaybackState.PlayingState,
+                      'paused-for-cache':self.hls_player.mediaStatus()==QMediaPlayer.MediaStatus.StalledMedia,
+                      'eof-reached':self.hls_player.mediaStatus()==QMediaPlayer.MediaStatus.EndOfMedia}
+        self.diagnostics.update(mode=self.current_mode,gif_due=gif_due,image_started=image_started,qt_video=qt_video,
+            socket=self.mpv_diag_socket if proc is not None and proc.poll() is None else None,
+            video_key=getattr(proc,'pid',None),video_started=self.mpv_diag_started)
+
     def _check_mpv_process(self) -> None:
         proc = self.current_video_proc
         if proc is None:
@@ -405,6 +487,8 @@ class DisplayWindow(QMainWindow):
             code = -1
         if code is None:
             return
+        if code != 0:
+            self._diagnostic("video-player-exited",f"exit_code={code}")
         self.stop_current_video()
         if self.current_mode == "videos":
             self.next_image()
@@ -437,7 +521,7 @@ class DisplayWindow(QMainWindow):
             self.clear_foreground_label("Video unsupported")
             QTimer.singleShot(2000, self.next_image)
             return
-        cmd = self.build_mpv_command(path)
+        cmd = self._mpv_diagnostic_command(self.build_mpv_command(path))
         try:
             proc = subprocess.Popen(cmd)
             self.current_video_proc = proc
@@ -546,6 +630,7 @@ class DisplayWindow(QMainWindow):
                     pass
         self.current_video_proc = None
         self.stream_process = None
+        self.mpv_diag_socket = None
 
         # Stop polling timer if it is running.  Once the process is terminated
         # there is no need to continue polling.
@@ -602,7 +687,7 @@ class DisplayWindow(QMainWindow):
         youtube = parse_youtube_url_details(url)["is_youtube"]
         height = self.assigned_screen.geometry().height() if self.assigned_screen else None
         extra = stream_flags(self.disp_cfg, youtube, height, self.stream_metadata.start_seconds)
-        cmd = cmd[:-2] + extra + cmd[-2:]
+        cmd = self._mpv_diagnostic_command(cmd[:-2] + extra + cmd[-2:])
         try:
             proc = subprocess.Popen(cmd, env=playback_environment(), stdout=subprocess.PIPE,
                                     stderr=subprocess.DEVNULL, text=True, bufsize=1, start_new_session=True)
@@ -675,6 +760,7 @@ class DisplayWindow(QMainWindow):
     def _retry_stream(self):
         if not self.running or self.current_mode != "web_page" or not self.stream_source:
             return
+        self._diagnostic("stream-retry","stream interrupted; using existing retry policy")
         self.stream_loading_timer.stop()
         self._stop_hls_playback()
         self.stop_current_video()
@@ -707,11 +793,14 @@ class DisplayWindow(QMainWindow):
 
     def _on_hls_error(self, *args):
         if self._hls_active:
+            self._diagnostic("qt-video-error","Qt video playback error")
             self._retry_stream()
 
     def _on_hls_status(self, status):
         if not self._hls_active:
             return
+        if status == QMediaPlayer.MediaStatus.StalledMedia:
+            self._diagnostic('qt-video-buffering','Qt video stalled while buffering')
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self.stream_loading_timer.stop()
             if self.hls_player.duration() <= 0:
@@ -730,7 +819,9 @@ class DisplayWindow(QMainWindow):
             self.stream_loading_timer.stop()
 
     def _on_web_load_finished(self, ok):
+        self.diag_web_started=0
         if not ok and self.running and getattr(self, "current_mode", None) == "web_page" and not self.external_browser_proc:
+            self._diagnostic("web-load-failed","page did not finish loading")
             self._show_stream_status("Page failed to load. Check the URL or select the external browser.")
 
     def _stop_external_browser(self) -> None:
@@ -975,6 +1066,8 @@ class DisplayWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.running = False
+        self.diagnostic_timer.stop()
+        self.diagnostics.close()
         self.image_request_id += 1
         self.image_loader.close()
         self.image_preloader.close()
@@ -986,6 +1079,9 @@ class DisplayWindow(QMainWindow):
         self._stop_external_browser()
         self._stop_hls_playback()
         self.stop_current_video()
+        if self.mpv_diag_path is not None:
+            try:self.mpv_diag_path.unlink(missing_ok=True)
+            except OSError:pass
         super().closeEvent(event)
 
     @Slot()
@@ -1306,6 +1402,9 @@ class DisplayWindow(QMainWindow):
             self.clock_label.update()
 
     def clear_foreground_label(self, message):
+        if message in ('No videos found','Video unsupported','No valid playback schedule','No images found',
+                       'No fallback images found','Image could not be decoded','GIF error'):
+            self._diagnostic('playback-unavailable',message)
         self.image_request_id += 1
         self.current_pixmap = None
         self.current_drawn_image = None
@@ -1345,6 +1444,8 @@ class DisplayWindow(QMainWindow):
 
     def request_foreground_image(self, fullpath, is_spotify=False):
         self.image_request_id += 1
+        self.diag_image_started=time.monotonic()
+        self.diag_image_request=self.image_request_id
         request_id = self.image_request_id
         generation = self.cache_generation
         emit = self.image_ready.emit
@@ -1379,7 +1480,12 @@ class DisplayWindow(QMainWindow):
         if (not self.running or request_id != self.image_request_id
                 or generation != self.cache_generation):
             return
+        started=getattr(self,'diag_image_started',0)
+        self.diag_image_started=0
+        if started and time.monotonic()-started>=1:
+            self._diagnostic('image-load-slow',f'load/check completed in {time.monotonic()-started:.2f}s')
         if error:
+            self._diagnostic('image-load-failed',error)
             self.clear_foreground_label(error)
         else:
             self.show_foreground_image(path, is_spotify, data=data)
@@ -1435,6 +1541,10 @@ class DisplayWindow(QMainWindow):
                 self.gif_bounds = (bw, bh)
                 self.current_movie.frameChanged.connect(self.on_gif_frame_changed)
                 self.current_movie.start()
+            self.diag_gif_frames=0
+            self._diagnostic_gif_frame(0)
+            self.current_movie.frameChanged.connect(self._diagnostic_gif_frame)
+            self.current_movie.error.connect(self._diagnostic_gif_error)
         else:
             if data["type"] == "static":
                 self.current_pixmap = QPixmap.fromImage(data["image"])
@@ -1875,6 +1985,7 @@ class DisplayWindow(QMainWindow):
         self.spotify_fetch_id += 1
         fid = self.spotify_fetch_id
         self.spotify_fetch_pending = fid
+        self.diag_spotify_started=time.monotonic()
         emit = self.spotify_result.emit
 
         def worker():
@@ -1895,6 +2006,8 @@ class DisplayWindow(QMainWindow):
             self.spotify_fetch_pending = None
         if not self.running or self.current_mode != "spotify" or fid != self.spotify_fetch_id:
             return
+        if result.status in ('authorization_required','access_denied','quota_exceeded','rate_limited','offline'):
+            self._diagnostic('spotify-unavailable',f'status={result.status}')
         previous_status = getattr(self, "spotify_status", None)
         self.spotify_status = result.status
         if result.status != previous_status:
@@ -1993,7 +2106,8 @@ class EchoViewGUI:
         self.visual_timer.timeout.connect(self.preview_requests.poll)
         self.app.aboutToQuit.connect(self.preview_encoder.close)
         # Start after initial screen setup so startup is not reported as a stall.
-        self.watchdog = ViewerWatchdog(log_message)
+        from echoview.log_store import append_log
+        self.watchdog = ViewerWatchdog(lambda message:append_log(LOG_PATH,message))
         self.heartbeat_timer = QTimer()
         self.heartbeat_timer.timeout.connect(self.watchdog.beat)
         self.heartbeat_timer.start(250)
