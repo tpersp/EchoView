@@ -14,7 +14,7 @@ def monitor():
 def test_stalls_buffering_counter_deltas_pause_and_clip_reset(monitor):
     diag,now,reports=monitor
     diag.check_video(1,{'time-pos':1,'frame-drop-count':2})
-    assert 'increased by 2' in reports[-1]
+    assert 'initial_total=2' in reports[-1]
     diag.check_video(1,{'time-pos':1,'frame-drop-count':2})
     assert len(reports)==1
     now[0]+=7;diag.check_video(1,{'time-pos':1})
@@ -26,14 +26,17 @@ def test_stalls_buffering_counter_deltas_pause_and_clip_reset(monitor):
     assert 'video-buffering' in reports[-1]
     before=len(reports)
     diag.check_video(2,{'time-pos':1})
-    assert len(reports)==before
+    assert len(reports)==before+1 and 'video-summary' in reports[-1]
 
 
 def test_gif_delays_pending_images_rate_limit_and_no_static_image_false_alarm(monitor):
     diag,now,reports=monitor
     diag.update(mode='specific_image');diag.check();assert not reports
     diag.update(mode='gif',gif_due=200);diag.check();assert not reports
-    now[0]=203;diag.check();assert 'gif-frame-delayed' in reports[-1]
+    now[0]=203;diag.check();assert not reports  # Worker must never assess stale GIF deadlines.
+    diag.event('gif-frame-delayed','live frame deadline overdue by 3s')
+    diag.check();assert 'gif-frame-delayed' in reports[-1]
+    diag.event('gif-frame-delayed','live frame deadline overdue by 3s')
     diag.check();assert len(reports)==1
     diag.update(mode='mixed',image_started=190);diag.check();assert 'image-load-slow' in reports[-1]
     diag.update(mode='specific_image');now[0]+=10;diag.check();assert len(reports)==2
@@ -97,3 +100,80 @@ def test_video_short_timeline_lag_speed_and_pause_exclusions(monitor):
     now[0]+=2;diag.check_video(2,{'time-pos':2,'speed':.5,'pause':True})
     now[0]+=2;diag.check_video(2,{'time-pos':2.1,'speed':.5})
     assert len(reports)==before
+
+
+def test_telemetry_handoff_failures_require_repetition_and_reset(monkeypatch,monitor):
+    diag,now,reports=monitor
+    sample={'pid':2,'time-pos':1}
+    monkeypatch.setattr('echoview.playback_diagnostics.mpv_sample',lambda *a,**kw:dict(sample))
+    def tick():
+        diag.update(socket='socket',video_key=1,video_started=1);diag.check();now[0]+=2
+    tick();tick();assert not reports and diag.video_ready is None
+    tick();assert '3 consecutive failed samples' in reports[-1]
+    sample.update(pid=1,time_pos=2)
+    tick();assert diag.ipc_failures==0 and diag.video_ready==1
+    sample['pid']=2;tick();assert diag.ipc_failures==1
+    assert diag.video['position'] is None
+
+
+def test_inflight_clip_change_is_discarded(monkeypatch,monitor):
+    diag,now,reports=monitor
+    diag.update(socket='socket',video_key=1,video_started=1)
+    def sample(*a,**kw):
+        diag.update(socket='socket',video_key=2,video_started=100)
+        return {'pid':2,'time-pos':1,'frame-drop-count':100}
+    monkeypatch.setattr('echoview.playback_diagnostics.mpv_sample',sample)
+    diag.check()
+    assert not reports and diag.video_ready is None and not diag.video['counts']
+
+
+def test_eof_missing_timeline_and_stale_snapshot_are_not_startup_or_stall(monkeypatch,monitor):
+    diag,now,reports=monitor
+    sample={'pid':1,'time-pos':3}
+    monkeypatch.setattr('echoview.playback_diagnostics.mpv_sample',lambda *a,**kw:dict(sample))
+    diag.update(socket='socket',video_key=1,video_started=1);diag.check()
+    sample.clear();sample.update(pid=1,**{'eof-reached':True})
+    now[0]+=20;diag.update(socket='socket',video_key=1,video_started=1);diag.check()
+    assert not reports and diag.video_issue is None
+    now[0]+=20;diag.check();assert not reports
+    sample.update(**{'time-pos':4,'speed':1})
+    diag.update(socket='socket',video_key=1,video_started=1);diag.check()
+    assert not reports
+
+
+def test_counter_reports_accumulate_suppressed_samples_and_identify_clip(monitor):
+    diag,now,reports=monitor
+    def sample(drops):diag.check_video(1,{'time-pos':now[0],'frame-drop-count':drops},'clip=example')
+    sample(0);now[0]+=2;sample(2)
+    now[0]+=2;sample(5);now[0]+=2;sample(8)
+    now[0]+=60;sample(8)
+    assert len(reports)==2 and 'observed_delta=6 over 64.0s' in reports[-1]
+    assert 'clip=example' in reports[-1]
+    diag.check_video(2,{'time-pos':0})
+    assert 'video-summary' in reports[-1] and 'frame-drop-count=8' in reports[-1]
+
+
+def test_media_identity_never_opens_files_or_discloses_stream_credentials():
+    from echoview.playback_diagnostics import media_identity
+    local=media_identity('/does/not/exist/example\nclip.mp4')
+    assert 'file="example\\nclip.mp4"' in local and '/does/not/exist' not in local
+    url='https://user:password@example.com/private?token=secret'
+    assert media_identity(url).startswith('stream=')
+    assert all(part not in media_identity(url) for part in ('password','example','secret'))
+    assert media_identity(url)==media_identity(url) and media_identity(url)!=media_identity(url+'2')
+
+
+def test_metadata_is_read_once_and_actual_startup_delay_is_reported(monkeypatch,monitor):
+    diag,now,reports=monitor
+    sample={'pid':1};requests=[]
+    def read(*a,**kw):requests.append(kw['metadata']);return dict(sample)
+    monkeypatch.setattr('echoview.playback_diagnostics.mpv_sample',read)
+    diag.update(socket='socket',video_key=1,video_started=1);diag.check()
+    assert diag.video_issue=='video_loading' and 'video-startup-pending' in reports[-1]
+    sample.update(**{'time-pos':1,'width':1920,'height':1080,'hwdec-current':'v4l2m2m'})
+    now[0]+=2;diag.update(socket='socket',video_key=1,video_started=1);diag.check()
+    assert diag.video_issue is None and diag.video_ready==1
+    now[0]+=2;diag.update(socket='socket',video_key=1,video_started=1);diag.check()
+    assert requests==[True,True,False]
+    assert diag.video['metadata']['width']==1920
+    now[0]+=10;diag.check();assert len(requests)==3  # GUI observation expired.

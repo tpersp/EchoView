@@ -19,14 +19,16 @@ with tempfile.TemporaryDirectory(prefix='ev-diag-') as directory:
         while not socket.exists() and time.monotonic()<deadline:time.sleep(.02)
         first={}
         while time.monotonic()<deadline and not isinstance(first.get('time-pos'),(int,float)):
-            first=mpv_sample(str(socket));time.sleep(.02)
+            first=mpv_sample(str(socket),metadata=True);time.sleep(.02)
         assert isinstance(first.get('time-pos'),(int,float)),first
+        assert first['pid']==proc.pid and first['width']==64 and first['height']==64
         time.sleep(.4)
         second=mpv_sample(str(socket))
         assert second['time-pos']>first['time-pos'],(first,second)
         reports=[];diagnostics=Diagnostics(reports.append,start=False)
         diagnostics.update(mode='videos',socket=str(socket),video_key=proc.pid,video_started=time.monotonic())
         diagnostics.check()
+        assert diagnostics.video_ready==proc.pid and diagnostics.video['metadata']['width']==64
         assert not any('stalled' in message for message in reports)
         for index in range(200):assert append_log(log,f'synthetic diagnostic {index}',max_bytes=512)
         assert all(item.stat().st_size<=512 for item in root.glob('viewer.log*'))

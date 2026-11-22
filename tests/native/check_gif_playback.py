@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 import subprocess
 import tempfile
+import time
 
 
 def main():
@@ -58,8 +59,26 @@ def main():
             colours.add(movie.currentImage().pixelColor(0, 0).name())
 
         movie.frameChanged.connect(frame_changed)
+        deadline_checks=[]
+        def check_live_deadline():
+            try:
+                window.diagnostics.close()
+                window.diagnostics.thread.join(timeout=1)
+                while not window.diagnostics.messages.empty():window.diagnostics.messages.get_nowait()
+                window.diag_gif_frames=2
+                window.diag_gif_due=time.monotonic()+10
+                window._diagnostic_snapshot()
+                assert window.diagnostics.messages.empty(), 'Long GIF frames are intentional'
+                window.diag_gif_due=time.monotonic()-3
+                window._diagnostic_snapshot()
+                category,detail=window.diagnostics.messages.get_nowait()
+                assert category=='gif-frame-delayed' and 'live frame deadline' in detail
+                deadline_checks.append(True)
+            except Exception as exc:deadline_checks.append(exc)
+        QTimer.singleShot(1000, check_live_deadline)
         QTimer.singleShot(1400, app.quit)
         app.exec()
+        assert deadline_checks==[True],deadline_checks
         assert {0, 1, 2} <= set(events) and len(events) >= 6, (profile, rotation, events)
         assert colours == {'#ff0000', '#008000', '#0000ff'}, colours
         assert movie.speed() == 100

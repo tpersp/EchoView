@@ -33,7 +33,7 @@ removed once the retention limit is reached, regardless of device uptime.
 
 - **All modes:** the existing GUI heartbeat reports event-loop pauses. Per-display
   health summaries every 15 minutes record active mode, event/suppression counts
-  and viewer process memory. Scheduled playback reports its active media mode.
+  viewer process memory and observation age. Scheduled playback reports its active media mode.
 - **mpv video and streams:** a private local Unix socket is sampled every two
   seconds, from a background thread. Only allowlisted `get_property` queries are
   sent. Reports cover cache pauses, increases in output/decoder frame drops and
@@ -41,12 +41,22 @@ removed once the retention limit is reached, regardless of device uptime.
   for playback speed), an unchanged timeline for at least six seconds, delayed
   startup, unavailable telemetry and unexpected player exits. Paused playback,
   cache pauses, EOF and seeks are excluded from timeline-stall detection. New
-  players reset previous observations. Unsupported counters are ignored.
+  players reset previous observations. Samples must match the expected player PID;
+  clip handoffs and single missed replies do not trigger telemetry warnings.
+  Three consecutive failed samples after the startup grace period are needed.
+  Missing timeline data at EOF is not reported as a new startup. Stale GUI
+  observations are excluded. Unsupported counters are ignored.
+  Reports identify the player and a bounded local filename/hashed clip reference;
+  stream URLs are replaced by a hash. Resolution, frame rate and hardware-decoder
+  metadata are queried once playback starts. Drop counts accumulate across
+  suppressed reports with their actual observation interval. Problematic clips
+  receive a rate-limited summary when the player changes.
 - **Qt video/HLS:** existing error/buffering signals and playback-position
   observations are used. Intentional pauses and EOF do not count as stalls.
 - **GIFs:** after animation has been observed, frame callbacks update an expected
   deadline using the GIF's own frame delay. A frame over two seconds overdue is
-  reported. Deliberately long frames are respected; no extra decoding or frame
+  checked directly on the GUI thread and reported through the bounded queue.
+  Worker snapshots are never used to infer a missed GIF deadline. Deliberately long frames are respected; no extra decoding or frame
   counting is requested.
 - **Images and image-based fallback:** missing/corrupt media, load/check completion
   taking at least one second and pending loads over five seconds are reported.

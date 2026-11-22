@@ -134,6 +134,7 @@ class DisplayWindow(QMainWindow):
         self.diag_web_started=0
         self.mpv_diag_socket=None
         self.mpv_diag_started=0
+        self.mpv_diag_media=''
         self.mpv_diag_path=None
         self.stream_generation = 0
         self.stream_source = None
@@ -442,6 +443,8 @@ class DisplayWindow(QMainWindow):
         if getattr(self,'diagnostics',None) is None:return cmd
         try:
             import hashlib
+            from echoview.playback_diagnostics import media_identity
+            self.mpv_diag_media=media_identity(cmd[-1])
             directory=state_directory(VIEWER_HOME)
             directory.mkdir(mode=0o700,parents=True,exist_ok=True)
             identity=hashlib.sha256(self.disp_name.encode()).hexdigest()[:12]
@@ -480,6 +483,8 @@ class DisplayWindow(QMainWindow):
         movie=self.current_movie
         gif_due=self.diag_gif_due if movie and movie.state()==QMovie.Running and self.diag_gif_frames>=2 else 0
         proc=self.current_video_proc
+        if gif_due and time.monotonic()-gif_due>2:
+            self._diagnostic('gif-frame-delayed',f'live frame deadline overdue by {time.monotonic()-gif_due:.1f}s')
         browser=self.external_browser_proc
         if browser is not None and browser.poll() is not None:
             self._diagnostic('chromium-exited',f'exit_code={browser.returncode}')
@@ -495,9 +500,9 @@ class DisplayWindow(QMainWindow):
                       'pause':self.hls_player.playbackState()!=QMediaPlayer.PlaybackState.PlayingState,
                       'paused-for-cache':self.hls_player.mediaStatus()==QMediaPlayer.MediaStatus.StalledMedia,
                       'eof-reached':self.hls_player.mediaStatus()==QMediaPlayer.MediaStatus.EndOfMedia}
-        self.diagnostics.update(mode=self.current_mode,gif_due=gif_due,image_started=image_started,qt_video=qt_video,
+        self.diagnostics.update(mode=self.current_mode,image_started=image_started,qt_video=qt_video,
             socket=self.mpv_diag_socket if proc is not None and proc.poll() is None else None,
-            video_key=getattr(proc,'pid',self.stream_generation),video_started=self.mpv_diag_started)
+            video_key=getattr(proc,'pid',self.stream_generation),video_started=self.mpv_diag_started,media=self.mpv_diag_media)
 
     def _check_mpv_process(self) -> None:
         proc = self.current_video_proc
