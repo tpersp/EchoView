@@ -32,7 +32,7 @@ def publish(directory, rows):
     # One bounded file for the whole viewer, regardless of tracks or uptime.
     safe=[]
     for row in rows[:64]:
-        safe.append({key:row[key] for key in ('name','mode','problem','uses_media') if key in row})
+        safe.append({key:row[key] for key in ('name','mode','problem','uses_media','playlist_items') if key in row})
     value=dict(at=time.time(),pid=os.getpid(),displays=safe)
     if len(json.dumps(value).encode())<=MAX_BYTES:
         atomic_json(directory,'recovery.json',value)

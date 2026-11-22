@@ -582,3 +582,11 @@ The schedule editor uses explicit **24-hour hour/minute fields**, independent of
 browser locale. Existing slots appear as compact cards; expand a card to edit its
 time, media and folders. Folder choices open inline with search, while selected
 folders stay in a removable list. The day overview above the cards is unchanged.
+
+
+Shuffled playback completes the entire selected list before preparing a fresh
+order for the next pass, avoiding an immediate repeat at the boundary when there
+is more than one distinct item. This applies to images/GIFs, videos and shuffled
+Spotify fallback. Reshuffling uses the existing in-memory list, without rescanning
+media; image prefetch follows the next pass. Unshuffled playback keeps its order.
+Schedule slots still select only their own folders, including overnight carryover.

@@ -25,6 +25,7 @@ from echoview import scheduling
 from echoview.clock_overlay import format_clock, separators_visible
 from echoview.viewer_watchdog import ViewerWatchdog
 from echoview.image_preloader import ImagePreloader
+from echoview.playlist import reshuffle_cycle
 
 from echoview.browser import qt_flags, chromium_flags
 from echoview.streaming import (capabilities as stream_capabilities, playback_environment,
@@ -430,7 +431,8 @@ class DisplayWindow(QMainWindow):
             problem='browser_failed'
         media=self.current_mode in ('random_image','specific_image','mixed','videos')
         media=media or (self.current_mode=='spotify' and self.spotify_info is None and self.disp_cfg.get('fallback_mode','random_image')!='none')
-        return dict(name=self.disp_name,mode=self.disp_cfg.get('mode',self.current_mode),problem=problem,uses_media=media)
+        return dict(name=self.disp_name,mode=self.disp_cfg.get('mode',self.current_mode),problem=problem,uses_media=media,
+                    playlist_items=len(self.fallback_image_list if self.current_mode=='spotify' and self.spotify_info is None else self.image_list))
 
     def _diagnostic(self, category, detail):
         diagnostics=getattr(self,'diagnostics',None)
@@ -559,6 +561,8 @@ class DisplayWindow(QMainWindow):
         self.index += 1
         if self.index >= len(self.image_list):
             self.index = 0
+            if self.disp_cfg.get('shuffle_videos',False):
+                reshuffle_cycle(self.image_list,path)
 
         # If "video_play_to_end" is false, schedule a timeout to stop playback
         # after a maximum number of seconds.  Otherwise rely on mpv's natural
@@ -1423,6 +1427,11 @@ class DisplayWindow(QMainWindow):
         self.last_displayed_path = new_path
 
         self.request_foreground_image(new_path)
+        if self.index==len(self.image_list)-1 and self.disp_cfg.get('shuffle_mode',False):
+            # Prepare the next pass before prefetching, keeping the selected
+            # image/GIF on screen and warming the actual next item.
+            reshuffle_cycle(self.image_list,new_path)
+            self.index=-1
         self.prefetch_next_image()
         if self.overlay_config.get("auto_negative_font", False):
             self.clock_label.update()
@@ -1988,6 +1997,9 @@ class DisplayWindow(QMainWindow):
                     new_path = self.fallback_image_list[self.fallback_index]
                     self.last_displayed_path = new_path
                     self.request_foreground_image(new_path)
+                    if self.fallback_index==len(self.fallback_image_list)-1 and self.disp_cfg.get('shuffle_mode',False):
+                        reshuffle_cycle(self.fallback_image_list,new_path)
+                        self.fallback_index=-1
                     self.prefetch_next_image(self.fallback_image_list, self.fallback_index)
                     self.spotify_fallback_due = time.monotonic() + max(1, int(self.disp_cfg.get("image_interval", 60)))
                 self.spotify_info_label.setText("")
