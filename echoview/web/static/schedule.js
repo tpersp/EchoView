@@ -1,9 +1,3 @@
-document.addEventListener('pointerdown', event => {
-  document.querySelectorAll('.schedule-folder-picker').forEach(picker => {
-    if (!picker.contains(event.target) && picker.closeFolders) picker.closeFolders();
-  });
-});
-
 // Daily schedules use the device clock, including when the browser is elsewhere.
 document.addEventListener('DOMContentLoaded', () => {
   const roots = Array.from(document.querySelectorAll('.schedule-editor'));
@@ -53,13 +47,13 @@ class ScheduleEditor {
       const used = new Set(this.entries.map(entry => entry.time));
       const candidates = ['06:00', '14:00', '18:00', ...Array.from({length: 1440}, (_, i) => this.format(i))];
       this.entries.push({time: candidates.find(time => !used.has(time)), name: '', media: 'images', folders: [], shuffle: false});
-      this.render(true);
+      this.render(true, this.entries.length - 1);
     });
     root.querySelector('.schedule-example').addEventListener('click', () => {
       this.entries = ['06:00', '14:00', '18:00'].map((time, i) => ({
         time, name: ['Morning', 'Afternoon', 'Evening'][i], media: 'images', folders: [], shuffle: false
       }));
-      this.render(true);
+      this.render(true, 0);
     });
     this.mode.addEventListener('change', () => this.update());
     root.closest('form').addEventListener('submit', event => {
@@ -89,17 +83,40 @@ class ScheduleEditor {
   minute(time) { const [hour, minute] = time.split(':').map(Number); return hour * 60 + minute; }
   now() { return (this.clock.value.seconds + Math.floor((Date.now() - this.clock.received) / 1000)) % 86400; }
 
-  render(dirty = false) {
+  render(dirty = false, openIndex = null) {
     const container = this.root.querySelector('.schedule-slots');
     container.replaceChildren();
     this.rows = this.entries.map((entry, index) => {
-      const node = this.element('article', '', 'schedule-slot');
+      const node = this.element('details', '', 'schedule-slot');
+      node.open = index === openIndex;
+      const summary = this.element('summary', '', 'schedule-slot-summary');
+      const badge = this.element('span', '', 'schedule-time-badge');
+      const heading = this.element('span', '', 'schedule-slot-heading');
+      const title = this.element('strong'), description = this.element('span');
+      heading.append(title, description);
+      const editLabel=this.element('span','Edit','schedule-edit-label');
+      summary.append(badge,heading,editLabel);
+      node.addEventListener('toggle',()=>{editLabel.textContent=node.open?'Close':'Edit';});
+      node.append(summary);
+      const body = this.element('div', '', 'schedule-slot-body');
       const controls = this.element('div', '', 'schedule-slot-controls');
-      const time = this.element('input');
-      time.type = 'time'; time.value = entry.time;
-      const timeLabel = this.element('label', 'Start time');
-      timeLabel.append(time);
-      time.addEventListener('input', () => { entry.time = time.value; this.update(true); });
+      const timeLabel = this.element('div', 'Start time · 24-hour', 'schedule-time-control');
+      timeLabel.setAttribute('role','group');timeLabel.setAttribute('aria-label','Start time, 24-hour');
+      const clock = this.element('span', '', 'schedule-time-fields');
+      const [h,m] = entry.time.split(':');
+      const time = this.element('input'), minute = this.element('input');
+      for (const [field,value,max,label] of [[time,h,23,'Hour (00–23)'],[minute,m,59,'Minute (00–59)']]) {
+        field.type='number';field.min='0';field.max=String(max);field.step='1';field.inputMode='numeric';
+        field.value=value || '';field.placeholder='00';field.setAttribute('aria-label',label);
+        field.addEventListener('input',()=>{
+          entry.time = /^\d{1,2}$/.test(time.value) && /^\d{1,2}$/.test(minute.value) && Number(time.value)<=23 && Number(minute.value)<=59
+            ? `${time.value.padStart(2,'0')}:${minute.value.padStart(2,'0')}` : '';
+          this.update(true);
+        });
+        field.addEventListener('blur',()=>{if (field.value && field.validity.rangeOverflow===false && field.validity.rangeUnderflow===false) field.value=field.value.padStart(2,'0');});
+        field.addEventListener('invalid',()=>{node.open=true;});
+      }
+      clock.append(time,this.element('span',':'),minute);timeLabel.append(clock);
       const name = this.element('input');
       name.type = 'text'; name.value = entry.name; name.maxLength = 40; name.placeholder = 'Morning, evening…';
       const nameLabel = this.element('label', 'Name (optional)');
@@ -118,32 +135,28 @@ class ScheduleEditor {
       const shuffleLabel = this.element('label', '', 'schedule-shuffle');
       shuffleLabel.append(shuffle, document.createTextNode(' Shuffle'));
       shuffle.addEventListener('change', () => { entry.shuffle = shuffle.checked; this.update(true); });
-      const remove = this.button('Remove', () => { this.entries.splice(index, 1); this.render(true); });
+      const remove = this.button('Remove', () => {
+        this.entries.splice(index, 1);this.render(true);
+        (this.rows[Math.min(index,this.rows.length-1)]?.node.querySelector('summary') || this.root.querySelector('.schedule-add')).focus();
+      });
       remove.setAttribute('aria-label', `Remove slot ${index + 1}`);
-      controls.append(timeLabel, nameLabel, mediaLabel, shuffleLabel, remove);
+      controls.append(timeLabel, nameLabel, mediaLabel, shuffleLabel);
       const picker = this.element('div', '', 'schedule-folder-picker');
-      const toggle = this.button('Choose folders…', () => {
+      const toggle = this.button('Edit folders', () => {
         const open = panel.hidden;
-        document.querySelectorAll('.schedule-folder-picker').forEach(other => {
-          if (other !== picker && other.closeFolders) other.closeFolders();
-        });
         panel.hidden = !open;
         toggle.setAttribute('aria-expanded', String(open));
-        if (open) { search.focus({preventScroll: true}); panel.scrollIntoView({block: 'nearest'}); }
+        if (open) { search.focus({preventScroll: true}); }
       });
       toggle.classList.add('schedule-folder-toggle');
       toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-haspopup', 'dialog');
       const panel = this.element('div', '', 'schedule-folder-menu');
       panel.id = `${this.root.dataset.display}-folders-${index}`;
       panel.hidden = true;
-      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('role', 'group');
       panel.setAttribute('aria-label', 'Choose folders for this time slot');
       toggle.setAttribute('aria-controls', panel.id);
       picker.closeFolders = () => { panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); };
-      picker.addEventListener('focusout', () => setTimeout(() => {
-        if (!picker.contains(document.activeElement)) picker.closeFolders();
-      }, 0));
       picker.addEventListener('keydown', event => {
         if (event.key === 'Escape' && !panel.hidden) {
           event.preventDefault(); event.stopPropagation(); picker.closeFolders(); toggle.focus();
@@ -190,7 +203,10 @@ class ScheduleEditor {
         if (!choices.children.length) choices.append(this.element('p', 'No matching folders.'));
       };
       const refreshSelection = () => {
-        toggle.textContent = entry.folders.length ? `Add folders · ${entry.folders.length} selected ▾` : 'Choose folders… ▾';
+        toggle.textContent = entry.folders.length ? 'Edit folders' : 'Choose folders';
+        badge.textContent = entry.time || '––:––';
+        title.textContent = entry.name || 'Time slot';
+        description.textContent = `${entry.media === 'videos' ? 'Videos' : 'Images / GIFs'} · ${entry.folders.length > 1 ? entry.folders.length+' folders' : entry.folders[0] || 'No folders selected'}`;
         chips.replaceChildren();
         entry.folders.forEach(folder => {
           const chip = this.element('span', '', 'schedule-folder-chip');
@@ -204,24 +220,28 @@ class ScheduleEditor {
         });
       };
       const actions = this.element('div', '', 'schedule-folder-actions');
-      actions.append(this.button('Select results', () => {
-        entry.folders = [...new Set([...entry.folders, ...matching()])];
-        drawChoices(); this.update(true);
-      }), this.button('Clear', () => { entry.folders = []; drawChoices(); this.update(true); }),
+      actions.append(this.button('Select matches', () => {
+        entry.folders=[...new Set([...entry.folders,...matching()])];drawChoices();this.update(true);
+      }),this.button('Clear selection',()=>{entry.folders=[];drawChoices();this.update(true);}),
       this.button('Done', () => { picker.closeFolders(); toggle.focus(); }));
       search.addEventListener('input', () => drawChoices());
       drawChoices();
-      panel.append(search, actions, choices);
+      panel.append(search, choices, actions);
       const anchor = this.element('div', '', 'schedule-folder-anchor');
       anchor.append(toggle, panel);
-      picker.append(chips, anchor);
-      node.append(controls, picker);
+      picker.append(this.element('span','Folders','schedule-folders-label'), chips, anchor);
+      const footer = this.element('div','','schedule-slot-footer');
+      const done = this.button('Done editing',()=>{node.open=false;summary.focus();});
+      remove.classList.add('quiet');remove.textContent='Remove time slot';
+      footer.append(remove,done);
+      body.append(controls,picker,footer);node.append(body);
       container.append(node);
-      return {node, time, refreshSelection};
+      return {node, time, minute, refreshSelection};
     });
     this.root.querySelector('.schedule-example').hidden = this.entries.length > 0;
     this.root.querySelector('.schedule-add').disabled = this.entries.length >= 48;
     this.update(dirty);
+    if (openIndex!==null) this.rows[openIndex]?.time.focus({preventScroll:true});
   }
 
   validate() {
@@ -237,6 +257,7 @@ class ScheduleEditor {
       else if (entry.name.length > 40) message = 'Slot names must be at most 40 characters.';
       if (!error) error = message;
       this.rows[i].time.required = this.active();
+      this.rows[i].minute.required = this.active();
       this.rows[i].time.setCustomValidity(this.active() ? message : '');
     });
     this.error.textContent = this.active() ? error : '';

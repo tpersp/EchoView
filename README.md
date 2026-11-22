@@ -574,3 +574,11 @@ read local mount metadata only: an offline NAS may remain mounted, in which case
 load/buffering problems appear when observed. **Restart viewer** is always an
 explicit action and preserves unsaved page edits. No automatic restarts or remounts
 are added. A stale or stopped viewer is reported rather than shown as healthy.
+
+
+### Schedule editor
+
+The schedule editor uses explicit **24-hour hour/minute fields**, independent of
+browser locale. Existing slots appear as compact cards; expand a card to edit its
+time, media and folders. Folder choices open inline with search, while selected
+folders stay in a removable list. The day overview above the cards is unchanged.
