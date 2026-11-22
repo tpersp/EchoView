@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const panel=document.querySelector('[data-recovery-panel]');
   if (!panel) return;
   const list=panel.querySelector('[data-recovery-issues]'),feedback=panel.querySelector('[data-recovery-feedback]');
-  let timer,request,signature='',viewer=null,restarting=false,previousViewer=null,deadline=0,suspended=false;
+  let timer,request,signature='',viewer=null,restarting=false,previousViewer=null,deadline=0,suspended=false,requestingRestart=false;
   const message=text=>{feedback.textContent=text;feedback.hidden=!text;};
   function render(issues) {
     const key=JSON.stringify(issues);
@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   async function restart() {
     if (restarting) return;
-    restarting=true;previousViewer=viewer;deadline=Date.now()+30000;
+    restarting=true;requestingRestart=true;previousViewer=viewer || 0;deadline=Date.now()+30000;
     message('Restarting viewer…');list.querySelectorAll('button').forEach(button=>button.disabled=true);
     const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),20000);
     let failure='Viewer restart could not be confirmed. Check status and logs before retrying.';
@@ -48,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (error) {
       restarting=false;message(controller.signal.aborted?'Restart outcome is unknown. Check status before retrying.':failure);
       list.querySelectorAll('button').forEach(button=>button.disabled=false);
-    } finally {clearTimeout(timeout);}
+    } finally {clearTimeout(timeout);requestingRestart=false;refresh();}
   }
   async function refresh() {
     clearTimeout(timer);
@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const response=await fetch(panel.dataset.url,{cache:'no-store',signal:controller.signal});
       if (!response.ok) throw new Error('Status unavailable');
       const data=await response.json();viewer=data.viewer;
-      if (previousViewer!==null && viewer && viewer!==previousViewer) { restarting=false;previousViewer=null;message('');signature=''; }
+      if (!requestingRestart && previousViewer!==null && viewer && viewer!==previousViewer) { restarting=false;previousViewer=null;message('');signature=''; }
       if (restarting && Date.now()>deadline) { restarting=false;message('Viewer has not reported back yet. Check the logs before retrying.');signature=''; }
       render(data.issues);
     } catch (error) {
