@@ -481,13 +481,39 @@ def media_images():
         return jsonify(error='Cannot read images. Check the media connection and retry.'), 503
     return jsonify(result)
 
+@main_bp.get('/status')
+def status_page():
+    return render_template('status.html',theme=load_config().get('theme','dark'))
+
+
+@main_bp.get('/recovery_status')
+def recovery_status():
+    from pathlib import Path
+    from echoview.recovery import read, status, storage_missing
+    cfg=load_config()
+    snapshot=read(state_directory(VIEWER_HOME))
+    missing=False
+    try:
+        missing=storage_missing(IMAGE_DIR,Path('/etc/fstab').read_text(),Path('/proc/self/mountinfo').read_text())
+    except (OSError,ValueError):pass
+    response=jsonify(status(cfg,snapshot,missing))
+    response.headers['Cache-Control']='no-store'
+    return response
+
+
 @main_bp.route("/restart_viewer", methods=["POST"])
 def restart_viewer():
     try:
-        subprocess.check_output(["sudo", "systemctl", "restart", "echoview.service"])
-        return redirect(url_for("main.index"))
-    except subprocess.CalledProcessError as e:
-        return f"Failed to restart service: {e}", 500
+        subprocess.run(['sudo','-n','systemctl','restart','echoview.service'],
+                       check=True,capture_output=True,timeout=15)
+    except (OSError,subprocess.SubprocessError):
+        if request.accept_mimetypes.best=='application/json':
+            return jsonify(error='Viewer restart could not be confirmed. Check the service logs.'),503
+        flash('Viewer restart could not be confirmed. Check the service logs.')
+        return redirect(url_for('main.index'))
+    if request.accept_mimetypes.best=='application/json':
+        return jsonify(message='Viewer restart requested. Waiting for playback status.'),202
+    return redirect(url_for('main.index'))
 
 @main_bp.route("/restart_device", methods=["POST"])
 def restart_device():

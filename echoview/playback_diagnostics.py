@@ -42,6 +42,8 @@ class Diagnostics:
     """One background worker per display; bounded messages and issue categories."""
     def __init__(self, report, clock=time.monotonic, start=True):
         self.report,self.clock=report,clock
+        self.video_issue=None
+        self.video_ready=None
         self.lock=threading.Lock()
         self.state={};self.last={};self.video={};self.video_key=None
         self.messages=queue.Queue(maxsize=32)
@@ -73,10 +75,15 @@ class Diagnostics:
     def check_video(self, key, sample):
         now=self.clock()
         if key!=self.video_key:
+            self.video_ready=None
             self.video_key=key;self.video={'changed':now,'position':None,'counts':{}}
         previous=self.video
+        self.video_issue=None
         if sample.get('paused-for-cache') is True:
+            previous.setdefault('cache_since',now)
+            if now-previous['cache_since']>=5:self.video_issue='video_buffering'
             self.emit('video-buffering','player paused for cache')
+        else:previous.pop('cache_since',None)
         for name in ('frame-drop-count','decoder-frame-drop-count','vo-delayed-frame-count'):
             value=sample.get(name)
             if type(value) not in (int,float) or not math.isfinite(value):continue
@@ -85,6 +92,7 @@ class Diagnostics:
             previous['counts'][name]=value
         position=sample.get('time-pos')
         if type(position) not in (int,float) or not math.isfinite(position):return
+        self.video_ready=key
         paused=sample.get('pause') is True or sample.get('paused-for-cache') is True or sample.get('eof-reached') is True
         speed=sample.get('speed')
         if (not paused and not previous.get('paused',False) and previous['position'] is not None
@@ -98,10 +106,12 @@ class Diagnostics:
         if paused or previous['position'] is None or abs(position-previous['position'])>.01:
             previous['changed']=now
         elif now-previous['changed']>=6:
+            self.video_issue='video_stalled'
             self.emit('video-timeline-stalled',f'player={key}; position unchanged for {now-previous["changed"]:.1f}s')
         previous['position']=position
 
     def check(self):
+        self.video_issue=None
         for _ in range(32):
             try:category,detail=self.messages.get_nowait()
             except queue.Empty:break
@@ -117,6 +127,7 @@ class Diagnostics:
                 sample=mpv_sample(state['socket'])
                 self.check_video(state.get('video_key'),sample)
                 if sample.get('time-pos') is None and now-state.get('video_started',now)>15:
+                    if now-state.get('video_started',now)>30:self.video_issue='video_loading'
                     self.emit('video-startup-pending','player has not supplied a playback timeline')
             except (OSError,ValueError,TypeError):
                 if now-state.get('video_started',now)>15:self.emit('video-telemetry-unavailable','player IPC unavailable; playback unaffected')

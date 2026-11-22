@@ -29,7 +29,7 @@
     </div>
     <nav aria-label="Primary navigation">
       <p class="nav-caption">WORKSPACE</p>
-      {% set links = [('main.index','Displays','desktop'), ('main.upload_media','Media','photo-film'), ('main.overlay_config','Overlays','layer-group'), ('main.configure_spotify','Spotify','music'), ('main.settings','Settings','sliders')] %}
+      {% set links = [('main.index','Displays','desktop'), ('main.upload_media','Media','photo-film'), ('main.overlay_config','Overlays','layer-group'), ('main.configure_spotify','Spotify','music'), ('main.status_page','Status','heart-pulse'), ('main.settings','Settings','sliders')] %}
       {% for endpoint, label, icon in links %}
       <a class="nav-link{% if request.endpoint == endpoint %} active{% endif %}" href="{{ url_for(endpoint) }}"{% if request.endpoint == endpoint %} aria-current="page"{% endif %}><i class="fa-solid fa-{{ icon }}" aria-hidden="true"></i><span>{{ label }}</span>{% if request.endpoint == endpoint %}<span class="nav-active-dot" aria-hidden="true"></span>{% endif %}</a>
       {% endfor %}

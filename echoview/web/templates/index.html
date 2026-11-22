@@ -10,6 +10,7 @@
     <div class="page-actions"><button type="button" class="quiet" data-open-details="display-presets"><i class="fa-solid fa-bookmark" aria-hidden="true"></i> Presets</button><a class="button" href="{{ url_for('main.upload_media') }}"><i class="fa-solid fa-folder-open" aria-hidden="true"></i> Browse media</a></div>
   </header>
   {% for message in get_flashed_messages() %}<div class="flash-message" role="status">{{ message }}</div>{% endfor %}
+  {% include 'components/recovery_status.html' %}
   <div class="metrics-grid" aria-label="Device overview">
     <section class="card metric"><div class="metric-label">Active outputs <i class="fa-solid fa-desktop" aria-hidden="true"></i></div><div class="metric-value">{{ monitors.values()|selectattr('active')|list|length }} <span class="metric-detail">/ {{ cfg.displays|length }}</span></div><div class="metric-detail">{{ host }}</div></section>
     <section class="card metric"><div class="metric-label">Processor <i class="fa-solid fa-microchip" aria-hidden="true"></i></div><div class="metric-value" id="stat_cpu">{{ cpu }}%</div><div class="metric-detail">Temperature <span id="stat_temp">{{ temp }}</span></div></section>
@@ -104,4 +105,4 @@
 </div>
 {% endblock %}
 
-{% block extra_scripts %}<script src="{{ url_for('static', filename='spotify_preview.js') }}"></script>{% endblock %}
+{% block extra_scripts %}<script src="{{ url_for('static', filename='recovery.js') }}"></script><script src="{{ url_for('static', filename='spotify_preview.js') }}"></script>{% endblock %}

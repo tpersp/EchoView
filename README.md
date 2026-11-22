@@ -558,3 +558,19 @@ write. Video, GIF, image, Spotify and browser diagnostics use bounded local
 reporting without extra media scans or Spotify requests. See
 [playback diagnostics and retention](docs/playback-diagnostics.md) for coverage,
 limits and validation.
+
+
+### Recovery status
+
+**Status** shows current playback problems and relevant actions without listing
+media or probing the NAS. The Displays page shows the same panel only when
+attention is needed. It covers missing storage mounts, slow/failed media loads,
+invalid schedules, persistent video buffering/stalls, Spotify authorization or
+connection errors, and browser failures. Warnings clear when playback recovers.
+
+Status comes from a bounded local viewer snapshot refreshed every five seconds;
+it does not read historical logs or make extra Spotify requests. Mount checks
+read local mount metadata only: an offline NAS may remain mounted, in which case
+load/buffering problems appear when observed. **Restart viewer** is always an
+explicit action and preserves unsaved page edits. No automatic restarts or remounts
+are added. A stale or stopped viewer is reported rather than shown as healthy.

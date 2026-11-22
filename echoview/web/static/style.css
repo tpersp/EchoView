@@ -409,3 +409,12 @@ form .schedule-folder-chip button { flex: 0 0 auto; border: 0; background: trans
 .spotify-preview-blur { position: absolute; inset: -12%; background-size: cover; background-position: center; pointer-events: none; }
 
 @font-face { font-family: 'EchoView Clock'; src: url('fonts/DejaVuSans.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; }
+
+.recovery-panel { margin-bottom: 20px; }
+.recovery-panel.has-issues { border-color: #a48143; }
+.recovery-healthy { margin: 10px 0 0; color: var(--text-muted); }
+.recovery-panel h2 { font-size: 16px; }
+.recovery-row { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 12px 0; border-top: 1px solid var(--border-muted); }
+.recovery-row p, .recovery-feedback { margin: 5px 0 0; color: var(--text-muted); font-size: 13px; }
+.recovery-row .form-actions { flex-shrink: 0; flex-wrap: wrap; }
+@media (max-width: 767.98px) { .recovery-row { align-items: flex-start; flex-direction: column; gap: 10px; } }

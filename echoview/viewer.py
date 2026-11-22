@@ -126,6 +126,7 @@ class DisplayWindow(QMainWindow):
         from echoview.log_store import append_log
         label=re.sub(r'[^A-Za-z0-9_.:-]','_',disp_name)[:80]
         self.diagnostics=Diagnostics(lambda message:append_log(LOG_PATH,f'Diagnostic [{label}] {message}'))
+        self.recovery_problem=None
         self.diag_image_started=0
         self.diag_gif_due=0
         self.diag_gif_frames=0
@@ -412,6 +413,25 @@ class DisplayWindow(QMainWindow):
         self.spotify_progress_bar.setGeometry(x, y, width, height)
         self.spotify_progress_bar.raise_()
 
+    def recovery_state(self):
+        problem=getattr(self,'recovery_problem',None)
+        if self.current_mode=='spotify':
+            spotify=getattr(self,'spotify_status',None)
+            problem={'authorization_required':'spotify_auth','offline':'spotify_offline','access_denied':'spotify_denied',
+                     'rate_limited':'spotify_limited','quota_exceeded':'spotify_limited'}.get(spotify,problem)
+        if self.diag_image_started and self.image_request_id==getattr(self,'diag_image_request',None) and time.monotonic()-self.diag_image_started>10:
+            problem=problem or 'media_slow'
+        if self.current_video_proc is not None:
+            if problem=='video_failed' and self.diagnostics.video_ready==self.current_video_proc.pid:
+                self.recovery_problem=problem=None
+        if self.current_video_proc is not None or self._hls_active:
+            problem=problem or self.diagnostics.video_issue
+        if self.external_browser_proc is not None and self.external_browser_proc.poll() is not None:
+            problem='browser_failed'
+        media=self.current_mode in ('random_image','specific_image','mixed','videos')
+        media=media or (self.current_mode=='spotify' and self.spotify_info is None and self.disp_cfg.get('fallback_mode','random_image')!='none')
+        return dict(name=self.disp_name,mode=self.disp_cfg.get('mode',self.current_mode),problem=problem,uses_media=media)
+
     def _diagnostic(self, category, detail):
         diagnostics=getattr(self,'diagnostics',None)
         if diagnostics is not None:diagnostics.event(category,detail)
@@ -475,7 +495,7 @@ class DisplayWindow(QMainWindow):
                       'eof-reached':self.hls_player.mediaStatus()==QMediaPlayer.MediaStatus.EndOfMedia}
         self.diagnostics.update(mode=self.current_mode,gif_due=gif_due,image_started=image_started,qt_video=qt_video,
             socket=self.mpv_diag_socket if proc is not None and proc.poll() is None else None,
-            video_key=getattr(proc,'pid',None),video_started=self.mpv_diag_started)
+            video_key=getattr(proc,'pid',self.stream_generation),video_started=self.mpv_diag_started)
 
     def _check_mpv_process(self) -> None:
         proc = self.current_video_proc
@@ -488,6 +508,7 @@ class DisplayWindow(QMainWindow):
         if code is None:
             return
         if code != 0:
+            self.recovery_problem='video_failed'
             self._diagnostic("video-player-exited",f"exit_code={code}")
         self.stop_current_video()
         if self.current_mode == "videos":
@@ -785,6 +806,7 @@ class DisplayWindow(QMainWindow):
         if self.running and self.current_mode == "web_page" and generation == self.stream_generation and event in ("playing", "playing_live"):
             self.stream_live = self.stream_live or event == "playing_live"
             self._stream_started = True
+            self.recovery_problem=None
             self.stream_retry.mark_started()
             self.stream_loading_timer.stop()
 
@@ -815,11 +837,13 @@ class DisplayWindow(QMainWindow):
 
     def _on_hls_state(self, state):
         if self._hls_active and state == QMediaPlayer.PlaybackState.PlayingState:
+            self.recovery_problem=None
             self.stream_retry.mark_started()
             self.stream_loading_timer.stop()
 
     def _on_web_load_finished(self, ok):
         self.diag_web_started=0
+        if ok:self.recovery_problem=None
         if not ok and self.running and getattr(self, "current_mode", None) == "web_page" and not self.external_browser_proc:
             self._diagnostic("web-load-failed","page did not finish loading")
             self._show_stream_status("Page failed to load. Check the URL or select the external browser.")
@@ -979,6 +1003,7 @@ class DisplayWindow(QMainWindow):
         self._show_external_browser_error("Chromium failed to start.")
 
     def _show_external_browser_error(self, message: str) -> None:
+        self.recovery_problem='browser_failed'
         self._stop_hls_playback()
         self.web_view.hide()
         self.stop_current_video()
@@ -1086,6 +1111,7 @@ class DisplayWindow(QMainWindow):
 
     @Slot()
     def reload_settings(self, cfg=None):
+        self.recovery_problem=None
         self.image_request_id += 1
         self._spotify_background_key = None
         self.bg_label.setStyleSheet('background-color: black;')
@@ -1402,6 +1428,12 @@ class DisplayWindow(QMainWindow):
             self.clock_label.update()
 
     def clear_foreground_label(self, message):
+        problems={'No videos found':'media_empty','No images found':'media_empty','No fallback images found':'media_empty',
+                  'Video unsupported':'video_unsupported','mpv playback error':'video_failed','Missing file':'media_failed',
+                  'Image could not be loaded':'media_failed','Image could not be decoded':'media_failed','GIF error':'media_failed',
+                  'No valid playback schedule':'schedule_invalid'}
+        if message in problems:self.recovery_problem=problems[message]
+        elif message.startswith(('Stream interrupted','Stream unavailable','Page failed')):self.recovery_problem='web_failed'
         if message in ('No videos found','Video unsupported','No valid playback schedule','No images found',
                        'No fallback images found','Image could not be decoded','GIF error'):
             self._diagnostic('playback-unavailable',message)
@@ -1511,6 +1543,7 @@ class DisplayWindow(QMainWindow):
         if data["image"].isNull():
             self.clear_foreground_label("Image could not be decoded")
             return
+        self.recovery_problem=None
         if data["type"] == "gif" and not is_spotify:
             self.current_pixmap = None
             if self.fg_scale_percent == 100 and not self.disp_cfg.get("rotate", 0):
@@ -2013,6 +2046,7 @@ class DisplayWindow(QMainWindow):
         if result.status != previous_status:
             log_message(f"Spotify status: {result.status}")
         if result.status == "playing":
+            self.recovery_problem=None
             self.spotify_info = {
                 "song": result.song, "artist": result.artist, "album": result.album,
                 "device_name": result.device_name,
@@ -2113,6 +2147,16 @@ class EchoViewGUI:
         self.heartbeat_timer.start(250)
         self.app.aboutToQuit.connect(self.watchdog.stop)
         self.watchdog.start()
+        self.recovery_timer=QTimer()
+        self.recovery_timer.setInterval(5000)
+        self.recovery_timer.timeout.connect(self._publish_recovery)
+        self.recovery_timer.start()
+        self._publish_recovery()
+
+    def _publish_recovery(self):
+        from echoview.recovery import publish
+        try:publish(state_directory(VIEWER_HOME),[window.recovery_state() for window in self.windows if window.running])
+        except (OSError,ValueError,RuntimeError):pass
 
     def _schedule_sync(self, *args):
         QTimer.singleShot(100, self._sync_screens)
