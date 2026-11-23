@@ -457,3 +457,5 @@ form .schedule-folder-chip button { flex: 0 0 auto; border: 0; background: trans
 .video-picker .thumb-label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .specific-video-section { margin-top: 18px; }
+
+#identify-displays-status:not(:empty) { display: block; padding: 0 12px 10px; color: var(--text-muted); }

@@ -518,6 +518,21 @@ def media_videos():
     return jsonify(result)
 
 
+@main_bp.post('/identify_displays')
+def identify_displays():
+    cfg = load_config()
+    try:
+        applied = request_update(state_directory(VIEWER_HOME), cfg,
+                                 list(cfg.get('displays', {})), kind='identify', channel='identify')
+    except (OSError, ValueError):
+        applied = False
+    message = 'Display names shown for five seconds.' if applied else 'Cannot reach active displays. Check viewer status and try again.'
+    if request.accept_mimetypes.best == 'application/json':
+        return jsonify(**({'message': message} if applied else {'error': message})), 200 if applied else 503
+    flash(message)
+    return redirect(url_for('main.index'))
+
+
 @main_bp.get('/status')
 def status_page():
     return render_template('status.html',theme=load_config().get('theme','dark'))

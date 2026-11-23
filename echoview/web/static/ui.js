@@ -50,3 +50,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+
+// This action never submits or reloads the page's settings forms.
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.getElementById('identify-displays-form');
+  if (!form) return;
+  const button = form.querySelector('button');
+  const label = button.querySelector('span');
+  const status = document.getElementById('identify-displays-status');
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (button.disabled) return;
+    button.disabled = true; status.textContent = ''; label.textContent = 'Identifying…';
+    try {
+      const response = await fetch(form.action, {method: 'POST', headers: {'Accept': 'application/json'}, signal: AbortSignal.timeout(6000)});
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Could not identify displays.');
+      setTimeout(() => { button.disabled = false; label.textContent = 'Identify displays'; }, 5000);
+    } catch (error) {
+      status.textContent = error.name === 'TimeoutError' ? 'Viewer did not respond. Try again.' : error.name === 'TypeError' ? 'Could not reach viewer. Try again.' : error.message;
+      button.disabled = false; label.textContent = 'Identify displays';
+    }
+  });
+});

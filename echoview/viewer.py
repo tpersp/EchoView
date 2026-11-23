@@ -1101,7 +1101,14 @@ class DisplayWindow(QMainWindow):
                 width, height = self.calc_fill_size(iw, ih, self.foreground_label.width(), self.foreground_label.height())
                 self.current_movie.setScaledSize(QSize(width, height))
 
+    def identify_display(self):
+        from echoview.display_identification import IdentificationBadge
+        if not getattr(self, 'identification_badge', None):
+            self.identification_badge = IdentificationBadge(self)
+        self.identification_badge.show_for(self.assigned_screen or self.screen(), self.disp_name)
+
     def closeEvent(self, event):
+        if getattr(self, 'identification_badge', None):self.identification_badge.dismiss()
         self.running = False
         self.diagnostic_timer.stop()
         self.diagnostics.close()
@@ -2150,8 +2157,10 @@ class EchoViewGUI:
             screen.geometryChanged.connect(self._schedule_sync)
         self._sync_screens()
         self.visual_updates = VisualSettingsReceiver(state_directory(VIEWER_HOME), self._apply_live_visual_request)
+        self.identification_updates = VisualSettingsReceiver(state_directory(VIEWER_HOME), self._apply_live_visual_request, channel='identify')
         self.visual_timer = QTimer()
         self.visual_timer.timeout.connect(self.visual_updates.poll)
+        self.visual_timer.timeout.connect(self.identification_updates.poll)
         self.visual_timer.start(250)
         from echoview.overlay_preview import FrameReceiver
         self.preview_encoder = ImagePreloader(name='preview-encoder')
@@ -2210,7 +2219,7 @@ class EchoViewGUI:
         if not isinstance(names, list) or not names:
             return False
         kind = request.get('kind', 'spotify')
-        if kind not in ('spotify', 'overlay'):
+        if kind not in ('spotify', 'overlay', 'identify'):
             return False
         targets = []
         for name in names:
@@ -2218,7 +2227,7 @@ class EchoViewGUI:
                 return False
             window = self.window_by_connector.get(name)
             if not window or not window.running:
-                if kind == 'overlay':
+                if kind in ('overlay', 'identify'):
                     continue  # Saved settings take effect when this display connects.
                 return False
             if kind == 'spotify' and window.current_mode != 'spotify':
@@ -2227,7 +2236,9 @@ class EchoViewGUI:
         if not targets:
             return False
         for name, window in targets:
-            if kind == 'overlay':
+            if kind == 'identify':
+                window.identify_display()
+            elif kind == 'overlay':
                 window.apply_overlay_settings(cfg)
             else:
                 window.apply_spotify_visual_settings(cfg['displays'][name])

@@ -1,4 +1,4 @@
-"""Small local request/ack channel for visual and clock changes on the Qt thread."""
+"""Small local request/ack channels for visual changes and Qt-thread actions."""
 import json
 import os
 from pathlib import Path
@@ -49,14 +49,14 @@ def atomic_json(directory, name, value):
         Path(path).unlink(missing_ok=True)
 
 
-def request_update(directory, cfg, displays, timeout=3, kind='spotify'):
+def request_update(directory, cfg, displays, timeout=3, kind='spotify', channel='visual'):
     revision = secrets.token_hex(16)
-    atomic_json(directory, 'visual-request.json', dict(revision=revision, config=fingerprint(cfg),
+    atomic_json(directory, channel + '-request.json', dict(revision=revision, config=fingerprint(cfg),
                 displays=displays, kind=kind, expires=time.time()+15))
     deadline = time.monotonic()+timeout
     while time.monotonic() < deadline:
         try:
-            ack = json.loads((Path(directory)/'visual-ack.json').read_text())
+            ack = json.loads((Path(directory)/(channel + '-ack.json')).read_text())
             if isinstance(ack, dict) and ack.get('revision') == revision:
                 return ack.get('applied') is True
         except (OSError, ValueError):
@@ -67,14 +67,15 @@ def request_update(directory, cfg, displays, timeout=3, kind='spotify'):
 
 class VisualSettingsReceiver:
     """Poll cheap local metadata. Invoke apply_request only for a new request."""
-    def __init__(self, directory, apply_request):
+    def __init__(self, directory, apply_request, channel='visual'):
         self.directory, self.apply_request = Path(directory), apply_request
+        self.channel = channel
         self.stamp = None
         self.revision = None
 
     def poll(self):
         try:
-            path = self.directory/'visual-request.json'
+            path = self.directory/(self.channel + '-request.json')
             stat = path.stat()
             stamp = (stat.st_ino, stat.st_mtime_ns)
             if stamp == self.stamp:
@@ -89,6 +90,6 @@ class VisualSettingsReceiver:
                 applied = request['expires'] >= time.time() and bool(self.apply_request(request))
             except (OSError, RuntimeError, ValueError, KeyError, TypeError):
                 applied = False
-            atomic_json(self.directory, 'visual-ack.json', dict(revision=revision, applied=applied))
+            atomic_json(self.directory, self.channel + '-ack.json', dict(revision=revision, applied=applied))
         except (OSError, ValueError, KeyError, TypeError):
             pass  # A missing or malformed request never affects playback.
