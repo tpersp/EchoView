@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
 
 MAX_BYTES = 20 * 1024 * 1024
-MAX_FILES = 128
+MAX_FILES = 512
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='video-preview')
 _lock = threading.Lock()
 _pending = set()
@@ -26,23 +26,25 @@ def _run(args, timeout):
 
 
 def render(source, target, animated):
-    """Seek to at most four frames; never write to or transcode the source."""
+    """Read nearby keyframes; posters avoid duration probing and GOP decoding."""
     duration = 0
-    try:
-        data = json.loads(_run(['ffprobe', '-v', 'error', '-threads', '1', '-protocol_whitelist', 'file,pipe',
-                               '-show_entries', 'format=duration', '-of', 'json', str(source)], 4))
-        duration = float(data.get('format', {}).get('duration', 0))
-        if not 0 < duration < 1e9:duration = 0
-    except (ValueError, TypeError, subprocess.SubprocessError):pass
-    fractions = (.1, .35, .6, .85) if animated else (.1,)
-    sheet = Image.new('RGB', (256 * len(fractions), 144), 'black')
-    for index, fraction in enumerate(fractions):
+    if animated:
+        try:
+            data = json.loads(_run(['ffprobe', '-v', 'error', '-threads', '1', '-protocol_whitelist', 'file,pipe',
+                                   '-show_entries', 'format=duration', '-of', 'json', str(source)], 4))
+            duration = float(data.get('format', {}).get('duration', 0))
+            if not 0 < duration < 1e9:duration = 0
+        except (ValueError, TypeError, subprocess.SubprocessError):pass
+    positions = [duration * fraction for fraction in (.1, .35, .6, .85)] if animated else [1.0]
+    sheet = Image.new('RGB', (256 * len(positions), 144), 'black')
+    for index, position in enumerate(positions):
         data = _run(['ffmpeg', '-nostdin', '-v', 'error', '-threads', '1',
                      '-filter_threads', '1', '-protocol_whitelist', 'file,pipe',
-                     '-ss', str(duration * fraction), '-i', str(source), '-an', '-sn', '-dn',
+                     '-ss', str(position), '-noaccurate_seek', '-skip_frame', 'nokey',
+                     '-i', str(source), '-an', '-sn', '-dn',
                      '-frames:v', '1', '-vf',
                      'scale=256:144:force_original_aspect_ratio=decrease,pad=256:144:(ow-iw)/2:(oh-ih)/2',
-                     '-threads', '1', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-'], 8)
+                     '-threads', '1', '-fps_mode', 'passthrough', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-'], 8)
         with Image.open(io.BytesIO(data)) as frame:sheet.paste(frame.convert('RGB'), (256 * index, 0))
     # Atomic replacement means clients never receive a partial JPEG.
     temporary = target.with_suffix('.tmp')

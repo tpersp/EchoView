@@ -94,3 +94,24 @@ def test_multiple_requests_cannot_start_parallel_decoders_or_unbounded_jobs(tmp_
         if not pending:break
         time.sleep(.01)
     assert not pending and peak==[1] and len(calls)==8
+
+
+def test_static_poster_does_not_probe_duration_and_uses_keyframe_seek(tmp_path,monkeypatch):
+    output=io.BytesIO();Image.new('RGB',(256,144),'blue').save(output,'JPEG')
+    commands=[]
+    def run(args,timeout):commands.append(args);return output.getvalue()
+    monkeypatch.setattr(preview,'_run',run)
+    preview.render(tmp_path/'source.mp4',tmp_path/'poster.jpg',False)
+    assert len(commands)==1 and commands[0][0]=='ffmpeg'
+    assert '-noaccurate_seek' in commands[0]
+    assert commands[0][commands[0].index('-skip_frame')+1]=='nokey'
+
+
+def test_very_short_video_still_has_a_poster(tmp_path):
+    import subprocess,shutil,pytest
+    if not shutil.which('ffmpeg'):pytest.skip('ffmpeg not installed')
+    source=tmp_path/'short.mp4';target=tmp_path/'poster.jpg'
+    subprocess.run(['ffmpeg','-nostdin','-v','error','-f','lavfi','-i','color=c=red:s=64x48:r=24:d=0.2',
+                    '-c:v','mpeg4','-y',str(source)],check=True,timeout=15)
+    preview.render(source,target,False)
+    with Image.open(target) as image:assert image.size==(256,144)

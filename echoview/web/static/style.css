@@ -447,10 +447,8 @@ form .schedule-folder-chip button { flex: 0 0 auto; border: 0; background: trans
 .schedule-time-control { display: flex; flex-direction: column; flex: 0 1 145px; min-width: 0; font-size: 11px; color: var(--text-muted); gap: 7px; }
 .schedule-slot-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.video-picker .specific-results { grid-template-columns: repeat(auto-fill,minmax(180px,1fr)); }
-.video-picker .specific-results .thumb-label { text-align: left; font-size: inherit; }
 
-.video-preview-frame { display: block; position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: #111; border-radius: 5px; margin-bottom: 8px; }
+.video-preview-frame { display: block; position: relative; height: 86px; overflow: hidden; background: #111; border-radius: 5px; margin-bottom: 8px; }
 .video-preview-frame img { width: 100%; height: 100%; object-fit: contain; margin: 0; border-radius: 0; }
 .video-preview-frame img:not([src]) { display: none; }
 .video-preview-frame img.video-sprite { width: 400%; max-width: none; object-fit: fill; }

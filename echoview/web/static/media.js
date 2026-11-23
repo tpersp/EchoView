@@ -290,7 +290,7 @@ function createVideoPreviewManager(picker) {
   const cards = new Set();
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) cards.forEach(stop); });
-  let jobs = [], busy = false, paused = false;
+  let jobs = [], active = 0, paused = false;
   const observer = new IntersectionObserver(entries => entries.forEach(entry => {
     const card = entry.target.previewCard;
     card.visible = entry.isIntersecting;
@@ -315,38 +315,44 @@ function createVideoPreviewManager(picker) {
   }
   function enqueue(card, motion) {
     if (paused || !card.label.isConnected || !card.visible || (motion ? card.motion : card.poster)) return;
-    if (jobs.some(job => job.card === card && job.motion === motion)) return;
+    if (card.requests.has(motion) || jobs.some(job => job.card === card && job.motion === motion)) return;
     if (motion) jobs.unshift({card, motion}); else jobs.push({card, motion});
     drain();
   }
-  async function drain() {
-    if (busy || paused) return;
-    busy = true;
+  function drain() {
+    if (paused) return;
+    // Concurrent cache checks do not create parallel server-side decoders.
+    while (active < 4 && jobs.length) {
+      const job = jobs.shift();
+      const {card, motion} = job;
+      if (!card.label.isConnected || !card.visible || (motion && !card.hover) || card.requests.has(motion) || (motion ? card.motion : card.poster)) continue;
+      active++;
+      loadPreview(job).finally(() => { active--; drain(); });
+    }
+  }
+  async function loadPreview({card, motion}) {
+    const abort = new AbortController(); card.requests.set(motion, abort);
+    const url = new URL('/media/video-preview', location.href);
+    url.search = new URLSearchParams({folder: card.folder, file: card.name, motion: motion ? '1' : '0'});
     try {
-      while (jobs.length && !paused) {
-        const {card, motion} = jobs.shift();
-        if (!card.label.isConnected || !card.visible || (motion && !card.hover) || (motion ? card.motion : card.poster)) continue;
-        const abort = new AbortController(); card.abort = abort;
-        const url = new URL('/media/video-preview', location.href);
-        url.search = new URLSearchParams({folder: card.folder, file: card.name, motion: motion ? '1' : '0'});
-        try {
-          for (let attempt = 0; attempt < 45; attempt++) {
-            if (paused || !card.label.isConnected || !card.visible || (motion && !card.hover)) break;
-            const response = await fetch(url, {signal: abort.signal});
-            if (response.status === 202) { if (attempt === 44) throw new Error('Preview unavailable'); await new Promise(resolve => setTimeout(resolve, 1000)); continue; }
-            if (!response.ok) throw new Error('Preview unavailable');
-            const blob = await response.blob();
-            if (abort.signal.aborted || !card.label.isConnected) break;
-            const objectURL = URL.createObjectURL(blob);
-            if (motion) { card.motion = objectURL; animate(card); }
-            else { card.poster = objectURL; if (!card.timer) card.image.src = objectURL; card.label.classList.add('has-video-poster'); }
-            break;
-          }
-        } catch (error) {
-          if (error.name !== 'AbortError' && !card.poster) card.placeholder.textContent = 'Preview unavailable';
-        } finally { if (card.abort === abort) card.abort = null; }
+      for (let attempt = 0; attempt < 120; attempt++) {
+        if (paused || !card.label.isConnected || !card.visible || (motion && !card.hover)) break;
+        const response = await fetch(url, {signal: abort.signal});
+        if (response.status === 202) {
+          if (attempt === 119) throw new Error('Preview unavailable');
+          await new Promise(resolve => setTimeout(resolve, 350)); continue;
+        }
+        if (!response.ok) throw new Error('Preview unavailable');
+        const blob = await response.blob();
+        if (abort.signal.aborted || !card.label.isConnected) break;
+        const objectURL = URL.createObjectURL(blob);
+        if (motion) { card.motion = objectURL; animate(card); }
+        else { card.poster = objectURL; if (!card.timer) card.image.src = objectURL; card.label.classList.add('has-video-poster'); }
+        break;
       }
-    } finally { busy = false; }
+    } catch (error) {
+      if (error.name !== 'AbortError' && !card.poster) card.placeholder.textContent = 'Preview unavailable';
+    } finally { if (card.requests.get(motion) === abort) card.requests.delete(motion); }
   }
   return {
     add(label, name, folder) {
@@ -354,7 +360,7 @@ function createVideoPreviewManager(picker) {
       const image = document.createElement('img'); image.alt = ''; image.decoding = 'async';
       const placeholder = document.createElement('span'); placeholder.className = 'video-preview-placeholder'; placeholder.textContent = 'Loading preview…';
       frame.append(image, placeholder); label.prepend(frame);
-      const card = {label, name, folder, image, placeholder, visible: false};
+      const card = {label, name, folder, image, placeholder, visible: false, requests: new Map()};
       label.previewCard = card; cards.add(card); observer.observe(label);
       const start = () => {
         if (reducedMotion.matches) return;
@@ -366,12 +372,12 @@ function createVideoPreviewManager(picker) {
       label.addEventListener('focusin', start);
       label.addEventListener('focusout', () => stop(card));
     },
-    pause() { paused = true; jobs = []; cards.forEach(card => { stop(card); card.abort?.abort(); }); },
+    pause() { paused = true; jobs = []; cards.forEach(card => { stop(card); card.requests.forEach(abort => abort.abort()); }); },
     resume() { paused = false; cards.forEach(card => { if (card.visible) enqueue(card, false); }); drain(); },
     clear() {
       jobs = [];
       cards.forEach(card => {
-        observer.unobserve(card.label); stop(card); card.abort?.abort();
+        observer.unobserve(card.label); stop(card); card.requests.forEach(abort => abort.abort());
         if (card.poster) URL.revokeObjectURL(card.poster);
         if (card.motion) URL.revokeObjectURL(card.motion);
       });

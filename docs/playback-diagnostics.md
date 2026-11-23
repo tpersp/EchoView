@@ -128,7 +128,7 @@ synthetic clips with real mpv, including same-player transitions and normal spee
 
 The specific-video picker requests a cached 256×144 poster only for visible
 cards. Hover or keyboard focus requests a four-frame JPEG contact sheet sampled
-at 10%, 35%, 60% and 85% of the clip. Animation runs in the browser only while
+near 10%, 35%, 60% and 85% of the clip. Animation runs in the browser only while
 the card is hovered/focused; reduced-motion preferences disable it. There are
 no browser video players, audio streams or continuous frame capture.
 
@@ -139,7 +139,13 @@ are bounded. Leaving the picker or hiding the tab cancels browser requests and
 preview timers; an extraction already running can finish and populate the cache.
 
 Generated JPEGs live in `.video-preview-cache` under the application directory,
-never on the media share. Retention is capped at **20 MiB and 128 JPEGs**; oldest
+never on the media share. Retention is capped at **20 MiB and 512 JPEGs**; oldest
 entries are removed after generation. Source size/mtime changes invalidate cached
 previews. Interrupted temporary files are cleaned on the next completed job.
 These limits are separate from the bounded diagnostic logs.
+
+Static posters take a nearby keyframe about one second into the clip, avoiding
+a separate duration probe. Hover previews also use nearby keyframes rather than
+decoding every intervening frame after a seek. Four concurrent browser lookups
+let ready posters appear alongside pending ones; extraction remains single-worker.
+The video and image/GIF pickers share the same responsive grid and card sizing.
