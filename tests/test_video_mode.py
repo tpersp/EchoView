@@ -484,6 +484,7 @@ def test_direct_and_scheduled_video_share_lightweight_scaling(monkeypatch):
     from echoview import scheduling
     flags=('--scale=bilinear','--cscale=bilinear','--dscale=bilinear')
     monkeypatch.setattr(viewer,'scaling_flags',lambda:flags)
+    monkeypatch.setattr(viewer,'frame_rate_flags',lambda:('--script=/tmp/fixture-fps.lua',))
     dw=DisplayWindow.__new__(DisplayWindow)
     dw.disp_name='HDMI-1'
     direct={'mode':'videos','video_category':'fixture','video_mute':True}
@@ -493,5 +494,5 @@ def test_direct_and_scheduled_video_share_lightweight_scaling(monkeypatch):
     first=dw.build_mpv_command('/tmp/synthetic.mp4')
     dw.disp_cfg=effective
     assert dw.build_mpv_command('/tmp/synthetic.mp4')==first
-    assert all(first.count(flag)==1 for flag in flags)
+    assert all(first.count(flag)==1 for flag in (*flags,'--script=/tmp/fixture-fps.lua'))
     assert first[-2:]==['--','/tmp/synthetic.mp4']

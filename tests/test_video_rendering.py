@@ -29,3 +29,12 @@ def test_unknown_hardware_keeps_player_defaults(monkeypatch):
     video_rendering.scaling_flags.cache_clear()
     try:assert video_rendering.scaling_flags()==()
     finally:video_rendering.scaling_flags.cache_clear()
+
+
+def test_pi_frame_limit_script_and_other_hardware_bypass(monkeypatch):
+    monkeypatch.setattr(video_rendering,'scaling_flags',lambda:())
+    assert video_rendering.frame_rate_flags()==()
+    monkeypatch.setattr(video_rendering,'scaling_flags',lambda:('--scale=bilinear',))
+    flags=video_rendering.frame_rate_flags()
+    assert len(flags)==1 and flags[0].startswith('--script=')
+    assert Path(flags[0].split('=',1)[1]).is_file()

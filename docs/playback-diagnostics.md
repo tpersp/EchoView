@@ -110,3 +110,16 @@ unchanged. Hardware detection is cached and does not inspect source media.
 A live Pi 4 comparison on the same 1440×1080 H.264 clip recorded 61 output drops
 in 10 seconds with the existing filters, versus zero in 15 seconds with bilinear
 filters. This is a short comparison for that clip, not a guarantee for all media.
+
+Pi mpv playback also has a **24 fps ceiling**. A small bundled player script
+observes the source frame rate and adds a labelled FFmpeg `fps=24` filter only
+above 24 fps. At 24 fps or below, or when the source rate is unknown, the filter
+is absent. File/track changes re-evaluate the limit and retain unrelated filters.
+Frames are discarded before rendering without changing playback speed, audio
+timing or source files; decoding still processes the source video. This avoids
+forcing low-rate content up to 24 fps. GIF/image rendering is unchanged.
+
+The [FFmpeg fps filter](https://ffmpeg.org/ffmpeg-filters.html#fps) performs
+frame-rate conversion; this does not use a container frame-rate override.
+`tests/native/check_video_fps.py` checks 12, 23.976, 24, 25, 30 and 60 fps
+synthetic clips with real mpv, including same-player transitions and normal speed.

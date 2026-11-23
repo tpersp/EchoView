@@ -26,7 +26,7 @@ from echoview.clock_overlay import format_clock, separators_visible
 from echoview.viewer_watchdog import ViewerWatchdog
 from echoview.image_preloader import ImagePreloader
 from echoview.playlist import reshuffle_cycle
-from echoview.video_rendering import scaling_flags
+from echoview.video_rendering import scaling_flags, frame_rate_flags
 
 from echoview.browser import qt_flags, chromium_flags
 from echoview.streaming import (capabilities as stream_capabilities, playback_environment,
@@ -626,6 +626,7 @@ class DisplayWindow(QMainWindow):
         if aspect in DISPLAY_ASPECTS and aspect != "auto":
             cmd.append(f"--monitoraspect={aspect}")
         cmd += scaling_flags()
+        cmd += frame_rate_flags()
         cmd += player_presentation_flags(self.disp_cfg)
         if self.disp_cfg.get("video_mute", True):
             cmd += ["--mute=yes", "--volume=0"]

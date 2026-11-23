@@ -14,3 +14,10 @@ def scaling_flags():
         return ()
     # Avoid costly multi-pass convolution scaling on the shared Pi GPU.
     return ('--scale=bilinear', '--cscale=bilinear', '--dscale=bilinear')
+
+
+def frame_rate_flags():
+    """Apply the 24 fps ceiling on Pi, bypassing the filter for native <=24 fps."""
+    if not scaling_flags():
+        return ()
+    return ('--script=' + str(Path(__file__).with_name('video_fps_limit.lua')),)
