@@ -481,6 +481,19 @@ def media_images():
         return jsonify(error='Cannot read images. Check the media connection and retry.'), 503
     return jsonify(result)
 
+@main_bp.get('/media/videos')
+def media_videos():
+    try:
+        result = folder_page(IMAGE_DIR, request.args.get('folder', ''),
+                             page=request.args.get('page', 1, type=int),
+                             query=request.args.get('q', ''), videos=True)
+    except ValueError:
+        return jsonify(error='Invalid media folder.'), 400
+    except OSError:
+        return jsonify(error='Cannot read videos. Check the media connection and retry.'), 503
+    return jsonify(result)
+
+
 @main_bp.get('/status')
 def status_page():
     return render_template('status.html',theme=load_config().get('theme','dark'))
@@ -1153,7 +1166,8 @@ def index():
                     old_video_category = dcfg.get("video_category", "")
                     dcfg["video_category"] = new_vid_cat
                     selected_video = request.form.get(pre + "specific_video", dcfg.get("specific_video", ""))
-                    if new_vid_cat != old_video_category:
+                    if (new_vid_cat != old_video_category
+                            and request.form.get(pre + 'specific_video_folder') != new_vid_cat):
                         selected_video = ''
                     if selected_video and (os.path.basename(selected_video) != selected_video
                                            or not selected_video.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".webm"))):

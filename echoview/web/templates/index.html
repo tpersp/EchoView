@@ -51,10 +51,17 @@
         </div>
         <div id="{{ pre }}videos_section" class="mode-section">
           <div id="{{ pre }}manual_video_selection"><div class="fields-grid">
-            {{ f.select(pre ~ 'specific_video','Video selection',dcfg.get('specific_video',''), [('','All videos in folder')] + ([(dcfg.specific_video,dcfg.specific_video)] if dcfg.specific_video else []),help='Choose individual videos from Media → Play on display.') }}
+            <label class="field"><span class="field-label">Video selection</span><select name="{{ pre }}video_selection" id="{{ pre }}video_selection"><option value="all"{% if not dcfg.specific_video %} selected{% endif %}>All videos in folder</option><option value="specific"{% if dcfg.specific_video %} selected{% endif %}>Specific video</option></select></label>
             <label class="field"><span class="field-label">Video folder</span><select name="{{ pre }}video_category"><option value=""{% if not dcfg.video_category %} selected{% endif %}>Root folder</option>{% if dcfg.video_category and dcfg.video_category not in subfolders %}<option value="{{ dcfg.video_category }}" selected>{{ dcfg.video_category }} (unavailable)</option>{% endif %}{% for folder in subfolders %}<option value="{{ folder }}"{% if dcfg.video_category == folder %} selected{% endif %}>{{ folder }}</option>{% endfor %}</select></label>
             {{ f.select(pre ~ 'shuffle_videos','Video order','yes' if dcfg.shuffle_videos else 'no',[('no','In order'),('yes','Shuffle')]) }}
-          </div></div>
+          </div>
+          <div id="{{ pre }}specific_video_section"{% if not dcfg.specific_video %} hidden{% endif %}>
+            <div class="section-heading"><h3>Choose a video</h3><small>Selected: <span id="{{ pre }}video_selected">{{ dcfg.specific_video or 'None' }}</span></small></div>
+            <input type="hidden" name="{{ pre }}specific_video" id="{{ pre }}video_value" value="{{ dcfg.specific_video }}">
+            <input type="hidden" name="{{ pre }}specific_video_folder" id="{{ pre }}video_folder" value="{{ dcfg.video_category }}">
+            <div class="specific-picker video-picker" data-kind="video" data-display="{{ dname }}" data-url="{{ url_for('main.media_videos') }}"><div class="inline-form"><label class="field"><span class="field-label">Search videos</span><input type="search" class="specific-search" placeholder="Find a filename"></label><button type="button" class="specific-search-button">Search</button></div><div class="specific-results" aria-live="polite"></div><button type="button" class="specific-more" hidden>Load more</button></div>
+          </div>
+          </div>
           <details class="playback-options" open><summary>Video playback preferences</summary><div class="fields-grid">
             {{ f.toggle(pre ~ 'video_mute','Mute audio',dcfg.get('video_mute',true),id=pre ~ 'video_mute',css='video-mute') }}
             <div id="{{ pre }}volume_container">{{ f.input(pre ~ 'video_volume','Volume',dcfg.get('video_volume',100),'number',min=0,max=100) }}</div>

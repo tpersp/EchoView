@@ -446,3 +446,6 @@ form .schedule-folder-chip button { flex: 0 0 auto; border: 0; background: trans
 
 .schedule-time-control { display: flex; flex-direction: column; flex: 0 1 145px; min-width: 0; font-size: 11px; color: var(--text-muted); gap: 7px; }
 .schedule-slot-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.video-picker .specific-results { grid-template-columns: 1fr; }
+.video-picker .specific-results .thumb-label { text-align: left; font-size: inherit; }

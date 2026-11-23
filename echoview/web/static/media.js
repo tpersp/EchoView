@@ -3,13 +3,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const manager = document.getElementById('file-manager');
   if (manager) initMediaFolders(manager);
   document.querySelectorAll('.specific-picker').forEach(initSpecificPicker);
-  document.querySelectorAll('select[name$="_video_category"]').forEach(category => {
-    category.addEventListener('change', () => {
-      const name = category.name.replace(/_video_category$/, '_specific_video');
-      const selection = category.form.elements.namedItem(name);
-      if (selection) selection.value = '';
-    });
-  });
   const displayForm = document.getElementById('display-settings-form');
   if (displayForm) {
     const status = document.getElementById('display-save-status');
@@ -174,10 +167,13 @@ document.addEventListener('submit', async event => {
 function initSpecificPicker(picker) {
   const display = picker.dataset.display;
   const form = picker.closest('form');
-  const section = document.getElementById(display + '_specific_image_section');
-  const category = form.elements.namedItem(display + '_image_category');
+  const video = picker.dataset.kind === 'video';
+  const kind = video ? 'videos' : 'images';
+  const section = document.getElementById(display + (video ? '_specific_video_section' : '_specific_image_section'));
+  const selection = video ? document.getElementById(display + '_video_selection') : null;
+  const category = form.elements.namedItem(display + (video ? '_video_category' : '_image_category'));
   const aspect = form.elements.namedItem(display + '_aspect_filter');
-  const value = document.getElementById(display + '_specific_value');
+  const value = document.getElementById(display + (video ? '_video_value' : '_specific_value'));
   const results = picker.querySelector('.specific-results');
   const more = picker.querySelector('.specific-more');
   const search = picker.querySelector('.specific-search');
@@ -190,37 +186,41 @@ function initSpecificPicker(picker) {
     if (request) request.abort();
     const controller = new AbortController();
     request = controller;
-    if (reset) { nextPage = 1; results.textContent = 'Loading images…'; }
+    if (reset) { nextPage = 1; results.textContent = `Loading ${kind}…`; }
     more.hidden = true;
     const url = new URL(picker.dataset.url, location.href);
-    url.search = new URLSearchParams({folder: category.value, aspect: aspect.value, q: search.value, page: nextPage});
+    url.search = new URLSearchParams({folder: category.value, aspect: video ? 'any' : aspect.value, q: search.value, page: nextPage});
     picker.setAttribute('aria-busy', 'true');
     try {
       const response = await fetch(url, {signal: controller.signal});
-      if (!response.ok) throw new Error('Cannot load images. Check the media connection and retry.');
+      if (!response.ok) throw new Error(`Cannot load ${kind}. Check the media connection and retry.`);
       const data = await response.json();
       if (controller.signal.aborted) return;
       if (reset) results.replaceChildren();
       data.files.forEach(name => {
         const label = document.createElement('label');
         label.className = 'thumb-label';
-        const image = document.createElement('img');
-        const path = [category.value, name].filter(Boolean).map(encodeURIComponent).join('/');
-        image.src = '/thumb/' + path + '?size=80';
-        image.loading = 'lazy';
-        image.decoding = 'async';
-        image.width = 80; image.height = 80; image.alt = name;
+        const image = video ? null : document.createElement('img');
+        if (image) {
+          const path = [category.value, name].filter(Boolean).map(encodeURIComponent).join('/');
+          image.src = '/thumb/' + path + '?size=80';
+          image.loading = 'lazy';
+          image.decoding = 'async';
+          image.width = 80; image.height = 80; image.alt = name;
+        }
         const radio = document.createElement('input');
-        radio.type = 'radio'; radio.name = display + '_picker'; radio.value = name;
+        radio.type = 'radio'; radio.name = display + (video ? '_video_picker' : '_picker'); radio.value = name;
         radio.checked = value.value === name;
         radio.addEventListener('change', () => {
           value.value = name;
-          document.getElementById(display + '_specific_selected').textContent = name;
+          document.getElementById(display + (video ? '_video_selected' : '_specific_selected')).textContent = name;
+          if (video) document.getElementById(display + '_video_folder').value = category.value;
         });
-        label.append(image, document.createElement('br'), radio, document.createTextNode(' ' + name));
+        if (image) label.append(image, document.createElement('br'));
+        label.append(radio, document.createTextNode(' ' + name));
         results.append(label);
       });
-      if (!data.total) results.textContent = 'No matching images in this folder.';
+      if (!data.total) results.textContent = `No matching ${kind} in this folder.`;
       nextPage = data.page + 1;
       more.textContent = 'Load more';
       more.hidden = data.page >= data.pages;
@@ -243,16 +243,31 @@ function initSpecificPicker(picker) {
     if (event.key === 'Enter') { event.preventDefault(); load(); }
   });
   const check = () => {
-    if (section.style.display === 'none') {
+    if (section.style.display === 'none' || (video && (section.hidden || form.elements.namedItem(display + '_mode').value !== 'videos'))) {
       if (request) { request.abort(); request = null; }
     } else if (!loaded && !request) load();
   };
-  [category, aspect].forEach(control => control.addEventListener('change', () => {
+  (video ? [category] : [category, aspect]).forEach(control => control.addEventListener('change', () => {
+    if (video) {
+      value.value = '';
+      document.getElementById(display + '_video_selected').textContent = 'None';
+    }
     loaded = false;
     if (request) { request.abort(); request = null; }
     check();
   }));
   [form.elements.namedItem(display + '_mode'), form.elements.namedItem(display + '_fallback_mode')]
     .filter(Boolean).forEach(control => control.addEventListener('change', check));
+  if (video) {
+    selection.addEventListener('change', () => {
+      section.hidden = selection.value !== 'specific';
+      if (section.hidden) {
+        value.value = '';
+        results.querySelectorAll('input[type=radio]').forEach(input => { input.checked = false; });
+        document.getElementById(display + '_video_selected').textContent = 'None';
+      }
+      check();
+    });
+  }
   check();
 }

@@ -8,7 +8,8 @@ from echoview.utils import is_ignored_folder, media_aspect_label
 PAGE_SIZE = 48
 SORTS = ('name_asc', 'name_desc', 'date_asc', 'date_desc')
 IMAGE_EXT = ('.jpg', '.jpeg', '.png', '.gif')
-MEDIA_EXT = IMAGE_EXT + ('.mp4', '.mov', '.avi', '.mkv', '.webm')
+VIDEO_EXT = ('.mp4', '.mov', '.avi', '.mkv', '.webm')
+MEDIA_EXT = IMAGE_EXT + VIDEO_EXT
 
 
 def parse_folder_order(value):
@@ -47,7 +48,7 @@ def resolve_file(root, folder, filename):
     return candidate
 
 
-def folder_page(root, folder='', sort='name_asc', page=1, query='', images=False, aspect='any'):
+def folder_page(root, folder='', sort='name_asc', page=1, query='', images=False, aspect='any', videos=False):
     path = resolve_folder(root, folder)
     sort = sort if sort in SORTS else 'name_asc'
     query = query[:256]
@@ -55,7 +56,7 @@ def folder_page(root, folder='', sort='name_asc', page=1, query='', images=False
     files = []
     with os.scandir(path) as entries:
         for entry in entries:
-            if not entry.name.lower().endswith(IMAGE_EXT if images else MEDIA_EXT):
+            if not entry.name.lower().endswith(VIDEO_EXT if videos else IMAGE_EXT if images else MEDIA_EXT):
                 continue
             if needle not in entry.name.casefold() or not entry.is_file(follow_symlinks=False):
                 continue

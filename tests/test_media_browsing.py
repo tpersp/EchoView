@@ -63,7 +63,7 @@ def test_video_preview_does_not_preload_and_names_are_url_encoded(media_client):
 @pytest.mark.parametrize('folder', ['..', '../outside', '/tmp', '_ignored', 'a/b', 'a\\b'])
 def test_folder_endpoints_reject_invalid_paths(media_client, folder):
     client, root = media_client
-    for endpoint in ('/media/folder', '/media/images'):
+    for endpoint in ('/media/folder', '/media/images', '/media/videos'):
         assert client.get(endpoint, query_string={'folder': folder}).status_code == 400
 
 
@@ -99,3 +99,15 @@ def test_date_sort_and_invalid_page_are_bounded(media_client):
     assert result['files'] == ['2.jpg', '1.jpg', '0.jpg']
     assert result['page'] == 1
     assert client.get('/media/images?folder=Photos&page=invalid').status_code == 200
+
+
+def test_video_picker_filters_before_pagination_without_opening_media(media_client, monkeypatch):
+    client,root=media_client
+    for index in range(51):(root/'Videos'/f'clip-{index:03}.MP4').touch()
+    for index in range(60):(root/'Videos'/f'image-{index:03}.jpg').touch()
+    monkeypatch.setattr(media,'media_aspect_label',lambda *a:pytest.fail('Video picker must not inspect media headers'))
+    result=client.get('/media/videos?folder=Videos').get_json()
+    assert result['total']==51 and len(result['files'])==48 and result['pages']==2
+    assert client.get('/media/videos?folder=Videos&page=2').get_json()['files']==['clip-048.MP4','clip-049.MP4','clip-050.MP4']
+    assert client.get('/media/videos?folder=Videos&q=CLIP-050').get_json()['files']==['clip-050.MP4']
+    assert client.get('/media/videos?folder=missing').status_code==503

@@ -409,3 +409,14 @@ def test_visual_save_failure_never_signals_viewer(workflow,monkeypatch):
     monkeypatch.setattr(routes,'apply_live_settings',lambda *args:pytest.fail('must not apply unsaved settings'))
     result,status=routes._save_display_settings(updated,cfg)
     assert status==503 and result['saved'] is False and not restarts
+
+
+def test_choose_specific_video_in_new_folder_in_one_apply(workflow):
+    client,cfg,saves,restarts,root=workflow
+    cfg['displays']['HDMI-1'].update(mode='videos',specific_video='old.mp4')
+    response=client.post('/',data={'action':'update_displays','HDMI-1_mode':'videos',
+        'HDMI-1_video_category':'Photos','HDMI-1_specific_video':'new.mp4',
+        'HDMI-1_specific_video_folder':'Photos'})
+    assert response.status_code==302
+    assert cfg['displays']['HDMI-1']['specific_video']=='new.mp4'
+    assert cfg['displays']['HDMI-1']['video_category']=='Photos'
