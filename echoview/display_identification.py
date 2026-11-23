@@ -1,13 +1,18 @@
 """Transient screen labels above native/external players; no playback changes."""
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QApplication, QLabel
 
 
 class IdentificationBadge(QLabel):
     def __init__(self, parent):
-        super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-                         | Qt.WindowDoesNotAcceptFocus | Qt.WindowTransparentForInput)
+        flags = (Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+                 | Qt.WindowDoesNotAcceptFocus | Qt.WindowTransparentForInput)
+        # Qt documents this extra flag for X11 managers that put fullscreen
+        # players above ordinary always-on-top windows.
+        # https://doc.qt.io/qt-6/qt.html#WindowType-enum
+        if QApplication.platformName() == 'xcb':flags |= Qt.X11BypassWindowManagerHint
+        super().__init__(parent, flags)
         self.setWindowTitle('EchoView display identification')
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setTextFormat(Qt.PlainText)
