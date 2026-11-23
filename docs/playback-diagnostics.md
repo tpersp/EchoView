@@ -123,3 +123,23 @@ The [FFmpeg fps filter](https://ffmpeg.org/ffmpeg-filters.html#fps) performs
 frame-rate conversion; this does not use a container frame-rate override.
 `tests/native/check_video_fps.py` checks 12, 23.976, 24, 25, 30 and 60 fps
 synthetic clips with real mpv, including same-player transitions and normal speed.
+
+## Video picker previews
+
+The specific-video picker requests a cached 256×144 poster only for visible
+cards. Hover or keyboard focus requests a four-frame JPEG contact sheet sampled
+at 10%, 35%, 60% and 85% of the clip. Animation runs in the browser only while
+the card is hovered/focused; reduced-motion preferences disable it. There are
+no browser video players, audio streams or continuous frame capture.
+
+Extraction reads selected media without changing it, using one background worker
+and low-priority, single-threaded FFmpeg processes. Each probe/frame extraction
+has a timeout; duplicate requests share work, and the queue and failure history
+are bounded. Leaving the picker or hiding the tab cancels browser requests and
+preview timers; an extraction already running can finish and populate the cache.
+
+Generated JPEGs live in `.video-preview-cache` under the application directory,
+never on the media share. Retention is capped at **20 MiB and 128 JPEGs**; oldest
+entries are removed after generation. Source size/mtime changes invalidate cached
+previews. Interrupted temporary files are cleaned on the next completed job.
+These limits are separate from the bounded diagnostic logs.

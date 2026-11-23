@@ -111,3 +111,24 @@ def test_video_picker_filters_before_pagination_without_opening_media(media_clie
     assert client.get('/media/videos?folder=Videos&page=2').get_json()['files']==['clip-048.MP4','clip-049.MP4','clip-050.MP4']
     assert client.get('/media/videos?folder=Videos&q=CLIP-050').get_json()['files']==['clip-050.MP4']
     assert client.get('/media/videos?folder=missing').status_code==503
+
+
+def test_preview_endpoint_validates_paths_and_serves_cache(media_client,monkeypatch,tmp_path):
+    from echoview.web import video_preview
+    client,root=media_client
+    source=root/'Videos'/'clip.mp4';source.write_bytes(b'unchanged')
+    image=tmp_path/'cached.jpg';image.write_bytes(b'cached thumbnail')
+    calls=[]
+    def ready(source,directory,animated=False):calls.append((source,animated));return image,200
+    monkeypatch.setattr(video_preview,'request_preview',ready)
+    response=client.get('/media/video-preview?folder=Videos&file=clip.mp4&motion=1')
+    assert response.status_code==200 and response.mimetype=='image/jpeg'
+    assert calls==[(str(source),True)] and source.read_bytes()==b'unchanged'
+    for folder,name in [('..','clip.mp4'),('Videos','../clip.mp4'),('Videos','image.jpg')]:
+        assert client.get('/media/video-preview',query_string={'folder':folder,'file':name}).status_code==400
+    assert client.get('/media/video-preview?folder=Videos&file=missing.mp4').status_code==503
+    assert len(calls)==1
+    monkeypatch.setattr(video_preview,'request_preview',lambda *a,**kw:(None,202))
+    response=client.get('/media/video-preview?folder=Videos&file=clip.mp4')
+    assert response.status_code==202 and response.headers['Retry-After']=='1'
+    assert response.headers['Cache-Control']=='no-store'

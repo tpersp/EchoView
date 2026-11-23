@@ -481,6 +481,30 @@ def media_images():
         return jsonify(error='Cannot read images. Check the media connection and retry.'), 503
     return jsonify(result)
 
+@main_bp.get('/media/video-preview')
+def media_video_preview():
+    from pathlib import Path
+    from echoview.web.media import VIDEO_EXT
+    from echoview.web.video_preview import request_preview
+    try:
+        name = request.args.get('file', '')
+        if not name.lower().endswith(VIDEO_EXT):raise ValueError('Not a video')
+        source = resolve_file(IMAGE_DIR, request.args.get('folder', ''), name)
+        path, status = request_preview(source, Path(VIEWER_HOME) / '.video-preview-cache',
+                                       animated=request.args.get('motion') == '1')
+    except ValueError:
+        return jsonify(error='Invalid video.'), 400
+    except OSError:
+        return jsonify(error='Video preview unavailable.'), 503
+    if status == 200:
+        return send_file(path, mimetype='image/jpeg', conditional=True, max_age=300)
+    response = jsonify(pending=status == 202)
+    response.status_code = status
+    response.headers['Retry-After'] = '1'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @main_bp.get('/media/videos')
 def media_videos():
     try:

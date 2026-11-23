@@ -53,9 +53,9 @@
           <div id="{{ pre }}manual_video_selection"><div class="fields-grid">
             <label class="field"><span class="field-label">Video selection</span><select name="{{ pre }}video_selection" id="{{ pre }}video_selection"><option value="all"{% if not dcfg.specific_video %} selected{% endif %}>All videos in folder</option><option value="specific"{% if dcfg.specific_video %} selected{% endif %}>Specific video</option></select></label>
             <label class="field"><span class="field-label">Video folder</span><select name="{{ pre }}video_category"><option value=""{% if not dcfg.video_category %} selected{% endif %}>Root folder</option>{% if dcfg.video_category and dcfg.video_category not in subfolders %}<option value="{{ dcfg.video_category }}" selected>{{ dcfg.video_category }} (unavailable)</option>{% endif %}{% for folder in subfolders %}<option value="{{ folder }}"{% if dcfg.video_category == folder %} selected{% endif %}>{{ folder }}</option>{% endfor %}</select></label>
-            {{ f.select(pre ~ 'shuffle_videos','Video order','yes' if dcfg.shuffle_videos else 'no',[('no','In order'),('yes','Shuffle')]) }}
+            <div id="{{ pre }}video_order"{% if dcfg.specific_video %} hidden{% endif %}>{{ f.select(pre ~ 'shuffle_videos','Video order','yes' if dcfg.shuffle_videos else 'no',[('no','In order'),('yes','Shuffle')]) }}</div>
           </div>
-          <div id="{{ pre }}specific_video_section"{% if not dcfg.specific_video %} hidden{% endif %}>
+          <div id="{{ pre }}specific_video_section" class="specific-video-section"{% if not dcfg.specific_video %} hidden{% endif %}>
             <div class="section-heading"><h3>Choose a video</h3><small>Selected: <span id="{{ pre }}video_selected">{{ dcfg.specific_video or 'None' }}</span></small></div>
             <input type="hidden" name="{{ pre }}specific_video" id="{{ pre }}video_value" value="{{ dcfg.specific_video }}">
             <input type="hidden" name="{{ pre }}specific_video_folder" id="{{ pre }}video_folder" value="{{ dcfg.video_category }}">

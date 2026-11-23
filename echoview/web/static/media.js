@@ -169,6 +169,7 @@ function initSpecificPicker(picker) {
   const form = picker.closest('form');
   const video = picker.dataset.kind === 'video';
   const kind = video ? 'videos' : 'images';
+  const previews = video ? createVideoPreviewManager(picker) : null;
   const section = document.getElementById(display + (video ? '_specific_video_section' : '_specific_image_section'));
   const selection = video ? document.getElementById(display + '_video_selection') : null;
   const category = form.elements.namedItem(display + (video ? '_video_category' : '_image_category'));
@@ -186,7 +187,7 @@ function initSpecificPicker(picker) {
     if (request) request.abort();
     const controller = new AbortController();
     request = controller;
-    if (reset) { nextPage = 1; results.textContent = `Loading ${kind}…`; }
+    if (reset) { previews?.clear(); nextPage = 1; results.textContent = `Loading ${kind}…`; }
     more.hidden = true;
     const url = new URL(picker.dataset.url, location.href);
     url.search = new URLSearchParams({folder: category.value, aspect: video ? 'any' : aspect.value, q: search.value, page: nextPage});
@@ -219,6 +220,7 @@ function initSpecificPicker(picker) {
         if (image) label.append(image, document.createElement('br'));
         label.append(radio, document.createTextNode(' ' + name));
         results.append(label);
+        if (previews) previews.add(label, name, category.value);
       });
       if (!data.total) results.textContent = `No matching ${kind} in this folder.`;
       nextPage = data.page + 1;
@@ -243,15 +245,20 @@ function initSpecificPicker(picker) {
     if (event.key === 'Enter') { event.preventDefault(); load(); }
   });
   const check = () => {
-    if (section.style.display === 'none' || (video && (section.hidden || form.elements.namedItem(display + '_mode').value !== 'videos'))) {
+    if (document.hidden || section.style.display === 'none' || (video && (section.hidden || form.elements.namedItem(display + '_mode').value !== 'videos'))) {
+      previews?.pause();
       if (request) { request.abort(); request = null; }
-    } else if (!loaded && !request) load();
+    } else {
+      previews?.resume();
+      if (!loaded && !request) load();
+    }
   };
   (video ? [category] : [category, aspect]).forEach(control => control.addEventListener('change', () => {
     if (video) {
       value.value = '';
       document.getElementById(display + '_video_selected').textContent = 'None';
     }
+    previews?.clear();
     loaded = false;
     if (request) { request.abort(); request = null; }
     check();
@@ -261,6 +268,7 @@ function initSpecificPicker(picker) {
   if (video) {
     selection.addEventListener('change', () => {
       section.hidden = selection.value !== 'specific';
+      document.getElementById(display + '_video_order').hidden = !section.hidden;
       if (section.hidden) {
         value.value = '';
         results.querySelectorAll('input[type=radio]').forEach(input => { input.checked = false; });
@@ -269,5 +277,105 @@ function initSpecificPicker(picker) {
       check();
     });
   }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) previews?.pause(); else check();
+  });
+  window.addEventListener('pagehide', event => { if (event.persisted) previews?.pause(); else previews?.clear(); });
+  window.addEventListener('pageshow', check);
   check();
+}
+
+// Cached JPEGs, not video elements: one request at a time and motion only on demand.
+function createVideoPreviewManager(picker) {
+  const cards = new Set();
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) cards.forEach(stop); });
+  let jobs = [], busy = false, paused = false;
+  const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+    const card = entry.target.previewCard;
+    card.visible = entry.isIntersecting;
+    if (card.visible && !paused) enqueue(card, false);
+    if (!card.visible) stop(card);
+  }), {rootMargin: '80px'});
+  function stop(card) {
+    card.hover = false;
+    clearInterval(card.timer); clearTimeout(card.delay);
+    card.timer = null;
+    if (card.poster) card.image.src = card.poster; else card.image.removeAttribute('src');
+    card.image.classList.remove('video-sprite');
+    card.image.style.transform = '';
+  }
+  function animate(card) {
+    if (!card.hover || paused || !card.motion || card.timer) return;
+    card.image.src = card.motion;
+    card.image.classList.add('video-sprite');
+    let frame = 0;
+    const tick = () => { card.image.style.transform = `translateX(-${frame * 25}%)`; frame = (frame + 1) % 4; };
+    tick(); card.timer = setInterval(tick, 650);
+  }
+  function enqueue(card, motion) {
+    if (paused || !card.label.isConnected || !card.visible || (motion ? card.motion : card.poster)) return;
+    if (jobs.some(job => job.card === card && job.motion === motion)) return;
+    if (motion) jobs.unshift({card, motion}); else jobs.push({card, motion});
+    drain();
+  }
+  async function drain() {
+    if (busy || paused) return;
+    busy = true;
+    try {
+      while (jobs.length && !paused) {
+        const {card, motion} = jobs.shift();
+        if (!card.label.isConnected || !card.visible || (motion && !card.hover) || (motion ? card.motion : card.poster)) continue;
+        const abort = new AbortController(); card.abort = abort;
+        const url = new URL('/media/video-preview', location.href);
+        url.search = new URLSearchParams({folder: card.folder, file: card.name, motion: motion ? '1' : '0'});
+        try {
+          for (let attempt = 0; attempt < 45; attempt++) {
+            if (paused || !card.label.isConnected || !card.visible || (motion && !card.hover)) break;
+            const response = await fetch(url, {signal: abort.signal});
+            if (response.status === 202) { if (attempt === 44) throw new Error('Preview unavailable'); await new Promise(resolve => setTimeout(resolve, 1000)); continue; }
+            if (!response.ok) throw new Error('Preview unavailable');
+            const blob = await response.blob();
+            if (abort.signal.aborted || !card.label.isConnected) break;
+            const objectURL = URL.createObjectURL(blob);
+            if (motion) { card.motion = objectURL; animate(card); }
+            else { card.poster = objectURL; if (!card.timer) card.image.src = objectURL; card.label.classList.add('has-video-poster'); }
+            break;
+          }
+        } catch (error) {
+          if (error.name !== 'AbortError' && !card.poster) card.placeholder.textContent = 'Preview unavailable';
+        } finally { if (card.abort === abort) card.abort = null; }
+      }
+    } finally { busy = false; }
+  }
+  return {
+    add(label, name, folder) {
+      const frame = document.createElement('span'); frame.className = 'video-preview-frame';
+      const image = document.createElement('img'); image.alt = ''; image.decoding = 'async';
+      const placeholder = document.createElement('span'); placeholder.className = 'video-preview-placeholder'; placeholder.textContent = 'Loading preview…';
+      frame.append(image, placeholder); label.prepend(frame);
+      const card = {label, name, folder, image, placeholder, visible: false};
+      label.previewCard = card; cards.add(card); observer.observe(label);
+      const start = () => {
+        if (reducedMotion.matches) return;
+        card.hover = true;
+        card.delay = setTimeout(() => { if (card.motion) animate(card); else enqueue(card, true); }, 250);
+      };
+      label.addEventListener('mouseenter', start);
+      label.addEventListener('mouseleave', () => stop(card));
+      label.addEventListener('focusin', start);
+      label.addEventListener('focusout', () => stop(card));
+    },
+    pause() { paused = true; jobs = []; cards.forEach(card => { stop(card); card.abort?.abort(); }); },
+    resume() { paused = false; cards.forEach(card => { if (card.visible) enqueue(card, false); }); drain(); },
+    clear() {
+      jobs = [];
+      cards.forEach(card => {
+        observer.unobserve(card.label); stop(card); card.abort?.abort();
+        if (card.poster) URL.revokeObjectURL(card.poster);
+        if (card.motion) URL.revokeObjectURL(card.motion);
+      });
+      cards.clear();
+    }
+  };
 }
