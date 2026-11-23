@@ -477,3 +477,21 @@ def test_scheduled_videos_gather_all_selected_folders():
     window.gather_videos = lambda folder: [folder + '/clip.mp4']
     window.build_local_image_list()
     assert window.image_list == ['A/clip.mp4', 'B/clip.mp4']
+
+
+def test_direct_and_scheduled_video_share_lightweight_scaling(monkeypatch):
+    from datetime import datetime
+    from echoview import scheduling
+    flags=('--scale=bilinear','--cscale=bilinear','--dscale=bilinear')
+    monkeypatch.setattr(viewer,'scaling_flags',lambda:flags)
+    dw=DisplayWindow.__new__(DisplayWindow)
+    dw.disp_name='HDMI-1'
+    direct={'mode':'videos','video_category':'fixture','video_mute':True}
+    scheduled={**direct,'mode':'scheduled','schedule':[{'time':'06:00','media':'videos','folders':['fixture'],'shuffle':False}]}
+    effective,_=scheduling.effective_settings(scheduled,scheduling.normalize_schedule(scheduled['schedule']),datetime(2026,1,1,12))
+    dw.disp_cfg=direct
+    first=dw.build_mpv_command('/tmp/synthetic.mp4')
+    dw.disp_cfg=effective
+    assert dw.build_mpv_command('/tmp/synthetic.mp4')==first
+    assert all(first.count(flag)==1 for flag in flags)
+    assert first[-2:]==['--','/tmp/synthetic.mp4']

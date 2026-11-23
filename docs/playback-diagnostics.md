@@ -98,3 +98,15 @@ read-only IPC protocol. `tests/native/check_playback_diagnostics.py` exercises r
 mpv IPC with generated media, null video/audio output and no NAS access. Existing
 native viewer checks cover GIF/image loading, schedules, Spotify, overlays and
 live settings with the observers enabled.
+
+## Raspberry Pi video scaling
+
+On Raspberry Pi, mpv uses explicit bilinear luma, chroma and downscaling filters.
+This avoids expensive multi-pass resizing on the shared GPU; it can look slightly
+softer than convolution filters when resizing. Direct video, scheduled video and
+mpv streams share this policy. Image/GIF rendering and desktop mpv defaults are
+unchanged. Hardware detection is cached and does not inspect source media.
+
+A live Pi 4 comparison on the same 1440×1080 H.264 clip recorded 61 output drops
+in 10 seconds with the existing filters, versus zero in 15 seconds with bilinear
+filters. This is a short comparison for that clip, not a guarantee for all media.

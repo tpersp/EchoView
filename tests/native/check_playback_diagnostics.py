@@ -8,12 +8,13 @@ import time
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 from echoview.playback_diagnostics import mpv_sample,Diagnostics
 from echoview.log_store import append_log
+from echoview.video_rendering import scaling_flags
 with tempfile.TemporaryDirectory(prefix='ev-diag-') as directory:
     root=Path(directory);video=root/'synthetic.mp4';socket=root/'player.sock';log=root/'viewer.log'
     subprocess.run(['ffmpeg','-nostdin','-loglevel','error','-f','lavfi','-i','color=c=blue:s=64x64:r=10:d=8',
                     '-c:v','mpeg4','-y',str(video)],check=True,timeout=15)
     proc=subprocess.Popen(['mpv','--no-config','--vo=null','--ao=null','--no-audio','--really-quiet',
-                           '--input-ipc-server='+str(socket),'--',str(video)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                           '--input-ipc-server='+str(socket),*scaling_flags(),'--',str(video)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     try:
         deadline=time.monotonic()+5
         while not socket.exists() and time.monotonic()<deadline:time.sleep(.02)
