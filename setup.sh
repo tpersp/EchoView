@@ -738,6 +738,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+TimeoutStartSec=60
 ExecStart=$watchdog_script
 EnvironmentFile=-$watchdog_conf
 User=root
@@ -788,7 +789,8 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo
   echo "== Optional: Network Watchdog (systemd timer) =="
   echo "Primary target is checked first; fallback is checked only if primary fails."
-  echo "Either target responding prevents reboot. Both must fail repeatedly to reboot."
+  echo "Either target responding prevents a network-failure reboot."
+  echo "Configured NAS shares also get bounded recovery checks, with guarded reboot as a last resort."
   read -p "Enable network watchdog timer? (y/n): " setup_watchdog
 
   if [[ "$setup_watchdog" =~ ^[Yy]$ ]]; then

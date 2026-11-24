@@ -13,3 +13,5 @@ __pycache__/
 .update-job.lock
 .update-state*
 .update-backups/
+
+.network-watchdog-recovery/

@@ -13,7 +13,6 @@ CHMOD_BIN="/bin/chmod"
 TOUCH_BIN="/usr/bin/touch"
 DIRNAME_BIN="/usr/bin/dirname"
 SYSTEMCTL_BIN="/bin/systemctl"
-REBOOT_BIN="/sbin/reboot"
 SEQ_BIN="/usr/bin/seq"
 ID_BIN="/usr/bin/id"
 GETENT_BIN="/usr/bin/getent"
@@ -95,11 +94,19 @@ detect_default_target() {
   echo "1.1.1.1"
 }
 
-reboot_system() {
-  log "FAIL watchdog triggering reboot via systemctl"
-  if ! "$SYSTEMCTL_BIN" reboot; then
-    "$REBOOT_BIN"
+run_recovery() {
+  local mode="$1" app_dir python helper
+  app_dir=$(cd -- "$("$DIRNAME_BIN" "${BASH_SOURCE[0]}")" && pwd)
+  if [[ "$app_dir" == */bin ]]; then app_dir=$("$DIRNAME_BIN" "$app_dir"); fi
+  python="${WATCHDOG_PYTHON:-$app_dir/.venv/bin/python3}"
+  helper="$app_dir/echoview/watchdog_recovery.py"
+  if [ ! -f "$helper" ] || ! WATCHDOG_USER="$WATCHDOG_USER" WATCHDOG_LOG="$WATCHDOG_LOG" "$python" "$helper" "$mode" --home "$app_dir" --target "$target" --fallback "$fallback"; then
+    log "ERROR recovery helper unavailable; skipping automatic recovery"
   fi
+}
+
+reboot_system() {
+  run_recovery network
 }
 
 main() {
@@ -151,7 +158,7 @@ main() {
       log "WARN connectivity attempt $i/$attempts failed (primary=$target, fallback=${fallback:-none}, consecutive $consecutive/$threshold)"
 
       if (( consecutive >= threshold )); then
-        log "FAIL consecutive failure threshold reached ($consecutive/$threshold); rebooting"
+        log "FAIL consecutive failure threshold reached ($consecutive/$threshold); starting bounded recovery"
         reboot_system
         exit 0
       fi
@@ -159,12 +166,13 @@ main() {
   done
 
   if (( successes == 0 )); then
-    log "FAIL $attempts ping attempts to $target failed; rebooting"
+    log "FAIL $attempts ping attempts to $target failed; starting bounded recovery"
     reboot_system
     exit 0
   fi
 
   log "OK connectivity available (primary=$target, fallback=${fallback:-none}; $successes/$attempts successful rounds, $failures failed rounds)"
+  run_recovery storage
 }
 
 main "$@"

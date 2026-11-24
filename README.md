@@ -66,8 +66,9 @@ Once the Pi is up and running:
 
 The installer can enable automatic network recovery with a primary target (for
 example, your NAS) and an optional fallback (for example, the gateway). A reply
-from either prevents rebooting; both must fail for the configured consecutive
-rounds before the Pi reboots. Existing single-target setups remain supported.
+from either prevents a network-failure reboot. Configured NAS mounts also receive
+bounded share checks and targeted recovery, with guarded reboot as a last resort.
+Existing single-target network checks remain supported.
 See [watchdog behavior and configuration](docs/network-watchdog.md).
 
 ### Web Interface
