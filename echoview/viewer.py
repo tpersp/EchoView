@@ -10,10 +10,6 @@ import sys
 import os
 import random
 import time
-import html
-import requests
-import spotipy
-import tempfile
 import threading
 import subprocess
 import shutil
@@ -24,24 +20,33 @@ from datetime import datetime
 from collections import OrderedDict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME, SPOTIFY_CACHE_PATH
+from echoview.config import APP_VERSION, IMAGE_DIR, LOG_PATH, VIEWER_HOME
+from echoview import scheduling
+from echoview.clock_overlay import format_clock, separators_visible
+from echoview.viewer_watchdog import ViewerWatchdog
+from echoview.image_preloader import ImagePreloader
+from echoview.playlist import reshuffle_cycle
+from echoview.video_rendering import scaling_flags, frame_rate_flags
 
-DEFAULT_CHROMIUM_FLAGS = (
-    "--no-sandbox --disable-gpu --autoplay-policy=no-user-gesture-required "
-    "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
-STANDALONE_CHROMIUM_USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux armv7l) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
-)
-os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
-os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", DEFAULT_CHROMIUM_FLAGS)
+from echoview.browser import qt_flags, chromium_flags
+from echoview.streaming import (capabilities as stream_capabilities, playback_environment,
+                               stream_flags, RetryPolicy, parse_player_event)
 
-from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl
-from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QImageReader, QTransform, QFont
+
+def controller_origin():
+    value = os.environ.get("ECHOVIEW_CONTROLLER_URL", "http://127.0.0.1:8080").rstrip("/")
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.query or parsed.fragment or parsed.path not in ("", "/"):
+        return "http://127.0.0.1:8080"
+    return value
+
+
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = qt_flags(os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS"))
+
+from PySide6.QtCore import Qt, QTimer, Slot, QSize, QRect, QRectF, QUrl, Signal
+from PySide6.QtGui import QPixmap, QMovie, QPainter, QImage, QTransform, QFont
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QLabel, QProgressBar,
+    QApplication, QMainWindow, QWidget, QLabel,
     QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
 )
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
@@ -49,7 +54,16 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
-from spotipy.oauth2 import SpotifyOAuth
+from echoview.spotify_client import Playback, shared_poller
+from echoview.spotify_progress import ProgressTimeline, format_playback_time
+from echoview.live_settings import VISUAL_KEYS, VisualSettingsReceiver
+from echoview.spotify_state import state_directory
+from echoview.web.spotify_auth import fingerprint
+from echoview.presentation import (safe_bounds, safe_area_settings, overlay_bounds, text_stretch,
+                                   resource_settings, trim_image_cache,
+                                   player_presentation_flags, bounded_int, runtime_display_settings)
+from echoview.displays import (discover_monitors, reconcile_displays, screen_assignments,
+                               apply_output_mode, display_pixel_aspect, fit_dimensions, DISPLAY_ASPECTS)
 from echoview.utils import (
     load_config,
     save_config,
@@ -58,7 +72,8 @@ from echoview.utils import (
     is_ignored_folder,
     media_aspect_label,
 )
-from echoview.embed_utils import deserialize_embed_metadata, EmbedMetadata
+from echoview.embed_utils import (deserialize_embed_metadata, EmbedMetadata, classify_url,
+                                  playback_embed_url, parse_youtube_url_details)
 
 def _get_webengine_settings():
     """Return a settings object across Qt versions."""
@@ -95,47 +110,55 @@ class NegativeTextLabel(QLabel):
 
 
 def detect_monitors():
-    monitors = {}
-    try:
-        output = subprocess.check_output(["xrandr", "--query"]).decode("utf-8")
-        for line in output.splitlines():
-            if " connected " in line:
-                parts = line.split()
-                name = parts[0]
-                for part in parts:
-                    if "x" in part and "+" in part:
-                        res = part.split("+")[0]
-                        try:
-                            w, h = res.split("x")
-                            w = int(w)
-                            h = int(h)
-                        except:
-                            w, h = 0, 0
-                        monitors[name] = {
-                            "screen_name": f"{name}: {w}x{h}",
-                            "width": w,
-                            "height": h
-                        }
-                        break
-    except Exception as e:
-        log_message(f"Monitor detection error (fallback): {e}")
-    return monitors
+    return discover_monitors()
 
 
 class DisplayWindow(QMainWindow):
+    spotify_result = Signal(int, object)
+    stream_event = Signal(int, str)
+    image_ready = Signal(int, object)
+
     def __init__(self, disp_name, disp_cfg, assigned_screen=None):
         super().__init__()
         self.disp_name = disp_name
         self.disp_cfg = disp_cfg
         self.assigned_screen = assigned_screen
         self.running = True
+        from echoview.playback_diagnostics import Diagnostics
+        from echoview.log_store import append_log
+        label=re.sub(r'[^A-Za-z0-9_.:-]','_',disp_name)[:80]
+        self.diagnostics=Diagnostics(lambda message:append_log(LOG_PATH,f'Diagnostic [{label}] {message}'))
+        self.recovery_problem=None
+        self.diag_image_started=0
+        self.diag_gif_due=0
+        self.diag_gif_frames=0
+        self.diag_web_started=0
+        self.mpv_diag_socket=None
+        self.mpv_diag_started=0
+        self.mpv_diag_media=''
+        self.mpv_diag_path=None
+        self.stream_generation = 0
+        self.stream_source = None
+        self.stream_metadata = None
+        self.stream_retry = RetryPolicy()
+        self.stream_live = False
+        self._hls_active = False
+        self._stream_started = False
+        self.stream_event.connect(self._on_stream_event, Qt.QueuedConnection)
 
         # Caching for foreground images
         self.image_cache = OrderedDict()
         self.cache_capacity = 15
+        self.cache_budget = 128 * 1024 * 1024
+        self.cache_generation = 0
+        self.cache_bytes = 0
+        self.prefetch_pending = set()
         self.cache_lock = threading.Lock()
         self.preload_count = 1
-        self.aspect_cache = {}
+        self.image_preloader = ImagePreloader()
+        self.image_loader = ImagePreloader(name='image-loader')
+        self.image_request_id = 0
+        self.image_ready.connect(self._handle_image_ready, Qt.QueuedConnection)
 
         self.last_displayed_path = None
         self.current_pixmap = None
@@ -143,6 +166,7 @@ class DisplayWindow(QMainWindow):
         self.handling_gif_frames = False
         self.last_scaled_foreground_image = None
         self.current_video_proc = None
+        self.stream_process = None
         self.external_browser_proc = None
         self.external_browser_url = None
         self.external_browser_log_thread = None
@@ -162,13 +186,13 @@ class DisplayWindow(QMainWindow):
 
         # Set window geometry
         if self.assigned_screen:
+            self.setScreen(self.assigned_screen)
             self.setGeometry(self.assigned_screen.geometry())
         else:
             screen = self.screen()
             if screen:
                 self.setGeometry(screen.geometry())
         self.setWindowFlag(Qt.FramelessWindowHint)
-        self.showFullScreen()
 
         # Central widget and child labels
         self.main_widget = QWidget(self)
@@ -188,30 +212,43 @@ class DisplayWindow(QMainWindow):
         self.foreground_label.setWordWrap(True)
 
         # Overlay label for clock
-        self.clock_label = NegativeTextLabel(self.main_widget)
+        from echoview.clock_label import ClockLabel
+        self.clock_label = ClockLabel(self.main_widget)
         self.clock_label.setText("00:00:00")
         self.clock_label.setAlignment(Qt.AlignCenter)
         self.clock_label.setStyleSheet("background: transparent;")
 
         # Spotify info (track details) label
         self.spotify_info = None
-        self.spotify_info_label = NegativeTextLabel(self.main_widget)
+        self.spotify_fetch_id = 0
+        self.spotify_fetch_pending = None
+        self.spotify_result.connect(self.handle_spotify_result, Qt.QueuedConnection)
+        from echoview.spotify_card import SpotifyClassicLabel
+        self.spotify_info_label = SpotifyClassicLabel(self.main_widget)
         self.spotify_info_label.setAlignment(Qt.AlignCenter)
         self.spotify_info_label.setStyleSheet("background: transparent;")
         self.spotify_info_label.hide()  # Hidden unless in spotify mode
 
         # New: Spotify progress bar and timer
-        self.spotify_progress_bar = QProgressBar(self.main_widget)
+        from echoview.progress_bar import SmoothProgressBar
+        from echoview.spotify_card import SpotifyCard
+        self.spotify_card = SpotifyCard(self.main_widget)
+        self.spotify_card.hide()
+        self.spotify_timeline = ProgressTimeline()
+        self.spotify_progress_bar = SmoothProgressBar(self.main_widget)
         self.spotify_progress_bar.hide()
         self.spotify_progress_bar.setTextVisible(False)
         self.spotify_progress_bar.setMinimum(0)
-        self.spotify_progress_bar.setMaximum(100)
+        self.spotify_progress_bar.setMaximum(10000)
         self.spotify_progress_timer = QTimer(self)
         self.spotify_progress_timer.timeout.connect(self.update_spotify_progress)
 
         # Web page view for web_page mode
         self.web_view = QWebEngineView(self.main_widget)
         self.web_view.hide()
+        self.web_view.loadFinished.connect(self._on_web_load_finished)
+        self.web_view.loadStarted.connect(lambda:setattr(self,'diag_web_started',time.monotonic()))
+        self.web_view.page().renderProcessTerminated.connect(self._diagnostic_web_exit)
 
         # Dedicated HLS playback components (hidden unless needed)
         self.hls_video_widget = QVideoWidget(self.main_widget)
@@ -221,11 +258,23 @@ class DisplayWindow(QMainWindow):
         self.hls_player = QMediaPlayer(self)
         self.hls_player.setAudioOutput(self.hls_audio_output)
         self.hls_player.setVideoOutput(self.hls_video_widget)
+        self.hls_player.errorOccurred.connect(self._on_hls_error)
+        self.hls_player.mediaStatusChanged.connect(self._on_hls_status)
+        self.hls_player.playbackStateChanged.connect(self._on_hls_state)
+        self.hls_video_widget.videoSink().videoSizeChanged.connect(self.setup_layout)
 
         # Timers
         self.slideshow_timer = QTimer(self)
         self.slideshow_timer.timeout.connect(self.next_image)
+        self.schedule_source = None
+        self.schedule_entries = []
+        self.schedule_key = None
+        self.schedule_retry_due = 0
+        self.schedule_timer = QTimer(self)
+        self.schedule_timer.setInterval(1000)
+        self.schedule_timer.timeout.connect(self._check_schedule)
         self.clock_timer = QTimer(self)
+        self.clock_timer.setTimerType(Qt.PreciseTimer)
         self.clock_timer.timeout.connect(self.update_clock)
         self.clock_timer.start(1000)
 
@@ -238,9 +287,22 @@ class DisplayWindow(QMainWindow):
         self.mpv_poll_timer.setInterval(1000)  # check once per second
         self.mpv_poll_timer.timeout.connect(self._check_mpv_process)
 
+        self.stream_loading_timer = QTimer(self)
+        self.stream_loading_timer.setSingleShot(True)
+        self.stream_loading_timer.setInterval(30000)
+        self.stream_loading_timer.timeout.connect(self._on_stream_timeout)
+
+        # Construct children before showing, so their initial geometry follows
+        # the fullscreen central widget instead of Qt's 100x30 defaults.
+        self.showFullScreen()
+
         # Load config and start
         self.cfg = load_config()
         self.reload_settings()
+        self.diagnostic_timer=QTimer(self)
+        self.diagnostic_timer.setInterval(2000)
+        self.diagnostic_timer.timeout.connect(self._diagnostic_snapshot)
+        self.diagnostic_timer.start()
         self.next_image(force=True)
         QTimer.singleShot(1000, self.setup_layout)
 
@@ -253,92 +315,218 @@ class DisplayWindow(QMainWindow):
             screen = self.screen()
             if screen:
                 self.setGeometry(screen.geometry())
-        rect = self.main_widget.rect()
-        margin = 10
-
+        rect = self.presentation_rect()
+        margin = max(0, min(10, rect.width() // 10, rect.height() // 10))
         self.bg_label.setGeometry(rect)
+        if (self.current_mode == "spotify" and self.spotify_info
+                and self.disp_cfg.get("spotify_background_mode") == "blurred"
+                and self.disp_cfg.get("spotify_layout", "classic") == "classic"):
+            self._apply_spotify_background()
         self.foreground_label.setGeometry(rect)
         if self.web_view.isVisible():
             self.web_view.setGeometry(rect)
             self.web_view.lower()
         if self.hls_video_widget.isVisible():
-            self.hls_video_widget.setGeometry(rect)
+            self._layout_hls_video(rect)
             self.hls_video_widget.lower()
         self.bg_label.lower()
+        self._correct_label_font(self.clock_label, getattr(self, "overlay_config", {}).get("clock_font_size", 26), rect)
+        if hasattr(self, 'spotify_card') and self.spotify_card.isVisible():
+            self.spotify_card.setGeometry(rect)
+            self.spotify_card.raise_()
+            self._position_spotify_progress_bar(rect, margin)
+            if hasattr(self, 'overlay_config') and self.clock_label.isVisible():
+                self._place_overlay_label(self.clock_label, self.overlay_config.get('clock_position', 'bottom-center'), rect)
+            return
 
-        # Position Spotify info label – its text box spans nearly the full screen width.
-        pos = self.disp_cfg.get("spotify_info_position", "bottom-center")
-        self.spotify_info_label.setWordWrap(True)
-        self.spotify_info_label.setFixedWidth(rect.width() - 2 * margin)
-        self.spotify_info_label.adjustSize()
-        if "left" in pos:
-            self.spotify_info_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        elif "right" in pos:
-            self.spotify_info_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        else:
-            self.spotify_info_label.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
-        if "top" in pos:
-            y = margin
-        elif "bottom" in pos:
-            y = rect.height() - self.spotify_info_label.height() - margin
-        else:
-            y = (rect.height() - self.spotify_info_label.height()) // 2
-        self.spotify_info_label.move(margin, y)
-        self.spotify_info_label.raise_()
-
+        self._correct_label_font(self.spotify_info_label, self.disp_cfg.get("spotify_font_size", 18), rect)
+        info_rect = QRect(rect)
+        if self.current_mode == 'spotify' and self.spotify_info:
+            # Keep the panel on the artwork without taking space away from it.
+            width,height = (self.current_pixmap.width(),self.current_pixmap.height()) if self.current_pixmap else (1,1)
+            rotation=QTransform().rotate(self.disp_cfg.get('rotate',0)).mapRect(QRect(0,0,width,height))
+            art_w,art_h=self.calc_fill_size(rotation.width(),rotation.height(),rect.width(),rect.height())
+            info_rect=QRect(rect.x()+(rect.width()-art_w)//2,rect.y()+(rect.height()-art_h)//2,art_w,art_h)
+        if self.spotify_progress_bar.isVisible() and rect.height() > 40:
+            reserved_height = (bounded_int(self.disp_cfg.get("spotify_font_size", 18), 18, 10, 32) + 13 if self.disp_cfg.get("spotify_show_time", False) else 15)
+            progress_position = self.disp_cfg.get("spotify_progress_position", "bottom-center")
+            if progress_position in ("above_info", "top-center"):
+                info_rect.adjust(0, reserved_height, 0, 0)
+            else:
+                info_rect.adjust(0, 0, 0, -reserved_height)
+        self._place_overlay_label(self.spotify_info_label, self.disp_cfg.get("spotify_info_position", "bottom-center"), info_rect, full_width=True)
         self._position_spotify_progress_bar(rect, margin)
-
         if hasattr(self, "overlay_config") and self.clock_label.isVisible():
-            pos = self.overlay_config.get("clock_position", "bottom-center")
-            self._place_overlay_label(self.clock_label, pos, rect, 0)
+            self._place_overlay_label(self.clock_label, self.overlay_config.get("clock_position", "bottom-center"), rect)
+
+    def presentation_rect(self):
+        rect = self.main_widget.rect()
+        x, y, width, height = safe_bounds(rect.width(), rect.height(), self.disp_cfg.get("safe_area", {}))
+        return QRect(x, y, width, height)
+
+    def _correct_label_font(self, label, requested, rect):
+        font = QFont(label.font())
+        font.setPixelSize(bounded_int(requested, 18, 8, max(8, min(512, rect.height() // 4))))
+        font.setStretch(text_stretch(self.physical_pixel_aspect()))
+        label.setFont(font)
+        if label is self.clock_label:
+            natural = label.fontMetrics().horizontalAdvance(label.text())
+            available = max(1, rect.width() - 20)
+            if natural > available:
+                font.setPixelSize(max(8, int(font.pixelSize() * available / natural)))
+                label.setFont(font)
+
+    def _layout_hls_video(self, rect):
+        size = self.hls_video_widget.videoSink().videoSize()
+        if size.width() <= 0 or size.height() <= 0:
+            self.hls_video_widget.setAspectRatioMode(Qt.KeepAspectRatio)
+            self.hls_video_widget.setGeometry(rect)
+            return
+        width, height = self.calc_fill_size(size.width(), size.height(), rect.width(), rect.height())
+        self.hls_video_widget.setAspectRatioMode(Qt.IgnoreAspectRatio)
+        self.hls_video_widget.setGeometry(rect.x() + (rect.width() - width) // 2,
+                                          rect.y() + (rect.height() - height) // 2,
+                                          width, height)
 
     def _position_spotify_progress_bar(self, rect, margin) -> None:
         if not self.spotify_progress_bar.isVisible():
             return
         ppos = self.disp_cfg.get("spotify_progress_position", "bottom-center")
-        pb_height = 10
-        x = self.spotify_info_label.x()
-        y = self.spotify_info_label.y() + self.spotify_info_label.height() + 5
-        width = self.spotify_info_label.width()
+        if getattr(self, 'spotify_card', None) and self.spotify_card.isVisible():
+            ppos = 'bottom-center'
+            margin = max(margin, min(40, min(rect.width(), rect.height()) // 15))
+        show_time = self.disp_cfg.get('spotify_show_time', False)
+        size = bounded_int(self.disp_cfg.get('spotify_font_size', 18), 18, 10, 32)
+        font = self.spotify_progress_bar.font()
+        font.setPixelSize(size)
+        font.setStretch(text_stretch(self.physical_pixel_aspect()))
+        self.spotify_progress_bar.setFont(font)
+        height = min(size + 8 if show_time else 10, max(1, rect.height() - 2 * margin))
+        x = rect.x() + margin
+        width = max(1, rect.width() - 2 * margin)
         if ppos == "above_info":
-            y = self.spotify_info_label.y() - pb_height - 5
+            y = self.spotify_info_label.y() - height - 5
         elif ppos == "below_info":
             y = self.spotify_info_label.y() + self.spotify_info_label.height() + 5
         elif ppos == "top-center":
-            x, y = margin, margin
-            width = rect.width() - 2 * margin
-        elif ppos == "bottom-center":
-            x = margin
-            y = rect.height() - pb_height - margin
-            width = rect.width() - 2 * margin
-        self.spotify_progress_bar.setGeometry(x, y, width, pb_height)
+            y = rect.y() + margin
+        else:
+            y = rect.y() + rect.height() - height - margin
+        y = max(rect.y() + margin, min(rect.y() + rect.height() - height - margin, y))
+        self.spotify_progress_bar.setGeometry(x, y, width, height)
         self.spotify_progress_bar.raise_()
 
+    def recovery_state(self):
+        problem=getattr(self,'recovery_problem',None)
+        if self.current_mode=='spotify':
+            spotify=getattr(self,'spotify_status',None)
+            problem={'authorization_required':'spotify_auth','offline':'spotify_offline','access_denied':'spotify_denied',
+                     'rate_limited':'spotify_limited','quota_exceeded':'spotify_limited'}.get(spotify,problem)
+        if self.diag_image_started and self.image_request_id==getattr(self,'diag_image_request',None) and time.monotonic()-self.diag_image_started>10:
+            problem=problem or 'media_slow'
+        if self.current_video_proc is not None:
+            if problem=='video_failed' and self.diagnostics.video_ready==self.current_video_proc.pid:
+                self.recovery_problem=problem=None
+        if self.current_video_proc is not None or self._hls_active:
+            problem=problem or self.diagnostics.video_issue
+        if self.external_browser_proc is not None and self.external_browser_proc.poll() is not None:
+            problem='browser_failed'
+        media=self.current_mode in ('random_image','specific_image','mixed','videos')
+        media=media or (self.current_mode=='spotify' and self.spotify_info is None and self.disp_cfg.get('fallback_mode','random_image')!='none')
+        return dict(name=self.disp_name,mode=self.disp_cfg.get('mode',self.current_mode),problem=problem,uses_media=media,
+                    playlist_items=len(self.fallback_image_list if self.current_mode=='spotify' and self.spotify_info is None else self.image_list))
+
+    def _diagnostic(self, category, detail):
+        diagnostics=getattr(self,'diagnostics',None)
+        if diagnostics is not None:diagnostics.event(category,detail)
+
+    def _mpv_diagnostic_command(self, cmd):
+        if getattr(self,'diagnostics',None) is None:return cmd
+        try:
+            import hashlib
+            from echoview.playback_diagnostics import media_identity
+            self.mpv_diag_media=media_identity(cmd[-1])
+            directory=state_directory(VIEWER_HOME)
+            directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+            identity=hashlib.sha256(self.disp_name.encode()).hexdigest()[:12]
+            path=directory/f'mpv-{identity}.sock'
+            path.unlink(missing_ok=True)
+            self.mpv_diag_path=path
+            self.mpv_diag_socket=str(path)
+            self.mpv_diag_started=time.monotonic()
+            return cmd[:-2]+['--input-ipc-server='+str(path)]+cmd[-2:]
+        except OSError:
+            self._diagnostic('video-telemetry-unavailable','could not prepare private IPC socket')
+            return cmd
+
+    def _diagnostic_gif_frame(self, frame):
+        movie=self.current_movie
+        if movie:
+            # Respect intentionally long GIF frame delays; do not decode again.
+            self.diag_gif_frames=min(2,self.diag_gif_frames+1)
+            self.diag_gif_due=time.monotonic()+max(0,movie.nextFrameDelay())/1000
+
+    def _diagnostic_web_exit(self, status, code):
+        if (self.running and self.current_mode=='web_page' and self.web_view.isVisible()
+                and getattr(status,'value',status)!=0):
+            self._diagnostic('web-renderer-exited',f'exit_code={code}')
+
+    @Slot()
+    def _diagnostic_gif_error(self):
+        movie=self.current_movie
+        # Some Qt GIF readers signal at a loop boundary and immediately resume.
+        # A zero-argument native slot also avoids enum-conversion issues in Qt.
+        QTimer.singleShot(0,lambda:self._diagnostic('gif-decode-error','GIF decoder stopped after an error')
+                          if self.current_movie is movie and movie and movie.state()==QMovie.NotRunning else None)
+
+    def _diagnostic_snapshot(self):
+        if not self.running:return
+        movie=self.current_movie
+        gif_due=self.diag_gif_due if movie and movie.state()==QMovie.Running and self.diag_gif_frames>=2 else 0
+        proc=self.current_video_proc
+        if gif_due and time.monotonic()-gif_due>2:
+            self._diagnostic('gif-frame-delayed',f'live frame deadline overdue by {time.monotonic()-gif_due:.1f}s')
+        browser=self.external_browser_proc
+        if browser is not None and browser.poll() is not None:
+            self._diagnostic('chromium-exited',f'exit_code={browser.returncode}')
+        if self.diag_web_started and self.web_view.isVisible() and time.monotonic()-self.diag_web_started>30:
+            self._diagnostic('web-load-slow','page load pending for over 30s')
+        if self.current_mode=='spotify' and self.spotify_fetch_pending is not None:
+            started=getattr(self,'diag_spotify_started',time.monotonic())
+            if time.monotonic()-started>30:self._diagnostic('spotify-request-slow','local fetch pending for over 30s')
+        image_started=self.diag_image_started if self.image_request_id==getattr(self,'diag_image_request',self.image_request_id) else 0
+        qt_video=None
+        if self._hls_active:
+            qt_video={'time-pos':self.hls_player.position()/1000,
+                      'pause':self.hls_player.playbackState()!=QMediaPlayer.PlaybackState.PlayingState,
+                      'paused-for-cache':self.hls_player.mediaStatus()==QMediaPlayer.MediaStatus.StalledMedia,
+                      'eof-reached':self.hls_player.mediaStatus()==QMediaPlayer.MediaStatus.EndOfMedia}
+        self.diagnostics.update(mode=self.current_mode,image_started=image_started,qt_video=qt_video,
+            socket=self.mpv_diag_socket if proc is not None and proc.poll() is None else None,
+            video_key=getattr(proc,'pid',self.stream_generation),video_started=self.mpv_diag_started,media=self.mpv_diag_media)
+
     def _check_mpv_process(self) -> None:
-        """
-        Poll the mpv process to see if it has exited.  This is used as a
-        fallback mechanism to advance to the next video if mpv does not
-        automatically quit on end-of-file for any reason.  If the process
-        terminates, stop_current_video is invoked with advance=True.  The
-        poll timer is stopped after the process ends to avoid repeated
-        callbacks.
-        """
-        proc = getattr(self, 'current_video_proc', None)
+        proc = self.current_video_proc
         if proc is None:
-            # No process; nothing to monitor
             return
         try:
-            # poll() returns None while the process is running, otherwise the
-            # process exit code (0 or non-zero).  If it has ended, schedule
-            # advancement on the Qt event loop and stop polling.
-            if proc.poll() is not None:
-                self.mpv_poll_timer.stop()
-                # Use singleShot to defer call to next iteration of event loop
-                QTimer.singleShot(0, lambda: self.stop_current_video(advance=True))
-        except Exception:
-            # On error, stop polling to avoid spamming and attempt cleanup
-            self.mpv_poll_timer.stop()
-            QTimer.singleShot(0, lambda: self.stop_current_video(advance=True))
+            code = proc.poll()
+        except OSError:
+            code = -1
+        if code is None:
+            return
+        if code != 0:
+            self.recovery_problem='video_failed'
+            self._diagnostic("video-player-exited",f"exit_code={code}")
+        self.stop_current_video()
+        if self.current_mode == "videos":
+            self.next_image()
+        elif self.current_mode == "web_page" and self.stream_source:
+            self.stream_loading_timer.stop()
+            if code == 0 and (self.stream_metadata.content_type or "").lower() != "live" and not self.stream_live:
+                self._show_stream_status("Playback ended.")
+            else:
+                self._retry_stream()
 
     def play_next_video(self):
         # Stop any currently running video
@@ -362,7 +550,7 @@ class DisplayWindow(QMainWindow):
             self.clear_foreground_label("Video unsupported")
             QTimer.singleShot(2000, self.next_image)
             return
-        cmd = self.build_mpv_command(path)
+        cmd = self._mpv_diagnostic_command(self.build_mpv_command(path))
         try:
             proc = subprocess.Popen(cmd)
             self.current_video_proc = proc
@@ -372,24 +560,22 @@ class DisplayWindow(QMainWindow):
             QTimer.singleShot(2000, self.next_image)
             return
 
-        # Unconditionally advance when mpv exits
-        def wait_thread(p):
-            p.wait()
-            # Always schedule stop_current_video on the main (Qt) thread
-            QTimer.singleShot(0, lambda: self.stop_current_video(advance=True))
-
-        threading.Thread(target=wait_thread, args=(proc,), daemon=True).start()
+        # GUI timer polling avoids callbacks from a dead worker event loop,
+        # and an old process can never stop a newer video.
+        self.mpv_poll_timer.start()
 
         self.index += 1
         if self.index >= len(self.image_list):
             self.index = 0
+            if self.disp_cfg.get('shuffle_videos',False):
+                reshuffle_cycle(self.image_list,path)
 
         # If "video_play_to_end" is false, schedule a timeout to stop playback
         # after a maximum number of seconds.  Otherwise rely on mpv's natural
         # termination and our polling timer to detect end-of-file.
         if not self.disp_cfg.get("video_play_to_end", True):
             max_sec = int(self.disp_cfg.get("video_max_seconds", 120))
-            QTimer.singleShot(max_sec * 1000, lambda: self.stop_current_video(advance=True))
+            QTimer.singleShot(max_sec * 1000, lambda: self.stop_current_video(advance=True) if self.current_video_proc is proc else None)
         else:
             # Start polling mpv's process state.  This is a fallback in case
             # mpv does not emit an EOF exit event; the timer will be stopped
@@ -428,7 +614,20 @@ class DisplayWindow(QMainWindow):
                 screen_index = screens.index(self.assigned_screen)
         except Exception:
             pass
-        cmd.append(f"--fs-screen={screen_index}")
+        assigned = getattr(self, "assigned_screen", None)
+        screen_name = assigned.name() if assigned else ""
+        if screen_name:
+            cmd += [f"--screen-name={screen_name}", f"--fs-screen-name={screen_name}"]
+        else:
+            cmd.append(f"--fs-screen={screen_index}")
+        aspect = self.disp_cfg.get("display_aspect", "auto")
+        if aspect == "auto" and self.disp_name.lower().startswith(("composite", "tv", "vec")):
+            aspect = "4:3"
+        if aspect in DISPLAY_ASPECTS and aspect != "auto":
+            cmd.append(f"--monitoraspect={aspect}")
+        cmd += scaling_flags()
+        cmd += frame_rate_flags()
+        cmd += player_presentation_flags(self.disp_cfg)
         if self.disp_cfg.get("video_mute", True):
             cmd += ["--mute=yes", "--volume=0"]
         else:
@@ -449,14 +648,22 @@ class DisplayWindow(QMainWindow):
         proc = self.current_video_proc
         if proc and proc.poll() is None:
             try:
-                proc.terminate()
+                if getattr(self, "stream_process", None) is proc:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                else:
+                    proc.terminate()
                 proc.wait(timeout=3)
             except Exception:
                 try:
-                    proc.kill()
+                    if getattr(self, "stream_process", None) is proc:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    else:
+                        proc.kill()
                 except Exception:
                     pass
         self.current_video_proc = None
+        self.stream_process = None
+        self.mpv_diag_socket = None
 
         # Stop polling timer if it is running.  Once the process is terminated
         # there is no need to continue polling.
@@ -473,10 +680,13 @@ class DisplayWindow(QMainWindow):
         margin = 10
 
         # Reposition the Spotify progress bar, if visible
+        if self.spotify_progress_bar.isVisible():
+            rect = self.presentation_rect()
         self._position_spotify_progress_bar(rect, margin)
 
     def _stop_hls_playback(self) -> None:
         """Stop and hide the dedicated HLS player."""
+        self._hls_active = False
         try:
             self.hls_player.stop()
         except Exception:
@@ -490,47 +700,165 @@ class DisplayWindow(QMainWindow):
             return
         self.web_view.hide()
         self.hls_video_widget.show()
+        self._hls_active = True
+        self.stream_loading_timer.start()
         self.hls_player.setSource(QUrl(url))
-        self.hls_player.play()
+        self.hls_audio_output.setMuted(self.disp_cfg.get("youtube_mute", True))
+        self.hls_audio_output.setVolume(bounded_int(self.disp_cfg.get("video_volume", 100), 100, 0, 100) / 100)
+        if self.disp_cfg.get("youtube_autoplay", True):
+            self.hls_player.play()
+        else:
+            self.hls_player.pause()
 
     def _play_mpv_stream(self, url: str) -> bool:
-        """
-        Launch mpv to play a remote stream (e.g., YouTube live) and keep a handle
-        so we can terminate playback on reload or shutdown. Returns True when mpv
-        was started successfully.
-        """
         if not url or not shutil.which("mpv"):
             return False
-
-        # Ensure other playback components are stopped/hidden.
         self._stop_hls_playback()
         self.web_view.hide()
-        self.spotify_progress_bar.hide()
-        self.spotify_progress_timer.stop()
-
-        # Stop any existing mpv session before starting a new one.
         self.stop_current_video()
-
         cmd = self.build_mpv_command(url)
+        youtube = parse_youtube_url_details(url)["is_youtube"]
+        height = self.assigned_screen.geometry().height() if self.assigned_screen else None
+        extra = stream_flags(self.disp_cfg, youtube, height, self.stream_metadata.start_seconds)
+        cmd = self._mpv_diagnostic_command(cmd[:-2] + extra + cmd[-2:])
         try:
-            proc = subprocess.Popen(cmd)
-        except Exception as exc:
-            log_message(f"mpv playback error for stream {url}: {exc}")
+            proc = subprocess.Popen(cmd, env=playback_environment(), stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL, text=True, bufsize=1, start_new_session=True)
+        except OSError:
+            log_message("Stream player could not start.")
             return False
-
         self.current_video_proc = proc
+        self.stream_process = proc
+        generation = self.stream_generation
+        emit = self.stream_event.emit
+        self._stream_started = False
+        self.stream_loading_timer.start()
+        self.mpv_poll_timer.start()
 
-        def wait_thread(p):
-            p.wait()
-            QTimer.singleShot(0, lambda: self.stop_current_video(advance=False))
-
-        threading.Thread(target=wait_thread, args=(proc,), daemon=True).start()
-        try:
-            self.mpv_poll_timer.stop()
-            self.mpv_poll_timer.start()
-        except Exception:
-            pass
+        def read_events():
+            try:
+                for line in proc.stdout:
+                    event = parse_player_event(line)
+                    if event:
+                        emit(generation, event)
+            except (OSError, RuntimeError, ValueError):
+                pass
+            finally:
+                proc.stdout.close()
+        threading.Thread(target=read_events, daemon=True).start()
         return True
+
+    def _cancel_stream(self):
+        self.stream_generation += 1
+        self.stream_source = None
+        self.stream_metadata = None
+        self._hls_active = False
+        self.stream_loading_timer.stop()
+
+    def _start_web_playback(self, raw_url, metadata):
+        metadata = metadata or classify_url(raw_url)
+        self.stream_source = metadata.original_url or raw_url
+        self.stream_metadata = metadata
+        self.stream_retry = RetryPolicy()
+        self.stream_live = metadata.content_type == "live"
+        if self._maybe_launch_external_browser(self.stream_source, metadata):
+            return
+        self._start_stream_attempt(self.stream_generation)
+
+    def _start_stream_attempt(self, generation):
+        if not self.running or self.current_mode != "web_page" or generation != self.stream_generation:
+            return
+        metadata = self.stream_metadata
+        if metadata.embed_type in ("youtube", "hls", "mpv"):
+            self._show_stream_status("Loading stream…")
+        if metadata.embed_type == "youtube":
+            if stream_capabilities(probe_runtime=False)["ready"] and self._play_mpv_stream(self.stream_source):
+                return
+            log_message("YouTube extraction unavailable; using the embedded player. Check streaming capabilities.")
+            self._fallback_stream()
+        elif metadata.embed_type == "hls":
+            self._play_hls_stream(self.stream_source)
+        elif metadata.embed_type == "mpv":
+            if not self._play_mpv_stream(self.stream_source):
+                self._fallback_stream()
+        else:
+            self._load_web_url(self.stream_source)
+
+    def _show_stream_status(self, message):
+        self._stop_hls_playback()
+        self.web_view.hide()
+        self.bg_label.clear()
+        self.clear_foreground_label(message)
+
+    def _retry_stream(self):
+        if not self.running or self.current_mode != "web_page" or not self.stream_source:
+            return
+        self._diagnostic("stream-retry","stream interrupted; using existing retry policy")
+        self.stream_loading_timer.stop()
+        self._stop_hls_playback()
+        self.stop_current_video()
+        delay = self.stream_retry.next_delay()
+        self.stream_generation += 1  # Invalidates old process events and retries.
+        if delay is None:
+            self._fallback_stream()
+            return
+        generation = self.stream_generation
+        self._show_stream_status("Stream interrupted; retrying…")
+        QTimer.singleShot(delay, lambda: self._start_stream_attempt(generation))
+
+    def _fallback_stream(self):
+        self.stream_loading_timer.stop()
+        if self.stream_metadata and self.stream_metadata.embed_type == "youtube":
+            self._load_youtube_embed(self.stream_metadata)
+        else:
+            self._show_stream_status("Stream unavailable. Check the connection or refresh the source URL.")
+
+    @Slot(int, str)
+    def _on_stream_event(self, generation, event):
+        if self.running and self.current_mode == "web_page" and generation == self.stream_generation and event in ("playing", "playing_live"):
+            self.stream_live = self.stream_live or event == "playing_live"
+            self._stream_started = True
+            self.recovery_problem=None
+            self.stream_retry.mark_started()
+            self.stream_loading_timer.stop()
+
+    def _on_stream_timeout(self):
+        self._retry_stream()
+
+    def _on_hls_error(self, *args):
+        if self._hls_active:
+            self._diagnostic("qt-video-error","Qt video playback error")
+            self._retry_stream()
+
+    def _on_hls_status(self, status):
+        if not self._hls_active:
+            return
+        if status == QMediaPlayer.MediaStatus.StalledMedia:
+            self._diagnostic('qt-video-buffering','Qt video stalled while buffering')
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self.stream_loading_timer.stop()
+            if self.hls_player.duration() <= 0:
+                self._retry_stream()
+            else:
+                self._show_stream_status("Playback ended.")
+        elif status in (QMediaPlayer.MediaStatus.StalledMedia, QMediaPlayer.MediaStatus.LoadingMedia, QMediaPlayer.MediaStatus.BufferingMedia):
+            if not self.stream_loading_timer.isActive():
+                self.stream_loading_timer.start()
+        elif status in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia):
+            self.stream_loading_timer.stop()
+
+    def _on_hls_state(self, state):
+        if self._hls_active and state == QMediaPlayer.PlaybackState.PlayingState:
+            self.recovery_problem=None
+            self.stream_retry.mark_started()
+            self.stream_loading_timer.stop()
+
+    def _on_web_load_finished(self, ok):
+        self.diag_web_started=0
+        if ok:self.recovery_problem=None
+        if not ok and self.running and getattr(self, "current_mode", None) == "web_page" and not self.external_browser_proc:
+            self._diagnostic("web-load-failed","page did not finish loading")
+            self._show_stream_status("Page failed to load. Check the URL or select the external browser.")
 
     def _stop_external_browser(self) -> None:
         proc = self.external_browser_proc
@@ -548,17 +876,6 @@ class DisplayWindow(QMainWindow):
         self.external_browser_proc = None
         self.external_browser_url = None
         self.external_browser_log_thread = None
-
-    def _should_use_external_browser(self, urls) -> bool:
-        for url in urls:
-            if not url:
-                continue
-            lowered = url.lower()
-            if any(token in lowered for token in ("youtube.com", "youtu.be", "youtube-nocookie.com")):
-                return True
-            if "/stream/group/" in lowered or "/stream/live" in lowered:
-                return True
-        return False
 
     def _find_chromium_binary(self) -> Optional[str]:
         env_bin = os.environ.get("CHROMIUM_BIN")
@@ -601,10 +918,9 @@ class DisplayWindow(QMainWindow):
         geom = screen.geometry()
         if geom.width() <= 0 or geom.height() <= 0:
             return []
-        return [
-            f"--window-position={geom.x()},{geom.y()}",
-            f"--window-size={geom.width()},{geom.height()}",
-        ]
+        x, y, width, height = safe_bounds(geom.width(), geom.height(), self.disp_cfg.get("safe_area", {}))
+        return [f"--window-position={geom.x() + x},{geom.y() + y}",
+                f"--window-size={width},{height}"]
 
     def _build_chromium_command(self, url: str) -> Optional[List[str]]:
         binary = self._find_chromium_binary()
@@ -619,10 +935,9 @@ class DisplayWindow(QMainWindow):
             "--no-first-run",
             "--no-default-browser-check",
             "--autoplay-policy=no-user-gesture-required",
-            "--disable-gpu",
-            f"--user-agent={STANDALONE_CHROMIUM_USER_AGENT}",
             f"--user-data-dir={user_dir}",
         ]
+        cmd += chromium_flags()
         cmd += self._chromium_window_flags()
         cmd.append(url)
         return cmd
@@ -640,8 +955,6 @@ class DisplayWindow(QMainWindow):
             log_message("Chromium not found; falling back to Qt WebEngine.")
             return False
         env = os.environ.copy()
-        env["DISPLAY"] = ":0"
-        env["XAUTHORITY"] = "/home/pi/.Xauthority"
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -651,7 +964,7 @@ class DisplayWindow(QMainWindow):
                 stderr=subprocess.PIPE,
             )
         except Exception as exc:
-            log_message(f"Chromium launch error for {url}: {exc}")
+            log_message("Chromium failed to launch.")
             self._show_external_browser_error("Chromium failed to start.")
             return False
         self.external_browser_proc = proc
@@ -662,31 +975,16 @@ class DisplayWindow(QMainWindow):
         return True
 
     def _maybe_launch_external_browser(self, raw_url: str, metadata: Optional[EmbedMetadata]) -> bool:
-        if self.disp_cfg.get("web_use_external_browser", False):
-            target_url = raw_url or (metadata.original_url if metadata else "") or (metadata.canonical_url if metadata else "")
-            if not target_url:
-                self._stop_external_browser()
-                return False
-            self._stop_hls_playback()
-            self.web_view.hide()
-            self.stop_current_video()
-            return self._ensure_external_browser(target_url)
-
-        candidates = [raw_url]
-        if metadata:
-            candidates.append(metadata.original_url or "")
-            candidates.append(metadata.canonical_url or "")
-        if not self._should_use_external_browser(candidates):
+        if not self.disp_cfg.get("web_use_external_browser", False):
             self._stop_external_browser()
             return False
-        target_url = raw_url or (metadata.original_url if metadata else "") or (metadata.canonical_url if metadata else "")
-        if not target_url:
-            self._stop_external_browser()
+        target = raw_url or (metadata.original_url if metadata else "")
+        if not target:
             return False
         self._stop_hls_playback()
         self.web_view.hide()
         self.stop_current_video()
-        return self._ensure_external_browser(target_url)
+        return self._ensure_external_browser(target)
 
     def _start_external_browser_log_thread(self, proc: subprocess.Popen) -> None:
         if not proc.stderr:
@@ -696,8 +994,9 @@ class DisplayWindow(QMainWindow):
             try:
                 for raw in iter(proc.stderr.readline, b""):
                     line = raw.decode(errors="replace").strip()
+                    # Drain diagnostics without logging URLs/cookies from pages.
                     if line:
-                        log_message(f"Chromium[{self.disp_name}] stderr: {line}")
+                        pass
             except Exception:
                 pass
 
@@ -711,11 +1010,12 @@ class DisplayWindow(QMainWindow):
             return
         if proc.poll() is None:
             return
-        log_message(f"Chromium exited early for {url} (code={proc.returncode}).")
+        log_message(f"Chromium exited early (code={proc.returncode}).")
         self._stop_external_browser()
         self._show_external_browser_error("Chromium failed to start.")
 
     def _show_external_browser_error(self, message: str) -> None:
+        self.recovery_problem='browser_failed'
         self._stop_hls_playback()
         self.web_view.hide()
         self.stop_current_video()
@@ -725,6 +1025,7 @@ class DisplayWindow(QMainWindow):
         screen = self.assigned_screen if self.assigned_screen else self.screen()
         height = screen.size().height() if screen else 800
         font.setPointSize(max(24, int(height / 20)))
+        font.setStretch(text_stretch(self.physical_pixel_aspect()))
         self.foreground_label.setFont(font)
         self.foreground_label.setStyleSheet("color: white; background-color: black;")
         self.foreground_label.raise_()
@@ -732,6 +1033,7 @@ class DisplayWindow(QMainWindow):
     def _load_web_url(self, url: str) -> None:
         """Load a URL (or placeholder) into the embedded browser."""
         self._stop_hls_playback()
+        self.foreground_label.clear()
         if url:
             self.web_view.load(QUrl(url))
         else:
@@ -746,197 +1048,142 @@ class DisplayWindow(QMainWindow):
     def _load_youtube_embed(self, metadata: EmbedMetadata) -> None:
         """Render a YouTube embed using an iframe wrapper with autoplay allowances."""
         self._stop_hls_playback()
-        embed_url = self._build_youtube_embed_url(metadata) or metadata.canonical_url or metadata.original_url
-        if not embed_url:
-            self._load_web_url(self.disp_cfg.get("web_url", ""))
+        if not (metadata.video_id or metadata.channel_id or metadata.playlist_id):
+            self._show_stream_status("Stream unavailable. Select the external browser for this channel URL.")
             return
-        escaped_url = html.escape(embed_url, quote=True)
-        html_doc = f"""<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>
-      html, body {{
-        margin: 0;
-        padding: 0;
-        background-color: #000;
-        height: 100%;
-        overflow: hidden;
-      }}
-      iframe {{
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        border: 0;
-      }}
-    </style>
-  </head>
-  <body>
-    <iframe
-      src="{escaped_url}"
-      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-      allowfullscreen>
-    </iframe>
-  </body>
-</html>"""
-        self.web_view.setHtml(html_doc, QUrl("https://echoview.local/youtube"))
+        # Serve a real HTTP document so the iframe has an actual Referer origin.
+        url = controller_origin() + "/player/youtube?" + urlencode({"display": self.disp_name})
+        self.foreground_label.clear()
+        self.web_view.load(QUrl(url))
         self.web_view.show()
+        self.setup_layout()
 
     def _build_youtube_embed_url(self, metadata: EmbedMetadata) -> str:
         """
         Apply user preferences (autoplay, mute, captions, quality) to the
         canonical YouTube embed URL derived during detection.
         """
-        base_url = metadata.canonical_url or metadata.original_url or self.disp_cfg.get("web_url", "")
-        if not base_url:
-            return ""
-        parsed = urlparse(base_url)
-        query = parse_qs(parsed.query, keep_blank_values=True)
-        is_live = (metadata.content_type or "").lower() == "live"
+        return playback_embed_url(metadata, self.disp_cfg, controller_origin())
 
-        if is_live:
-            for param in ("list", "index", "start", "t", "feature"):
-                query.pop(param, None)
-
-        autoplay = "1" if self.disp_cfg.get("youtube_autoplay", True) else "0"
-        mute = "1" if self.disp_cfg.get("youtube_mute", True) else "0"
-        query["autoplay"] = [autoplay]
-        query["mute"] = [mute]
-        if self.disp_cfg.get("youtube_captions", False):
-            query["cc_load_policy"] = ["1"]
-        else:
-            query.pop("cc_load_policy", None)
-
-        quality = self.disp_cfg.get("youtube_quality", "default")
-        if quality and quality != "default":
-            query["vq"] = [quality]
-        else:
-            query.pop("vq", None)
-
-        # Reasonable defaults to keep the player inline without recommended videos.
-        query.setdefault("playsinline", ["1"])
-        query.setdefault("rel", ["0"])
-        query.setdefault("modestbranding", ["1"])
-        query.setdefault("enablejsapi", ["1"])
-        if not is_live:
-            query.setdefault("feature", ["oembed"])
-        else:
-            query.pop("feature", None)
-        query["origin"] = ["https://echoview.local"]
-
-        new_query = urlencode(query, doseq=True)
-        return urlunparse(parsed._replace(query=new_query))
-
-    def _place_overlay_label(self, lbl, position: str, container_rect, y_offset: int = 0) -> int:
-        """Position an overlay label like the clock within *container_rect*.
-
-        The label is sized to its content but constrained so it never exceeds
-        the container's width minus margins.  Horizontal alignment is determined
-        by the position string ("left", "center", "right") and the label is
-        moved accordingly.  Returns the y coordinate below the label so callers
-        can stack subsequent overlay elements if needed.
-        """
-        margin = 10
+    def _place_overlay_label(self, lbl, position: str, container_rect, y_offset: int = 0, full_width: bool = False) -> int:
+        margin = min(10, container_rect.width() // 10, container_rect.height() // 10)
+        is_clock = lbl is self.clock_label
+        lbl.setWordWrap(not is_clock)
         max_width = container_rect.width() - 2 * margin
-        lbl.setWordWrap(True)
-        content_width = lbl.sizeHint().width()
-        label_width = min(content_width, max_width)
-        lbl.setFixedWidth(label_width)
-
-        align = Qt.AlignHCenter | Qt.AlignVCenter
-        if "left" in position:
-            align = Qt.AlignLeft | Qt.AlignVCenter
-        elif "right" in position:
-            align = Qt.AlignRight | Qt.AlignVCenter
-        lbl.setAlignment(align)
-
-        h = lbl.sizeHint().height()
-        lbl.setFixedHeight(h)
-
-        if "top" in position:
-            y2 = margin + y_offset
-        elif "bottom" in position:
-            y2 = container_rect.height() - h - margin - y_offset
-        else:
-            y2 = (container_rect.height() - h) // 2
-
-        if "left" in position:
-            x2 = margin
-        elif "right" in position:
-            x2 = container_rect.width() - label_width - margin
-        else:
-            x2 = (container_rect.width() - label_width) // 2
-
-        lbl.move(int(x2), int(y2))
+        # A previously fixed QLabel sizeHint can retain the old clock width.
+        # Measure the current text directly, keeping AM/PM on the same line.
+        natural_width = lbl.fontMetrics().horizontalAdvance(lbl.text()) + 2 if is_clock else lbl.sizeHint().width()
+        width = max(1, max_width if full_width else min(natural_width, max_width))
+        lbl.setFixedWidth(width)
+        height = lbl.fontMetrics().height() + 2 if is_clock else lbl.heightForWidth(width)
+        if height < 0:
+            height = lbl.sizeHint().height()
+        bounds = overlay_bounds((container_rect.x(), container_rect.y(), container_rect.width(), container_rect.height()),
+                                (width, height), position, margin, y_offset)
+        align = Qt.AlignLeft if "left" in position else (Qt.AlignRight if "right" in position else Qt.AlignHCenter)
+        lbl.setAlignment(align | Qt.AlignVCenter)
+        lbl.setFixedSize(bounds[2], bounds[3])
+        lbl.move(bounds[0], bounds[1])
         lbl.raise_()
-        return y2 + h + margin
+        return bounds[1] + bounds[3] + margin
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.setup_layout()
+        # A fullscreen resize can occur before child widgets are constructed.
+        if hasattr(self, "main_widget") and hasattr(self, "spotify_info_label"):
+            self.setup_layout()
+            if getattr(self, "current_mode", None) == "calibration":
+                self.show_calibration_pattern()
+            elif getattr(self, "current_pixmap", None):
+                self.updateForegroundScaled()
+            elif getattr(self, "current_movie", None) and not self.handling_gif_frames:
+                iw, ih = self.gif_source_size
+                width, height = self.calc_fill_size(iw, ih, self.foreground_label.width(), self.foreground_label.height())
+                self.current_movie.setScaledSize(QSize(width, height))
+
+    def identify_display(self):
+        from echoview.display_identification import IdentificationBadge
+        if not getattr(self, 'identification_badge', None):
+            self.identification_badge = IdentificationBadge(self)
+        self.identification_badge.show_for(self.assigned_screen or self.screen(), self.disp_name)
 
     def closeEvent(self, event):
+        if getattr(self, 'identification_badge', None):self.identification_badge.dismiss()
         self.running = False
+        self.diagnostic_timer.stop()
+        self.diagnostics.close()
+        self.image_request_id += 1
+        self.image_loader.close()
+        self.image_preloader.close()
+        self._cancel_stream()
+        self.spotify_fetch_id += 1
+        self.slideshow_timer.stop()
+        self.schedule_timer.stop()
+        self.spotify_progress_timer.stop()
         self._stop_external_browser()
         self._stop_hls_playback()
         self.stop_current_video()
+        if self.mpv_diag_path is not None:
+            try:self.mpv_diag_path.unlink(missing_ok=True)
+            except OSError:pass
         super().closeEvent(event)
 
     @Slot()
-    def reload_settings(self):
+    def reload_settings(self, cfg=None):
+        self.recovery_problem=None
+        self.image_request_id += 1
+        self._spotify_background_key = None
+        self.bg_label.setStyleSheet('background-color: black;')
+        next_cfg = load_config() if cfg is None else cfg
+        self._cancel_stream()
+        self.spotify_fetch_id += 1
+        self.spotify_info = None
+        self.spotify_timeline.clear()
+        self.spotify_card.hide()
+        self.foreground_label.show()
+        self.bg_label.show()
+        self.spotify_art_path = None
+        self.spotify_fallback_due = 0
         self.stop_current_video()
-        self.cfg = load_config()
+        if self.current_movie:
+            self.current_movie.stop()
+            self.foreground_label.setMovie(None)
+            self.current_movie.deleteLater()
+            self.current_movie = None
+            self.handling_gif_frames = False
+        self.cfg = next_cfg
         displays = self.cfg.get("displays", {})
         if self.disp_name in displays:
-            self.disp_cfg = displays[self.disp_name]
+            self.disp_cfg = runtime_display_settings(self.cfg, displays[self.disp_name])
+        self.schedule_source = None
+        self.schedule_entries = []
+        self.schedule_key = None
+        self.schedule_timer.stop()
+        if self.disp_cfg.get('mode') == 'scheduled':
+            self.schedule_source = dict(self.disp_cfg)
+            try:
+                self.schedule_entries = scheduling.normalize_schedule(self.disp_cfg.get('schedule', []))
+            except ValueError:
+                pass
+            self.disp_cfg, self.schedule_key = scheduling.effective_settings(
+                self.schedule_source, self.schedule_entries, datetime.now())
+            self.schedule_retry_due = time.monotonic() + 30
+            self.schedule_timer.start()
 
-        over = self.disp_cfg.get("overlay", self.cfg.get("overlay", {}))
-        if over.get("clock_enabled", False):
-            self.clock_label.show()
-        else:
-            self.clock_label.hide()
-
-        cfsize = over.get("clock_font_size", 24)
-        if over.get("auto_negative_font", False):
-            self.clock_label.useDifference = True
-            self.clock_label.setStyleSheet("background: transparent;")
-            font_clock = QFont(self.clock_label.font())
-            font_clock.setPixelSize(cfsize)
-            self.clock_label.setFont(font_clock)
-        else:
-            self.clock_label.useDifference = False
-            fcolor = over.get("font_color", "#FFFFFF")
-            self.clock_label.setStyleSheet(f"color: {fcolor}; font-size: {cfsize}px; background: transparent;")
-        self.overlay_config = over
+        self._set_overlay(self.disp_cfg.get("overlay", self.cfg.get("overlay", {})))
 
         gui_cfg = self.cfg.get("gui", {})
-        try:
-            self.bg_blur_radius = int(gui_cfg.get("background_blur_radius", 0))
-        except:
-            self.bg_blur_radius = 0
-        try:
-            self.bg_scale_percent = int(gui_cfg.get("background_scale_percent", 100))
-        except:
-            self.bg_scale_percent = 100
-        try:
-            self.fg_scale_percent = int(gui_cfg.get("foreground_scale_percent", 100))
-        except:
-            self.fg_scale_percent = 100
-        try:
-            self.cache_capacity = int(self.cfg.get("cache_capacity", 15))
-        except:
-            self.cache_capacity = 15
-        try:
-            self.preload_count = int(self.cfg.get("preload_count", 1))
-        except:
-            self.preload_count = 1
-        if self.preload_count < 0:
-            self.preload_count = 0
+        self.resource_options = resource_settings(self.disp_cfg.get("resource_profile", "standard"), self.cfg)
+        self.bg_blur_radius = self.resource_options["blur_radius"]
+        self.bg_scale_percent = bounded_int(gui_cfg.get("background_scale_percent", 100), 100, 1, 100)
+        self.fg_scale_percent = bounded_int(gui_cfg.get("foreground_scale_percent", 100), 100, 1, 100)
+        self.cache_capacity = self.resource_options["cache_capacity"]
+        self.cache_budget = self.resource_options["cache_budget"]
+        self.preload_count = self.resource_options["preload_count"]
         with self.cache_lock:
-            while len(self.image_cache) > self.cache_capacity:
-                self.image_cache.popitem(last=False)
+            self.cache_generation += 1
+            self.image_cache.clear()
+            self.cache_bytes = 0
 
         self.current_mode = self.disp_cfg.get("mode", "random_image")
         if self.current_mode != "web_page":
@@ -963,70 +1210,24 @@ class DisplayWindow(QMainWindow):
         self.spotify_progress_timer.stop()
 
         if self.current_mode == "spotify":
-            if self.disp_cfg.get("spotify_show_progress", False):
+            if self.disp_cfg.get("spotify_show_progress", False) or self.disp_cfg.get("spotify_show_time", False):
                 self.spotify_progress_bar.show()
-                upd_int = self.disp_cfg.get("spotify_progress_update_interval", 200)
+                frame_ms = (50 if self.disp_cfg.get("spotify_smooth_progress", True) else
+                            bounded_int(self.disp_cfg.get("spotify_progress_update_interval", 200), 200, 50, 5000))
+                upd_int = max(self.resource_options["progress_interval"], frame_ms)
+                if not self.disp_cfg.get('spotify_show_progress', False):
+                    upd_int = max(1000, upd_int)
                 self.spotify_progress_timer.setInterval(upd_int)
                 self.spotify_progress_timer.start()
-                theme = self.disp_cfg.get("spotify_progress_theme", "dark")
-                if theme == "light":
-                    self.spotify_progress_bar.setStyleSheet(
-                        "QProgressBar { border: 1px solid #ccc; border-radius: 5px; background-color: #f0f0f0; }"
-                        "QProgressBar::chunk { background-color: #a0a0a0; }"
-                    )
-                elif theme == "dark":
-                    self.spotify_progress_bar.setStyleSheet(
-                        "QProgressBar { border: 1px solid #444; border-radius: 5px; background-color: #333; }"
-                        "QProgressBar::chunk { background-color: #888; }"
-                    )
-                elif theme == "spotify":
-                    self.spotify_progress_bar.setStyleSheet(
-                        "QProgressBar { border: 1px solid #1DB954; border-radius: 5px; background-color: #121212; }"
-                        "QProgressBar::chunk { background-color: #1DB954; }"
-                    )
-                elif theme == "coffee":
-                    self.spotify_progress_bar.setStyleSheet(
-                        "QProgressBar { border: 1px solid #8B4513; border-radius: 5px; background-color: #423828; }"
-                        "QProgressBar::chunk { background-color: #8B4513; }"
-                    )
-                else:
-                    self.spotify_progress_bar.setStyleSheet("")
-            self.slideshow_timer.setInterval(interval_s * 1000)
+                self.spotify_progress_bar.setTheme(self.disp_cfg.get("spotify_progress_theme", "dark"))
+            self.slideshow_timer.setInterval(5000)
             self.slideshow_timer.start()
         elif self.current_mode == "web_page":
             metadata = deserialize_embed_metadata(self.disp_cfg.get("embed_metadata"))
             raw_url = (self.disp_cfg.get("web_url", "") or "").strip()
-            if self._maybe_launch_external_browser(raw_url, metadata):
-                pass
-            elif metadata and metadata.embed_type == "hls":
-                hls_url = metadata.canonical_url or metadata.original_url or raw_url
-                self._play_hls_stream(hls_url)
-            elif metadata and metadata.embed_type == "mpv":
-                stream_url = metadata.canonical_url or metadata.original_url or raw_url
-                if not self._play_mpv_stream(stream_url):
-                    fallback = metadata.canonical_url or metadata.original_url or raw_url
-                    self._load_web_url(fallback)
-            elif metadata and metadata.embed_type == "youtube":
-                if (metadata.content_type or "").lower() == "live":
-                    stream_url = metadata.canonical_url or metadata.original_url
-                    if stream_url and self._play_mpv_stream(stream_url):
-                        pass
-                    else:
-                        self._load_youtube_embed(metadata)
-                else:
-                    # Try mpv first to avoid Qt WebEngine codec issues; fall back to embed.
-                    yt_url = metadata.original_url or metadata.canonical_url or raw_url
-                    if not self._play_mpv_stream(yt_url):
-                        self._load_youtube_embed(metadata)
-            else:
-                target_url = ""
-                if metadata and metadata.canonical_url:
-                    target_url = metadata.canonical_url
-                if not target_url:
-                    target_url = raw_url
-                self._load_web_url(target_url)
+            self._start_web_playback(raw_url, metadata)
             self.slideshow_timer.stop()
-        elif self.current_mode == "videos":
+        elif self.current_mode in ("videos", "calibration"):
             self.slideshow_timer.stop()
         else:
             self.slideshow_timer.setInterval(interval_s * 1000)
@@ -1034,6 +1235,21 @@ class DisplayWindow(QMainWindow):
 
         # Ensure overlay elements are repositioned based on updated settings
         self.setup_layout()
+
+    def _check_schedule(self):
+        if not self.running or self.schedule_source is None:
+            return
+        _, key = scheduling.effective_settings(self.schedule_source, self.schedule_entries, datetime.now())
+        if key != self.schedule_key:
+            # Reuse the existing window and saved config, never restart systemd.
+            self.reload_settings(self.cfg)
+            self.next_image(force=True)
+        elif key is not None and not self.image_list and time.monotonic() >= self.schedule_retry_due:
+            self.schedule_retry_due = time.monotonic() + 30
+            self.build_local_image_list()
+            if self.image_list:
+                self.index = 0 if self.current_mode == 'videos' else -1
+                self.next_image(force=True)
 
     def build_local_image_list(self):
         mode = self.current_mode
@@ -1075,7 +1291,18 @@ class DisplayWindow(QMainWindow):
             if is_ignored_folder(cat):
                 self.image_list = []
                 return
-            vids = self.gather_videos(cat)
+            specific = self.disp_cfg.get("specific_video", "")
+            if '_scheduled_folders' in self.disp_cfg:
+                vids = []
+                for folder in self.disp_cfg['_scheduled_folders']:
+                    vids.extend(self.gather_videos(folder))
+            elif specific:
+                path = os.path.join(IMAGE_DIR, cat, specific)
+                vids = ([path] if os.path.basename(specific) == specific
+                        and specific.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".webm"))
+                        and os.path.isfile(path) else [])
+            else:
+                vids = self.gather_videos(cat)
             if self.disp_cfg.get("shuffle_videos", False):
                 random.shuffle(vids)
             self.image_list = self._filter_by_aspect(vids)
@@ -1087,7 +1314,11 @@ class DisplayWindow(QMainWindow):
         if not os.path.isdir(base):
             return []
         results = []
-        for fname in os.listdir(base):
+        try:
+            names = os.listdir(base)
+        except OSError:
+            return []
+        for fname in names:
             lf = fname.lower()
             if lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
                 results.append(os.path.join(base, fname))
@@ -1101,7 +1332,11 @@ class DisplayWindow(QMainWindow):
         if not os.path.isdir(base):
             return []
         results = []
-        for fname in os.listdir(base):
+        try:
+            names = os.listdir(base)
+        except OSError:
+            return []
+        for fname in names:
             lf = fname.lower()
             if lf.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
                 results.append(os.path.join(base, fname))
@@ -1115,52 +1350,60 @@ class DisplayWindow(QMainWindow):
             return paths
         filtered = []
         for p in paths:
-            label = self.aspect_cache.get(p)
-            if label is None:
-                label = media_aspect_label(p)
-                self.aspect_cache[p] = label
+            label = media_aspect_label(p)
             if label == target:
                 filtered.append(p)
         return filtered
 
     def load_and_cache_image(self, fullpath):
-        ext = os.path.splitext(fullpath)[1].lower()
-        if ext == ".gif":
-            tmp_reader = QImageReader(fullpath)
-            tmp_reader.setAutoDetectImageFormat(True)
-            first_frame = tmp_reader.read()
-            return {"type": "gif", "path": fullpath, "first_frame": first_frame}
-        else:
-            pixmap = QPixmap(fullpath)
-            return {"type": "static", "pixmap": pixmap}
+        # Background decoding uses Pillow; Qt's image plugins stay on the GUI
+        # thread to avoid a codec-factory/GIL lock inversion with QMovie.
+        from echoview.image_data import read_image_data
+        return read_image_data(fullpath, self.resource_options)
 
     def get_cached_image(self, fullpath):
         with self.cache_lock:
+            generation = self.cache_generation
             if fullpath in self.image_cache:
                 self.image_cache.move_to_end(fullpath)
                 return self.image_cache[fullpath]
         data = self.load_and_cache_image(fullpath)
         with self.cache_lock:
-            self.image_cache[fullpath] = data
-            if len(self.image_cache) > self.cache_capacity:
-                self.image_cache.popitem(last=False)
+            if generation == self.cache_generation and data["bytes"]:
+                self.image_cache[fullpath] = data
+                self.cache_bytes = trim_image_cache(self.image_cache, self.cache_capacity, self.cache_budget)
         return data
 
-    def prefetch_next_image(self):
-        if not self.image_list or self.preload_count <= 0:
+    def prefetch_next_image(self, paths=None, index=None):
+        paths = self.image_list if paths is None else paths
+        index = self.index if index is None else index
+        if not self.running or not paths or self.preload_count <= 0:
             return
-        total = len(self.image_list)
+        total = len(paths)
         for offset in range(1, self.preload_count + 1):
-            next_idx = (self.index + offset) % total
-            next_path = self.image_list[next_idx]
+            next_path = paths[(index + offset) % total]
+            with self.cache_lock:
+                if (next_path in self.image_cache or next_path in self.prefetch_pending
+                        or len(self.prefetch_pending) >= self.preload_count):
+                    continue
+                self.prefetch_pending.add(next_path)
+                generation = self.cache_generation
 
-            def worker(path=next_path):
+            def worker(path=next_path, expected_generation=generation):
                 try:
+                    with self.cache_lock:
+                        if not self.running or expected_generation != self.cache_generation:
+                            return
                     self.get_cached_image(path)
                 except Exception:
                     pass
+                finally:
+                    with self.cache_lock:
+                        self.prefetch_pending.discard(path)
 
-            threading.Thread(target=worker, daemon=True).start()
+            if not self.image_preloader.submit(worker):
+                with self.cache_lock:
+                    self.prefetch_pending.discard(next_path)
 
     def make_background(self, pixmap):
         """Generate a blurred/scaled background from the given pixmap."""
@@ -1169,8 +1412,14 @@ class DisplayWindow(QMainWindow):
     def next_image(self, force=False):
         if not self.running:
             return
+        if self.current_mode == 'schedule_empty':
+            self.clear_foreground_label('No valid playback schedule')
+            return
 
         if self.current_mode == "web_page":
+            return
+        if self.current_mode == "calibration":
+            self.show_calibration_pattern()
             return
 
         if self.current_mode == "videos":
@@ -1178,85 +1427,12 @@ class DisplayWindow(QMainWindow):
             return
 
         if self.current_mode == "spotify":
-            path = self.fetch_spotify_album_art()
-            if path:
-                self.show_foreground_image(path, is_spotify=True)
-                self.spotify_info_label.show()
-                if self.disp_cfg.get("spotify_show_progress", False):
-                    self.spotify_progress_bar.show()
-                    upd_int = self.disp_cfg.get("spotify_progress_update_interval", 200)
-                    self.spotify_progress_timer.setInterval(upd_int)
-                    if not self.spotify_progress_timer.isActive():
-                        self.spotify_progress_timer.start()
-                info_parts = []
-                if self.disp_cfg.get("spotify_show_song", True) and self.spotify_info and self.spotify_info.get("song"):
-                    info_parts.append(self.spotify_info["song"])
-                if self.disp_cfg.get("spotify_show_artist", True) and self.spotify_info and self.spotify_info.get("artist"):
-                    info_parts.append(self.spotify_info["artist"])
-                if self.disp_cfg.get("spotify_show_album", True) and self.spotify_info and self.spotify_info.get("album"):
-                    info_parts.append(self.spotify_info["album"])
-
-                pos = self.disp_cfg.get("spotify_info_position", "bottom-center")
-                if "left" in pos or "right" in pos:
-                    text = "\n".join(info_parts)
-                else:
-                    text = " | ".join(info_parts)
-                self.spotify_info_label.setText(text)
-                font_size = self.disp_cfg.get("spotify_font_size", 18)
-                if self.disp_cfg.get("spotify_negative_font", True):
-                    self.spotify_info_label.useDifference = True
-                    self.spotify_info_label.setStyleSheet("background: transparent;")
-                    font = QFont(self.spotify_info_label.font())
-                    font.setPixelSize(font_size)
-                    self.spotify_info_label.setFont(font)
-                else:
-                    self.spotify_info_label.useDifference = False
-                    color = self.disp_cfg.get("spotify_font_color", "#FFFFFF")
-                    self.spotify_info_label.setStyleSheet(
-                        f"color: {color}; font-size: {font_size}px; background: transparent;"
-                    )
-                self.spotify_info_label.raise_()
-                # When Spotify is active we want to poll frequently for changes
-                if self.slideshow_timer.interval() != 5000:
-                    self.slideshow_timer.setInterval(5000)
-                self.setup_layout()
-            else:
-                self.spotify_progress_bar.hide()
-                self.spotify_progress_timer.stop()
-                fallback_mode = self.disp_cfg.get("fallback_mode", "random_image")
-                if fallback_mode in ("random_image", "mixed", "specific_image"):
-                    if not self.fallback_image_list:
-                        image_list_backup = self.image_list
-                        mode_backup = self.current_mode
-                        self.current_mode = fallback_mode
-                        self.build_local_image_list()
-                        self.fallback_image_list = self.image_list
-                        self.current_mode = mode_backup
-                        self.image_list = image_list_backup
-                        self.fallback_index = -1
-                    if not self.fallback_image_list:
-                        self.clear_foreground_label("No fallback images found")
-                    else:
-                        self.fallback_index = (self.fallback_index + 1) % len(self.fallback_image_list)
-                        new_path = self.fallback_image_list[self.fallback_index]
-                        self.last_displayed_path = new_path
-                        self.show_foreground_image(new_path)
-                        fb_int = self.disp_cfg.get("image_interval", 60)
-                        self.slideshow_timer.setInterval(fb_int * 1000)
-                    self.spotify_info_label.setText("")
-                    self.spotify_info_label.hide()
-                else:
-                    self.clear_foreground_label("No Spotify track info")
-                    self.spotify_info_label.setText("")
-                    self.spotify_info_label.hide()
+            self.start_spotify_fetch()
             return
 
         if not self.image_list:
             self.clear_foreground_label("No images found")
             return
-
-        if self.last_displayed_path and self.last_displayed_path in self.image_cache:
-            del self.image_cache[self.last_displayed_path]
 
         if force and self.index < 0:
             self.index = 0
@@ -1265,12 +1441,29 @@ class DisplayWindow(QMainWindow):
         new_path = self.image_list[self.index]
         self.last_displayed_path = new_path
 
-        self.show_foreground_image(new_path)
+        self.request_foreground_image(new_path)
+        if self.index==len(self.image_list)-1 and self.disp_cfg.get('shuffle_mode',False):
+            # Prepare the next pass before prefetching, keeping the selected
+            # image/GIF on screen and warming the actual next item.
+            reshuffle_cycle(self.image_list,new_path)
+            self.index=-1
         self.prefetch_next_image()
         if self.overlay_config.get("auto_negative_font", False):
             self.clock_label.update()
 
     def clear_foreground_label(self, message):
+        problems={'No videos found':'media_empty','No images found':'media_empty','No fallback images found':'media_empty',
+                  'Video unsupported':'video_unsupported','mpv playback error':'video_failed','Missing file':'media_failed',
+                  'Image could not be loaded':'media_failed','Image could not be decoded':'media_failed','GIF error':'media_failed',
+                  'No valid playback schedule':'schedule_invalid'}
+        if message in problems:self.recovery_problem=problems[message]
+        elif message.startswith(('Stream interrupted','Stream unavailable','Page failed')):self.recovery_problem='web_failed'
+        if message in ('No videos found','Video unsupported','No valid playback schedule','No images found',
+                       'No fallback images found','Image could not be decoded','GIF error'):
+            self._diagnostic('playback-unavailable',message)
+        self.image_request_id += 1
+        self.current_pixmap = None
+        self.current_drawn_image = None
         self.stop_current_video()
         if self.current_movie:
             try:
@@ -1299,15 +1492,65 @@ class DisplayWindow(QMainWindow):
         else:
             height = 800
         font.setPointSize(max(24, int(height / 20)))
+        font.setStretch(text_stretch(self.physical_pixel_aspect()))
         self.foreground_label.setFont(font)
         self.foreground_label.setStyleSheet("color: white; background-color: transparent;")
         self.spotify_progress_bar.hide()
         self.spotify_progress_timer.stop()
 
-    def show_foreground_image(self, fullpath, is_spotify=False):
-        if not os.path.exists(fullpath):
-            self.clear_foreground_label("Missing file")
+    def request_foreground_image(self, fullpath, is_spotify=False):
+        self.image_request_id += 1
+        self.diag_image_started=time.monotonic()
+        self.diag_image_request=self.image_request_id
+        request_id = self.image_request_id
+        generation = self.cache_generation
+        emit = self.image_ready.emit
+
+        def worker():
+            try:
+                if (not self.running or request_id != self.image_request_id
+                        or generation != self.cache_generation):
+                    return
+                if not os.path.exists(fullpath):
+                    result = (generation, fullpath, is_spotify, None, 'Missing file')
+                else:
+                    if (request_id != self.image_request_id
+                            or generation != self.cache_generation):
+                        return
+                    data = self.get_cached_image(fullpath)
+                    result = (generation, fullpath, is_spotify, data, None)
+            except Exception:
+                result = (generation, fullpath, is_spotify, None, 'Image could not be loaded')
+            try:
+                emit(request_id, result)
+            except RuntimeError:
+                pass  # The window closed while NAS I/O was pending.
+
+        # Current media keeps playing during the check/load. Keep only the
+        # latest queued request if an unavailable NAS spans several transitions.
+        self.image_loader.submit(worker, replace_pending=True)
+
+    @Slot(int, object)
+    def _handle_image_ready(self, request_id, result):
+        generation, path, is_spotify, data, error = result
+        if (not self.running or request_id != self.image_request_id
+                or generation != self.cache_generation):
             return
+        started=getattr(self,'diag_image_started',0)
+        self.diag_image_started=0
+        if started and time.monotonic()-started>=1:
+            self._diagnostic('image-load-slow',f'load/check completed in {time.monotonic()-started:.2f}s')
+        if error:
+            self._diagnostic('image-load-failed',error)
+            self.clear_foreground_label(error)
+        else:
+            self.show_foreground_image(path, is_spotify, data=data)
+
+    def show_foreground_image(self, fullpath, is_spotify=False, data=None):
+        # Production callers prepare data off-thread; the direct form is also
+        # useful for local synthetic/native checks.
+        if data is None:
+            data = self.get_cached_image(fullpath)
 
         if self.current_movie:
             try:
@@ -1321,11 +1564,16 @@ class DisplayWindow(QMainWindow):
             self.current_movie = None
             self.handling_gif_frames = False
 
-        data = self.get_cached_image(fullpath)
+        if data["image"].isNull():
+            self.clear_foreground_label("Image could not be decoded")
+            return
+        self.recovery_problem=None
         if data["type"] == "gif" and not is_spotify:
-            if self.fg_scale_percent == 100:
-                self.current_movie = QMovie(data["path"])
+            self.current_pixmap = None
+            if self.fg_scale_percent == 100 and not self.disp_cfg.get("rotate", 0):
+                self.current_movie = self._movie_from_data(data)
                 ff = data["first_frame"]
+                self.gif_source_size = (ff.width(), ff.height())
                 bw, bh = self.calc_bounding_for_window(ff)
                 if bw > 0 and bh > 0:
                     self.current_movie.setScaledSize(QSize(bw, bh))
@@ -1337,7 +1585,7 @@ class DisplayWindow(QMainWindow):
                     blurred = self.make_background(pm)
                     self.bg_label.setPixmap(blurred if blurred else QPixmap())
             else:
-                self.current_movie = QMovie(data["path"])
+                self.current_movie = self._movie_from_data(data)
                 self.handling_gif_frames = True
                 ff = data["first_frame"]
                 if ff.isNull():
@@ -1350,16 +1598,39 @@ class DisplayWindow(QMainWindow):
                 self.gif_bounds = (bw, bh)
                 self.current_movie.frameChanged.connect(self.on_gif_frame_changed)
                 self.current_movie.start()
+            self.diag_gif_frames=0
+            self._diagnostic_gif_frame(0)
+            self.current_movie.frameChanged.connect(self._diagnostic_gif_frame)
+            self.current_movie.error.connect(self._diagnostic_gif_error)
         else:
             if data["type"] == "static":
-                self.current_pixmap = data["pixmap"]
+                self.current_pixmap = QPixmap.fromImage(data["image"])
             else:
-                self.current_pixmap = QPixmap(fullpath)
+                self.current_pixmap = QPixmap.fromImage(data['image'])
             self.handling_gif_frames = False
             self.updateForegroundScaled()
-            blurred = self.make_background(self.current_pixmap)
-            self.bg_label.setPixmap(blurred if blurred else QPixmap())
+            if is_spotify and self.disp_cfg.get('spotify_background_mode','black') != 'black':
+                self.bg_label.clear()
+                self._apply_spotify_background()
+            else:
+                self.bg_label.setStyleSheet('background-color: black;')
+                blurred = self.make_background(self.current_pixmap)
+                self.bg_label.setPixmap(blurred if blurred else QPixmap())
         self.spotify_info_label.raise_()
+        if is_spotify:
+            self.setup_layout()
+
+    def _movie_from_data(self, data):
+        encoded = data.get('encoded')
+        if encoded is None:
+            return QMovie(data['path'])  # Preserve support for oversized files.
+        from PySide6.QtCore import QBuffer, QIODevice
+        buffer = QBuffer()
+        buffer.setData(encoded)
+        buffer.open(QIODevice.ReadOnly)
+        movie = QMovie(buffer)
+        buffer.setParent(movie)  # Keep the device alive until its movie is deleted.
+        return movie
 
     def on_gif_frame_changed(self, frame_index):
         if not self.current_movie or not self.handling_gif_frames:
@@ -1367,12 +1638,12 @@ class DisplayWindow(QMainWindow):
         frm_img = self.current_movie.currentImage()
         if frm_img.isNull():
             return
-        src_pm = QPixmap.fromImage(frm_img)
-        degraded = self.degrade_foreground(src_pm, self.gif_bounds)
-        rotated = self.apply_rotation_if_any(degraded)
+        src_pm = self.apply_rotation_if_any(QPixmap.fromImage(frm_img))
+        bounds = self.calc_fill_size(src_pm.width(), src_pm.height(), self.foreground_label.width(), self.foreground_label.height())
+        rotated = self.degrade_foreground(src_pm, bounds)
         fw = self.foreground_label.width()
         fh = self.foreground_label.height()
-        bw, bh = self.gif_bounds
+        bw, bh = bounds
         final_img = QImage(fw, fh, QImage.Format_ARGB32)
         final_img.fill(Qt.transparent)
         painter = QPainter(final_img)
@@ -1391,21 +1662,12 @@ class DisplayWindow(QMainWindow):
         fh = self.foreground_label.height()
         if fw < 1 or fh < 1:
             return (fw, fh)
-        iw = first_frame.width()
-        ih = first_frame.height()
+        rotated = self.apply_rotation_if_any(QPixmap.fromImage(first_frame))
+        iw = rotated.width()
+        ih = rotated.height()
         if iw < 1 or ih < 1:
             return (fw, fh)
-        image_aspect = float(iw) / float(ih)
-        screen_aspect = float(fw) / float(fh)
-        if image_aspect > screen_aspect:
-            bounding_w = fw
-            bounding_h = int(bounding_w / image_aspect)
-        else:
-            bounding_h = fh
-            bounding_w = int(bounding_h * image_aspect)
-        if bounding_w < 1: bounding_w = 1
-        if bounding_h < 1: bounding_h = 1
-        return (bounding_w, bounding_h)
+        return self.calc_fill_size(iw, ih, fw, fh)
 
     def updateForegroundScaled(self):
         if not self.current_pixmap:
@@ -1414,13 +1676,13 @@ class DisplayWindow(QMainWindow):
         fh = self.foreground_label.height()
         if fw < 1 or fh < 1:
             return
-        iw = self.current_pixmap.width()
-        ih = self.current_pixmap.height()
+        source = self.apply_rotation_if_any(self.current_pixmap)
+        iw = source.width()
+        ih = source.height()
         if iw < 1 or ih < 1:
             return
         bw, bh = self.calc_fill_size(iw, ih, fw, fh)
-        degraded = self.degrade_foreground(self.current_pixmap, (bw, bh))
-        rotated = self.apply_rotation_if_any(degraded)
+        rotated = self.degrade_foreground(source, (bw, bh))
         self.current_drawn_image = rotated.toImage()
         final_img = QImage(fw, fh, QImage.Format_ARGB32)
         final_img.fill(Qt.transparent)
@@ -1437,26 +1699,24 @@ class DisplayWindow(QMainWindow):
         if self.overlay_config.get("auto_negative_font", False):
             self.clock_label.update()
 
-    def calc_fill_size(self, iw, ih, fw, fh):
-        if iw <= 0 or ih <= 0 or fw <= 0 or fh <= 0:
-            return (fw, fh)
-        image_aspect = float(iw) / float(ih)
-        screen_aspect = float(fw) / float(fh)
-        if image_aspect > screen_aspect:
-            new_w = fw
-            new_h = int(new_w / image_aspect)
+    def physical_pixel_aspect(self):
+        screen = self.assigned_screen
+        if screen:
+            geometry = screen.geometry()
+            width, height = geometry.width(), geometry.height()
         else:
-            new_h = fh
-            new_w = int(new_h * image_aspect)
-        if new_w < 1: new_w = 1
-        if new_h < 1: new_h = 1
-        return (new_w, new_h)
+            width, height = self.width(), self.height()
+        return display_pixel_aspect(self.disp_cfg.get("display_aspect", "auto"),
+                                    width, height, self.disp_name)
+
+    def calc_fill_size(self, iw, ih, fw, fh):
+        return fit_dimensions(iw, ih, fw, fh, self.physical_pixel_aspect())
 
     def degrade_foreground(self, src_pm, bounding):
         bw, bh = bounding
         if bw < 1 or bh < 1:
             return src_pm
-        scaled = src_pm.scaled(bw, bh, Qt.KeepAspectRatio, Qt.FastTransformation)
+        scaled = src_pm.scaled(bw, bh, Qt.IgnoreAspectRatio, Qt.FastTransformation)
         if self.fg_scale_percent >= 100:
             return scaled
         sf = float(self.fg_scale_percent) / 100.0
@@ -1477,13 +1737,13 @@ class DisplayWindow(QMainWindow):
         return pixmap.transformed(transform, Qt.SmoothTransformation)
 
     def make_background_cover(self, pixmap):
-        rect = self.main_widget.rect()
+        rect = self.presentation_rect()
         sw, sh = rect.width(), rect.height()
         pw, ph = pixmap.width(), pixmap.height()
         if sw < 1 or sh < 1 or pw < 1 or ph < 1:
             return None
         screen_ratio = float(sw) / float(sh)
-        img_ratio = float(pw) / float(ph)
+        img_ratio = float(pw) / float(ph) / self.physical_pixel_aspect()
         tmode = Qt.FastTransformation
         if img_ratio > screen_ratio:
             new_h = sh
@@ -1491,7 +1751,7 @@ class DisplayWindow(QMainWindow):
         else:
             new_w = sw
             new_h = int(new_w / img_ratio)
-        scaled = pixmap.scaled(new_w, new_h, Qt.KeepAspectRatio, tmode)
+        scaled = pixmap.scaled(new_w, new_h, Qt.IgnoreAspectRatio, tmode)
         xoff = (scaled.width() - sw) // 2
         yoff = (scaled.height() - sh) // 2
         final_cover = scaled.copy(xoff, yoff, sw, sh)
@@ -1530,109 +1790,355 @@ class DisplayWindow(QMainWindow):
         painter.end()
         return QPixmap.fromImage(result)
 
+    def show_calibration_pattern(self):
+        rect = self.presentation_rect()
+        width = max(1, round(rect.width() * self.physical_pixel_aspect()))
+        height = rect.height()
+        image = QImage(width, height, QImage.Format_ARGB32)
+        image.fill(Qt.black)
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.darkGray)
+        for column in range(1, 10):
+            x = round(width * column / 10)
+            painter.drawLine(x, 0, x, height - 1)
+        for row in range(1, 10):
+            y = round(height * row / 10)
+            painter.drawLine(0, y, width - 1, y)
+        # Nominal 75% RGB bars: useful through a PAL encoder, with a
+        # separate grayscale ramp for monochrome displays and contrast checks.
+        from PySide6.QtGui import QColor
+        colours = ((191, 191, 191), (191, 191, 0), (0, 191, 191),
+                   (0, 191, 0), (191, 0, 191), (191, 0, 0), (0, 0, 191))
+        for row, values in ((0.83, colours),
+                            (0.90, tuple((v, v, v) for v in (255, 219, 182, 146, 109, 73, 36, 0)))):
+            left, right = round(width * 0.10), round(width * 0.90)
+            top, bottom = round(height * row), round(height * (row + 0.04))
+            for index, rgb in enumerate(values):
+                x1 = left + round((right - left) * index / len(values))
+                x2 = left + round((right - left) * (index + 1) / len(values))
+                painter.fillRect(QRect(x1, top, x2 - x1, max(1, bottom - top)), QColor(*rgb))
+        painter.setPen(Qt.white)
+        painter.drawRect(1, 1, max(0, width - 3), max(0, height - 3))
+        for inset in (0.05, 0.10):
+            x, y = round(width * inset), round(height * inset)
+            painter.drawRect(x, y, max(0, width - 2 * x - 1), max(0, height - 2 * y - 1))
+        diameter = max(1, round(min(width, height) * 0.6))
+        painter.setPen(Qt.green)
+        painter.drawEllipse((width - diameter) // 2, (height - diameter) // 2, diameter, diameter)
+        font = QFont()
+        font.setPixelSize(max(8, min(20, height // 28)))
+        painter.setFont(font)
+        painter.setPen(Qt.white)
+        painter.drawText(QRect(0, height // 12, width, height // 8), Qt.AlignHCenter | Qt.AlignVCenter | Qt.TextWordWrap,
+                         "EchoView calibration: border, 5%, 10% / circle should be round")
+        painter.end()
+        if self.current_movie:
+            self.current_movie.stop()
+            self.current_movie = None
+        self.spotify_info_label.hide()
+        self.spotify_progress_bar.hide()
+        self.spotify_progress_timer.stop()
+        self.current_pixmap = QPixmap.fromImage(image)
+        self.bg_label.clear()
+        self.updateForegroundScaled()
+
     def update_clock(self):
-        now_str = datetime.now().strftime("%H:%M:%S")
-        self.clock_label.setText(now_str)
+        settings = getattr(self, 'overlay_config', {})
+        now = datetime.now()
+        self.clock_label.setSeparatorsVisible(separators_visible(now, settings))
+        text = format_clock(now, settings)
+        previous = self.clock_label.text()
+        if text == previous:
+            return
+        self.clock_label.setText(text)
+        # Reposition only the clock when its text width changes (9→10, 12→1,
+        # AM→PM), without touching media layout or playback timers.
+        if self.clock_label.isVisible():
+            metrics = self.clock_label.fontMetrics()
+            if metrics.horizontalAdvance(text) != metrics.horizontalAdvance(previous):
+                rect = self.presentation_rect()
+                self._correct_label_font(self.clock_label, settings.get('clock_font_size', 26), rect)
+                self._place_overlay_label(self.clock_label, settings.get('clock_position', 'bottom-center'), rect)
 
 
-    def fetch_spotify_album_art(self):
-        try:
-            cfg = load_config()
-            sp_cfg = cfg.get("spotify", {})
-            cid = sp_cfg.get("client_id", "")
-            csec = sp_cfg.get("client_secret", "")
-            ruri = sp_cfg.get("redirect_uri", "")
-            scope = sp_cfg.get("scope", "user-read-currently-playing user-read-playback-state")
-            if not (cid and csec and ruri):
-                self.spotify_info = None
-                return None
+    def _apply_spotify_background(self):
+        from echoview.spotify_background import background_style
+        mode = self.disp_cfg.get('spotify_background_mode','black')
+        style = background_style(self.disp_cfg, self.spotify_info.get('art_colors',()) if self.spotify_info else ())
+        key = (mode,style)
+        if mode == 'blurred':
+            from echoview.spotify_background import BlurredArtwork
+            if not hasattr(self,'_spotify_blurred_artwork'):
+                self._spotify_blurred_artwork = BlurredArtwork()
+            background = self._spotify_blurred_artwork.get(self.current_pixmap,self.disp_cfg.get('spotify_background_dim',65),self.bg_label.size())
+            self.bg_label.setStyleSheet('background-color: black;')
+            self.bg_label.setPixmap(background)
+            self._spotify_background_key = key
+            return
+        if hasattr(self,'_spotify_blurred_artwork'):
+            del self._spotify_blurred_artwork
+        previous = getattr(self,'_spotify_background_key',None)
+        if key == previous:
+            return
+        self._spotify_background_key = key
+        if mode == 'black':
+            self.bg_label.setStyleSheet('background-color: black;')
+            if previous is not None and previous[0] != 'black' and self.current_pixmap:
+                background = self.make_background(self.current_pixmap)
+                self.bg_label.setPixmap(background if background else QPixmap())
+        else:
+            self.bg_label.clear()
+            self.bg_label.setStyleSheet('background: '+style+';')
 
-            # Ensure the cache directory exists so spotipy can write the token
-            os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
+    def render_spotify(self, path):
+        if self.spotify_info:
+            card = getattr(self, 'spotify_card', None)
+            if card and self.disp_cfg.get('spotify_layout', 'classic') in ('album_card', 'poster'):
+                self.image_request_id += 1
+                if self.current_movie:
+                    self.current_movie.stop()
+                    self.current_movie = None
+                    self.foreground_label.setMovie(None)
+                    self.handling_gif_frames = False
+                self.foreground_label.hide()
+                self.bg_label.hide()
+                self.spotify_info_label.hide()
+                card.set_track(path, self.spotify_info, self.disp_cfg, self.physical_pixel_aspect())
+                card.show()
+                if self.disp_cfg.get('spotify_show_progress', False) or self.disp_cfg.get('spotify_show_time', False):
+                    self.spotify_progress_bar.show()
+                    self.spotify_progress_bar.setTheme(self.disp_cfg.get('spotify_progress_theme', 'dark'))
+                    frame_ms = (50 if self.disp_cfg.get('spotify_smooth_progress', True) else
+                                bounded_int(self.disp_cfg.get('spotify_progress_update_interval', 200), 200, 50, 5000))
+                    interval = max(self.resource_options['progress_interval'], frame_ms)
+                    if not self.disp_cfg.get('spotify_show_progress', False):
+                        interval = max(1000, interval)
+                    self.spotify_progress_timer.start(interval)
+                    self.update_spotify_progress()
+                self.setup_layout()
+                return
+            if card and card.isVisible():
+                card.hide()
+                self.foreground_label.show()
+                self.bg_label.show()
+                self.spotify_art_path = None
+            if path and path != getattr(self, "spotify_art_path", None):
+                self.request_foreground_image(path, is_spotify=True)
+            elif not path:
+                self.bg_label.clear()
+                self.current_pixmap = None
+                self.clear_foreground_label("Artwork unavailable")
+            self.spotify_art_path = path
+            self._apply_spotify_background()
+            self.spotify_info_label.show()
+            if self.disp_cfg.get("spotify_show_progress", False) or self.disp_cfg.get("spotify_show_time", False):
+                self.spotify_progress_bar.show()
+                frame_ms = (50 if self.disp_cfg.get("spotify_smooth_progress", True) else
+                            bounded_int(self.disp_cfg.get("spotify_progress_update_interval", 200), 200, 50, 5000))
+                upd_int = max(self.resource_options["progress_interval"], frame_ms)
+                if not self.disp_cfg.get('spotify_show_progress', False):
+                    upd_int = max(1000, upd_int)
+                self.spotify_progress_timer.setInterval(upd_int)
+                if not self.spotify_progress_timer.isActive():
+                    self.spotify_progress_timer.start()
+                self.update_spotify_progress()
+            info_parts = []
+            if self.disp_cfg.get("spotify_show_song", True) and self.spotify_info and self.spotify_info.get("song"):
+                info_parts.append(self.spotify_info["song"])
+            if self.disp_cfg.get("spotify_show_artist", True) and self.spotify_info and self.spotify_info.get("artist"):
+                info_parts.append(self.spotify_info["artist"])
+            if self.disp_cfg.get("spotify_show_album", True) and self.spotify_info and self.spotify_info.get("album"):
+                info_parts.append(self.spotify_info["album"])
+            if self.disp_cfg.get('spotify_show_device', False) and self.spotify_info.get('device_name'):
+                info_parts.append('Playing on ' + self.spotify_info['device_name'])
 
-            auth = SpotifyOAuth(
-                client_id=cid,
-                client_secret=csec,
-                redirect_uri=ruri,
-                scope=scope,
-                cache_path=SPOTIFY_CACHE_PATH,
-            )
-            token_info = auth.get_cached_token()
-            if not token_info:
-                self.spotify_info = None
-                return None
-            if auth.is_token_expired(token_info):
-                token_info = auth.refresh_access_token(token_info["refresh_token"])
-            sp = spotipy.Spotify(auth=token_info["access_token"])
-            current = sp.current_playback()
-            if not current or not current.get("item") or not current.get("is_playing", False):
-                self.spotify_info = None
-                return None
-            item = current["item"]
-            track_name = item.get("name", "")
-            artists = ", ".join([a.get("name", "") for a in item.get("artists", [])])
-            album_name = item.get("album", {}).get("name", "")
-            self.spotify_info = {
-                "song": track_name,
-                "artist": artists,
-                "album": album_name
-            }
-            # Capture playback progress info for progress bar updates
-            progress_ms = current.get("progress_ms", 0)
-            duration_ms = item.get("duration_ms", 0)
-            self.spotify_info["progress_ms"] = progress_ms
-            self.spotify_info["duration_ms"] = duration_ms
-            self.spotify_info["fetched_time"] = time.time()
-            album_imgs = item["album"]["images"]
-            if not album_imgs:
-                return None
-            url = album_imgs[0]["url"]
-            resp = requests.get(url, stream=True, timeout=5)
-            if resp.status_code == 200:
-                tmpf = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-                for chunk in resp.iter_content(1024):
-                    tmpf.write(chunk)
-                tmpf.close()
-                return tmpf.name
-        except Exception as e:
-            log_message(f"Spotify error: {e}")
-            self.spotify_info = None
-            return None
-        return None
+            pos = self.disp_cfg.get("spotify_info_position", "bottom-center")
+            if "left" in pos or "right" in pos:
+                text = "\n".join(info_parts)
+            else:
+                text = " | ".join(info_parts)
+            self.spotify_info_label.setText(text)
+            self.spotify_info_label.set_track(self.spotify_info,self.disp_cfg)
+            self.spotify_info_label.setVisible(bool(self.spotify_info_label.rows))
+            font_size = self.disp_cfg.get("spotify_font_size", 18)
+            if self.disp_cfg.get("spotify_negative_font", True):
+                self.spotify_info_label.useDifference = True
+                self.spotify_info_label.setStyleSheet("background: transparent;")
+                font = QFont(self.spotify_info_label.font())
+                font.setPixelSize(font_size)
+                self.spotify_info_label.setFont(font)
+            else:
+                self.spotify_info_label.useDifference = False
+                color = self.disp_cfg.get("spotify_font_color", "#FFFFFF")
+                self.spotify_info_label.setStyleSheet(
+                    f"color: {color}; background: transparent;"
+                )
+            self.spotify_info_label.raise_()
+            self.setup_layout()
+        else:
+            if getattr(self,'_spotify_background_key',None) is not None:
+                self._spotify_background_key = None
+                self.bg_label.setStyleSheet('background-color: black;')
+            card = getattr(self, 'spotify_card', None)
+            if card:
+                card.hide()
+                self.foreground_label.show()
+                self.bg_label.show()
+            if hasattr(self,'_spotify_blurred_artwork'):
+                del self._spotify_blurred_artwork
+            self.spotify_art_path = None
+            self.spotify_info_label.setText("")
+            self.spotify_info_label.hide()
+            self.spotify_progress_bar.hide()
+            self.spotify_progress_timer.stop()
+            if time.monotonic() < getattr(self, "spotify_fallback_due", 0):
+                return
+            fallback_mode = self.disp_cfg.get("fallback_mode", "random_image")
+            if fallback_mode in ("random_image", "mixed", "specific_image"):
+                if not self.fallback_image_list:
+                    image_list_backup = self.image_list
+                    mode_backup = self.current_mode
+                    self.current_mode = fallback_mode
+                    self.build_local_image_list()
+                    self.fallback_image_list = self.image_list
+                    self.current_mode = mode_backup
+                    self.image_list = image_list_backup
+                    self.fallback_index = -1
+                if not self.fallback_image_list:
+                    self.clear_foreground_label("No fallback images found")
+                else:
+                    self.fallback_index = (self.fallback_index + 1) % len(self.fallback_image_list)
+                    new_path = self.fallback_image_list[self.fallback_index]
+                    self.last_displayed_path = new_path
+                    self.request_foreground_image(new_path)
+                    if self.fallback_index==len(self.fallback_image_list)-1 and self.disp_cfg.get('shuffle_mode',False):
+                        reshuffle_cycle(self.fallback_image_list,new_path)
+                        self.fallback_index=-1
+                    self.prefetch_next_image(self.fallback_image_list, self.fallback_index)
+                    self.spotify_fallback_due = time.monotonic() + max(1, int(self.disp_cfg.get("image_interval", 60)))
+                self.spotify_info_label.setText("")
+                self.spotify_info_label.hide()
+            else:
+                self.clear_foreground_label("No Spotify track info")
+                self.spotify_info_label.setText("")
+                self.spotify_info_label.hide()
+        return
+
 
     def update_spotify_progress(self):
-        if not self.spotify_info or "progress_ms" not in self.spotify_info or "duration_ms" not in self.spotify_info or "fetched_time" not in self.spotify_info:
-            self.spotify_progress_bar.setValue(0)
+        if not self.spotify_info:
+            self.spotify_progress_bar.setFraction(0)
+            self.spotify_progress_bar.setPlaybackText('')
             return
-        progress_ms = self.spotify_info["progress_ms"]
-        duration_ms = self.spotify_info["duration_ms"]
-        fetched_time = self.spotify_info["fetched_time"]
-        elapsed = (time.time() - fetched_time) * 1000  # in ms
-        current_progress = progress_ms + elapsed
-        if duration_ms > 0:
-            percent = min(100, (current_progress / duration_ms) * 100)
-        else:
-            percent = 0
-        self.spotify_progress_bar.setValue(int(percent))
+        now = time.monotonic()
+        duration = self.spotify_info.get("duration_ms", 0)
+        position = self.spotify_timeline.position(now)
+        self.spotify_progress_bar.setFraction(position / duration if duration > 0 else 0)
+        self.spotify_progress_bar.setPlaybackText(
+            format_playback_time(position, duration) if self.disp_cfg.get('spotify_show_time', False) else '',
+            self.disp_cfg.get('spotify_show_progress', False))
 
     def start_spotify_fetch(self):
-        """Launch a background thread to fetch album art."""
-        if getattr(self, "spotify_fetch_thread", None) and self.spotify_fetch_thread.is_alive():
+        if self.spotify_fetch_pending is not None:
             return
-        self.spotify_fetch_id = getattr(self, "spotify_fetch_id", 0) + 1
+        self.spotify_fetch_id += 1
         fid = self.spotify_fetch_id
+        self.spotify_fetch_pending = fid
+        self.diag_spotify_started=time.monotonic()
+        emit = self.spotify_result.emit
 
         def worker():
-            result = self.fetch_spotify_album_art()
-            self.handle_spotify_result(fid, result)
+            try:
+                result = shared_poller().fetch()
+            except Exception:
+                result = Playback("offline")
+            try:
+                emit(fid, result)
+            except RuntimeError:
+                pass  # The Qt receiver was destroyed while the request finished.
 
-        self.spotify_fetch_thread = threading.Thread(target=worker, daemon=True)
-        self.spotify_fetch_thread.start()
+        threading.Thread(target=worker, daemon=True).start()
 
-    def handle_spotify_result(self, fid, path):
-        """Placeholder for handling fetched album art result."""
-        if path:
-            log_message(f"Fetched Spotify art {path}")
+    @Slot(int, object)
+    def handle_spotify_result(self, fid, result):
+        if fid == self.spotify_fetch_pending:
+            self.spotify_fetch_pending = None
+        if not self.running or self.current_mode != "spotify" or fid != self.spotify_fetch_id:
+            return
+        if result.status in ('authorization_required','access_denied','quota_exceeded','rate_limited','offline'):
+            self._diagnostic('spotify-unavailable',f'status={result.status}')
+        previous_status = getattr(self, "spotify_status", None)
+        self.spotify_status = result.status
+        if result.status != previous_status:
+            log_message(f"Spotify status: {result.status}")
+        if result.status == "playing":
+            self.recovery_problem=None
+            self.spotify_info = {
+                "song": result.song, "artist": result.artist, "album": result.album,
+                "device_name": result.device_name,
+                "art_colors": result.art_colors,
+                "progress_ms": result.progress_ms, "duration_ms": result.duration_ms,
+                "fetched_time": result.fetched_time,
+            }
+            self.spotify_fallback_due = 0
+        else:
+            self.spotify_info = None
+        if not hasattr(self, "spotify_timeline"):
+            self.spotify_timeline = ProgressTimeline()
+        if result.status == "playing":
+            self.spotify_timeline.sample(
+                result.track_id or (result.song, result.artist, result.album, result.duration_ms),
+                result.progress_ms, result.duration_ms, result.fetched_time, time.monotonic())
+        else:
+            self.spotify_timeline.clear()
+        self.render_spotify(result.art_path if result.status == "playing" else "")
+        if result.next_poll_at > 0:
+            # Re-arm from the shared deadline, including cached results from
+            # another window and Qt timers that fire slightly early.
+            remaining_ms = (result.next_poll_at - time.monotonic()) * 1000
+            self.slideshow_timer.start(max(100, int(remaining_ms) + 1))
+
+    def _set_overlay(self, settings):
+        self.overlay_config = dict(settings)
+        self.clock_label.useDifference = bool(settings.get('auto_negative_font', False))
+        color = settings.get('font_color', '#FFFFFF')
+        self.clock_label.setStyleSheet('background: transparent;' if self.clock_label.useDifference else
+                                      f'color: {color}; background: transparent;')
+        self._correct_label_font(self.clock_label, settings.get('clock_font_size', 24), self.presentation_rect())
+        self.update_clock()
+        self.clock_label.setVisible(bool(settings.get('clock_enabled', False)))
+        interval = 500 if settings.get('clock_blink_separators', False) and settings.get('clock_enabled', False) else 1000
+        if self.clock_timer.interval() != interval:
+            self.clock_timer.setInterval(interval)
+        self.clock_label.update()
+
+    def apply_overlay_settings(self, cfg):
+        display = cfg.get('displays', {}).get(self.disp_name, {})
+        self.cfg = cfg
+        if 'overlay' in display:
+            self.disp_cfg['overlay'] = dict(display['overlay'])
+        else:
+            self.disp_cfg.pop('overlay', None)
+        self._set_overlay(display.get('overlay', cfg.get('overlay', {})))
+        self.setup_layout()
+
+    def apply_spotify_visual_settings(self, settings):
+        # This runs on the Qt thread. Keep the poll, interpolation timeline,
+        # current artwork and fallback playback intact.
+        path = (self.spotify_card.path if self.spotify_card.isVisible() else self.spotify_art_path) or ''
+        for target in (self.disp_cfg, self.cfg.get('displays', {}).get(self.disp_name, {})):
+            for key in VISUAL_KEYS:
+                if key in settings:
+                    target[key] = settings[key]
+                else:
+                    target.pop(key, None)
+        if not (self.disp_cfg.get('spotify_show_progress', False) or self.disp_cfg.get('spotify_show_time', False)):
+            self.spotify_progress_bar.hide()
+            self.spotify_progress_timer.stop()
+        self.spotify_progress_bar.setTheme(self.disp_cfg.get('spotify_progress_theme', 'dark'))
+        if self.spotify_info:
+            self.render_spotify(path)
 
     def pull_displays_from_remote(self, ip):
         pass  # Placeholder if needed
@@ -1642,42 +2148,141 @@ class EchoViewGUI:
         self.cfg = load_config()
         self.app = QApplication(sys.argv)
 
-        fallback_mons = detect_monitors()
-        if fallback_mons:
-            if "displays" not in self.cfg:
-                self.cfg["displays"] = {}
-            if "Display0" in self.cfg["displays"]:
-                del self.cfg["displays"]["Display0"]
-            for mon_name, mon_info in fallback_mons.items():
-                if mon_name not in self.cfg["displays"]:
-                    self.cfg["displays"][mon_name] = {
-                        "mode": "random_image",
-                        "fallback_mode": "random_image",
-                        "image_interval": 60,
-                        "image_category": "",
-                        "specific_image": "",
-                        "shuffle_mode": False,
-                        "mixed_folders": [],
-                        "rotate": 0,
-                        "screen_name": mon_info["screen_name"]
-                    }
-                    log_message(f"Added fallback monitor to config: {mon_info['screen_name']}")
-            save_config(self.cfg)
-
         self.windows = []
-        screens = self.app.screens()
-        i = 0
-        for dname, dcfg in self.cfg.get("displays", {}).items():
-            assigned_screen = screens[i] if i < len(screens) else None
-            w = DisplayWindow(dname, dcfg, assigned_screen)
-            if "monitor_model" in dcfg and dcfg["monitor_model"]:
-                t = f"{dname} ({dcfg['monitor_model']})"
+        self.window_by_connector = {}
+        self.mode_attempts = set()
+        self.app.screenAdded.connect(self._screen_added)
+        self.app.screenRemoved.connect(self._screen_removed)
+        for screen in self.app.screens():
+            screen.geometryChanged.connect(self._schedule_sync)
+        self._sync_screens()
+        self.visual_updates = VisualSettingsReceiver(state_directory(VIEWER_HOME), self._apply_live_visual_request)
+        self.identification_updates = VisualSettingsReceiver(state_directory(VIEWER_HOME), self._apply_live_visual_request, channel='identify')
+        self.visual_timer = QTimer()
+        self.visual_timer.timeout.connect(self.visual_updates.poll)
+        self.visual_timer.timeout.connect(self.identification_updates.poll)
+        self.visual_timer.start(250)
+        from echoview.overlay_preview import FrameReceiver
+        self.preview_encoder = ImagePreloader(name='preview-encoder')
+        self.preview_requests = FrameReceiver(state_directory(VIEWER_HOME) / 'overlay-preview',
+                                              self._capture_preview, self.preview_encoder.submit)
+        self.visual_timer.timeout.connect(self.preview_requests.poll)
+        self.app.aboutToQuit.connect(self.preview_encoder.close)
+        # Start after initial screen setup so startup is not reported as a stall.
+        from echoview.log_store import append_log
+        self.watchdog = ViewerWatchdog(lambda message:append_log(LOG_PATH,message))
+        self.heartbeat_timer = QTimer()
+        self.heartbeat_timer.timeout.connect(self.watchdog.beat)
+        self.heartbeat_timer.start(250)
+        self.app.aboutToQuit.connect(self.watchdog.stop)
+        self.watchdog.start()
+        self.recovery_timer=QTimer()
+        self.recovery_timer.setInterval(5000)
+        self.recovery_timer.timeout.connect(self._publish_recovery)
+        self.recovery_timer.start()
+        self._publish_recovery()
+
+    def _publish_recovery(self):
+        from echoview.recovery import publish
+        try:publish(state_directory(VIEWER_HOME),[window.recovery_state() for window in self.windows if window.running])
+        except (OSError,ValueError,RuntimeError):pass
+
+    def _schedule_sync(self, *args):
+        QTimer.singleShot(100, self._sync_screens)
+
+    def _capture_preview(self, display):
+        from echoview.preview_capture import capture_background
+        window = self.window_by_connector.get(display)
+        if window is None:
+            raise ValueError('Display unavailable')
+        return capture_background(window)
+
+    def _screen_added(self, screen):
+        screen.geometryChanged.connect(self._schedule_sync)
+        self._schedule_sync()
+
+    def _screen_removed(self, screen):
+        # Stop playback immediately instead of letting Qt move it to a live output.
+        for name, window in list(self.window_by_connector.items()):
+            if window.assigned_screen is screen:
+                window.close()
+                del self.window_by_connector[name]
+                self.mode_attempts = {item for item in self.mode_attempts if item[0] != name}
+        self.windows = list(self.window_by_connector.values())
+        self._schedule_sync()
+
+    def _apply_live_visual_request(self, request):
+        cfg = load_config()
+        if fingerprint(cfg) != request.get('config'):
+            return False  # Another save superseded this request.
+        names = request.get('displays')
+        if not isinstance(names, list) or not names:
+            return False
+        kind = request.get('kind', 'spotify')
+        if kind not in ('spotify', 'overlay', 'identify'):
+            return False
+        targets = []
+        for name in names:
+            if name not in cfg.get('displays', {}):
+                return False
+            window = self.window_by_connector.get(name)
+            if not window or not window.running:
+                if kind in ('overlay', 'identify'):
+                    continue  # Saved settings take effect when this display connects.
+                return False
+            if kind == 'spotify' and window.current_mode != 'spotify':
+                return False
+            targets.append((name, window))
+        if not targets:
+            return False
+        for name, window in targets:
+            if kind == 'identify':
+                window.identify_display()
+            elif kind == 'overlay':
+                window.apply_overlay_settings(cfg)
             else:
-                t = dcfg.get("screen_name", dname)
-            w.setWindowTitle(t)
-            w.show()
-            self.windows.append(w)
-            i += 1
+                window.apply_spotify_visual_settings(cfg['displays'][name])
+        self.cfg = cfg
+        return True
+
+    def _sync_screens(self):
+        self.cfg = load_config()
+        inventory = discover_monitors()
+        screens = self.app.screens()
+        if not inventory:
+            # Qt still supplies trustworthy identities when xrandr is unavailable.
+            inventory = {screen.name(): {"connected": True, "active": True,
+                         "current_mode": f"{screen.geometry().width()}x{screen.geometry().height()}"}
+                         for screen in screens if screen.name()}
+        if reconcile_displays(self.cfg, inventory):
+            save_config(self.cfg)
+        assignments = screen_assignments(self.cfg, screens)
+        active_names = {name for name, _ in assignments}
+        for name in set(self.window_by_connector) - active_names:
+            self.window_by_connector.pop(name).close()
+        for name, screen in assignments:
+            display = self.cfg["displays"][name]
+            selection = display.get("output_mode", "auto")
+            attempt = (name, selection)
+            if selection != "auto" and attempt not in self.mode_attempts:
+                self.mode_attempts.add(attempt)
+                try:
+                    apply_output_mode(name, selection)
+                except (ValueError, RuntimeError) as exc:
+                    log_message(f"Saved output preference unavailable for {name}: {exc}")
+            window = self.window_by_connector.get(name)
+            if window and window.assigned_screen is not screen:
+                window.close()
+                window = None
+            if window is None:
+                window = DisplayWindow(name, display, screen)
+                window.setWindowTitle(name)
+                self.window_by_connector[name] = window
+                window.show()
+            else:
+                window.setup_layout()
+                window.updateForegroundScaled()
+        self.windows = list(self.window_by_connector.values())
 
     def run(self):
         sys.exit(self.app.exec())

@@ -12,6 +12,7 @@ if "psutil" not in sys.modules:
 
 # Stub PySide6/spotipy for headless test environment
 qtcore = types.ModuleType("PySide6.QtCore")
+qtcore.Signal = lambda *args: None
 class DummyQt:
     AlignCenter = 0
     AlignLeft = 0
@@ -136,10 +137,9 @@ def test_media_aspect_label_images(tmp_path):
     assert utils.media_aspect_label(portrait) == "portrait"
 
 
-def test_filter_by_aspect_uses_cache(monkeypatch):
+def test_filter_by_aspect_uses_shared_classifier(monkeypatch):
     dw = viewer.DisplayWindow.__new__(viewer.DisplayWindow)
     dw.disp_cfg = {"aspect_filter": "square"}
-    dw.aspect_cache = {}
 
     labels = {
         "/tmp/a.jpg": "square",
@@ -151,6 +151,44 @@ def test_filter_by_aspect_uses_cache(monkeypatch):
 
     result = viewer.DisplayWindow._filter_by_aspect(dw, list(labels.keys()))
     assert result == ["/tmp/a.jpg"]
-    # Second call should hit cache and produce same result
+    # A later filter must pick up changes reported by the shared classifier.
+    labels["/tmp/b.jpg"] = "square"
     result2 = viewer.DisplayWindow._filter_by_aspect(dw, list(labels.keys()))
-    assert result2 == result
+    assert result2 == ["/tmp/a.jpg", "/tmp/b.jpg"]
+
+
+def test_aspect_cache_tracks_replacement_and_deletion(monkeypatch, tmp_path):
+    path = tmp_path / "video.mp4"
+    path.write_bytes(b"first")
+    calls = []
+
+    def dimensions(p):
+        calls.append(p)
+        return (160, 90) if len(calls) == 1 else (90, 160)
+
+    monkeypatch.setattr(utils, "_video_dimensions_ffprobe", dimensions)
+    assert utils.media_aspect_label(path) == "landscape"
+    assert utils.media_aspect_label(str(path)) == "landscape"
+    assert len(calls) == 1
+    replacement = tmp_path / "new.mp4"
+    replacement.write_bytes(b"second")
+    replacement.replace(path)
+    assert utils.media_aspect_label(path) == "portrait"
+    assert len(calls) == 2
+    path.unlink()
+    assert utils.media_aspect_label(path) == "unknown"
+
+
+def test_ffprobe_timeout_returns_unknown(monkeypatch, tmp_path):
+    import subprocess
+
+    path = tmp_path / "bad.mp4"
+    path.touch()
+    monkeypatch.setattr(utils.shutil, "which", lambda name: "/usr/bin/ffprobe")
+
+    def timeout(args, **kwargs):
+        assert kwargs["timeout"] == 5
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    monkeypatch.setattr(utils.subprocess, "check_output", timeout)
+    assert utils.media_aspect_label(path) == "unknown"

@@ -6,26 +6,39 @@
  **************************************************************/
 
 // ---- Global Stats Updater ----
+let statsRequestPending = false;
 function fetchStats() {
+  if (document.hidden || statsRequestPending || !document.getElementById("stat_cpu")) return;
+  statsRequestPending = true;
   fetch("/stats")
-    .then(r => r.json())
+    .then(r => {
+      if (!r.ok) throw new Error(`Stats request failed: ${r.status}`);
+      return r.json();
+    })
     .then(data => {
       const cpuEl = document.getElementById("stat_cpu");
       const memEl = document.getElementById("stat_mem");
       const loadEl = document.getElementById("stat_load");
       const tempEl = document.getElementById("stat_temp");
       const diskEl = document.getElementById("stat_disk");
-      if (cpuEl)  cpuEl.textContent = data.cpu_percent + "%";
-      if (memEl)  memEl.textContent = data.mem_used_mb + "/" + data.mem_total_mb + "MB";
+      if (cpuEl) cpuEl.textContent = data.cpu_percent + "%";
+      const megabytes = value => Number(value) >= 1024 ? (Number(value) / 1024).toFixed(1) + " GB" : Math.round(Number(value)) + " MB";
+      if (memEl) memEl.textContent = megabytes(data.mem_used_mb);
+      const memTotal = document.getElementById("stat_mem_total");
+      if (memTotal) memTotal.textContent = "of " + megabytes(data.mem_total_mb);
       if (loadEl) loadEl.textContent = data.load_1min;
       if (tempEl) tempEl.textContent = data.temp;
-      if (diskEl) diskEl.textContent = data.disk_used + "/" + data.disk_total;
+      if (diskEl) diskEl.textContent = data.disk_used;
+      const diskTotal = document.getElementById("stat_disk_total");
+      if (diskTotal) diskTotal.textContent = "of " + data.disk_total;
     })
-    .catch(e => console.log("Stats fetch error:", e));
+    .catch(e => console.log("Stats fetch error:", e))
+    .finally(() => { statsRequestPending = false; });
 }
 // Poll stats every 10s
 setInterval(fetchStats, 10000);
-window.addEventListener("load", fetchStats);
+document.addEventListener("DOMContentLoaded", fetchStats);
+document.addEventListener("visibilitychange", fetchStats);
 
 // ---- Collapsible Sections ----
 function initCollapsible() {
@@ -67,12 +80,13 @@ function showSpotifyFallbackSections(dname) {
 }
 
 function showModeSection(dname, mode) {
-  const all = ['random','category','specific_image','mixed','videos','spotify','web_page'];
+  const all = ['random','category','specific_image','mixed','videos','spotify','web_page','schedule'];
   const map = {
     'random_image': ['random','category'],
     'specific_image': ['category','specific_image'],
     'mixed': ['random','mixed'],
     'videos': ['videos'],
+    'scheduled': ['schedule','random','videos'],
     'spotify': ['spotify'],
     'web_page': ['web_page']
   };
@@ -92,10 +106,15 @@ function showModeSection(dname, mode) {
     showSpotifyFallbackSections(dname);
   }
 
+  ['manual_image_shuffle', 'manual_video_selection'].forEach(suffix => {
+    const element = document.getElementById(`${dname}_${suffix}`);
+    if (element) element.hidden = mode === 'scheduled';
+  });
+
   // Aspect filter is only relevant for media modes, not web_page
   const aspectBox = document.getElementById(`${dname}_aspect_container`);
   if (aspectBox) {
-    const showAspect = ['random_image','specific_image','mixed','videos','spotify'].includes(mode);
+    const showAspect = ['random_image','specific_image','mixed','videos','spotify','scheduled'].includes(mode);
     aspectBox.style.display = showAspect ? 'block' : 'none';
   }
 }
@@ -156,6 +175,7 @@ function initMixedUI(dispName) {
 
   let dragSrcEl = null;
   function handleDragStart(e) {
+    if (this.parentElement !== selList) { e.preventDefault(); return; }
     dragSrcEl = this;
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/html", this.innerHTML);
@@ -171,20 +191,24 @@ function initMixedUI(dispName) {
     this.classList.remove("selected");
   }
   function handleDrop(e) {
-    if (e.stopPropagation) e.stopPropagation();
-    if (dragSrcEl != this) {
-      const oldHTML = dragSrcEl.innerHTML;
-      dragSrcEl.innerHTML = this.innerHTML;
-      this.innerHTML = e.dataTransfer.getData("text/html");
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragSrcEl && dragSrcEl !== this && this.parentElement === selList) {
+      const items = Array.from(selList.children);
+      const after = items.indexOf(dragSrcEl) < items.indexOf(this);
+      selList.insertBefore(dragSrcEl, after ? this.nextSibling : this);
+      updateHiddenOrder();
     }
-    return false;
   }
   function handleDragEnd(e) {
     const items = selList.querySelectorAll("li");
     items.forEach(li => li.classList.remove("selected"));
+    dragSrcEl = null;
     updateHiddenOrder();
   }
   function addDnDHandlers(item) {
+    if (item.dataset.dragReady) return;
+    item.dataset.dragReady = "1";
     item.addEventListener("dragstart", handleDragStart);
     item.addEventListener("dragenter", handleDragEnter);
     item.addEventListener("dragover", handleDragOver);
@@ -218,7 +242,11 @@ function initMixedUI(dispName) {
     const items = selList.querySelectorAll("li");
     const arr = [];
     items.forEach(li => arr.push(li.getAttribute("data-folder")));
-    hiddenOrder.value = arr.join(",");
+    const value = JSON.stringify(arr);
+    if (hiddenOrder.value !== value) {
+      hiddenOrder.value = value;
+      hiddenOrder.dispatchEvent(new Event("change", {bubbles: true}));
+    }
   }
 
   // Initialize
@@ -274,45 +302,6 @@ function initSpotifyFontColorToggle() {
   });
 }
 window.addEventListener('DOMContentLoaded', initSpotifyFontColorToggle);
-
-// ---- Lazy load thumbnails for specific_image mode ----
-function loadSpecificThumbnails(dispName) {
-  const container = document.getElementById(dispName + "_lazyContainer");
-  if (!container) return;
-  const allThumbs = JSON.parse(container.getAttribute("data-files") || "[]");
-  const shownCount = container.querySelectorAll("label.thumb-label").length;
-  const nextLimit = shownCount + 100;
-
-  const slice = allThumbs.slice(shownCount, nextLimit);
-  slice.forEach(filePath => {
-    const bn = filePath.split("/").pop();
-    const lbl = document.createElement("label");
-    lbl.className = "thumb-label";
-    const img = document.createElement("img");
-    img.src = "/thumb/" + filePath + "?size=60";
-    img.loading = "lazy";
-    img.style.width = "60px";
-    img.style.height = "60px";
-    img.style.objectFit = "cover";
-    img.style.border = "2px solid #555";
-    img.style.borderRadius = "4px";
-    img.style.margin = "5px";
-    const radio = document.createElement("input");
-    radio.type = "radio";
-    radio.name = dispName + "_specific_image";
-    radio.value = bn;
-
-    lbl.appendChild(img);
-    lbl.appendChild(document.createElement("br"));
-    lbl.appendChild(radio);
-    lbl.appendChild(document.createTextNode(" " + bn));
-    container.insertBefore(lbl, container.lastElementChild);
-  });
-
-  if (nextLimit >= allThumbs.length && container.lastElementChild) {
-    container.lastElementChild.style.display = "none";
-  }
-}
 
 // ---- Overlay Dragging (for overlay.html) ----
 function initOverlayDragUI() {
@@ -376,32 +365,24 @@ function onMonitorChange() {
   if (selForm) selForm.submit();
 }
 
-// Mobile sidebar toggle
-window.addEventListener('DOMContentLoaded', () => {
-  const navToggle = document.getElementById('nav-toggle');
-  const sidebar = document.querySelector('.sidebar');
-  if (navToggle && sidebar) {
-    navToggle.addEventListener('click', () => {
-      sidebar.classList.toggle('open');
-    });
-  }
-});
-
 // Toggle per-file action menus in media manager
 function toggleFileMenu(btn) {
   const item = btn.closest('.file-item');
-  if (item) {
-    item.classList.toggle('open');
-  }
+  if (!item) return;
+  const open = !item.classList.contains('open');
+  document.querySelectorAll('#file-manager .file-item.open').forEach(other => {
+    other.classList.remove('open');
+    other.querySelector('.file-options-btn')?.setAttribute('aria-expanded', 'false');
+  });
+  item.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', String(open));
 }
-
-// Close any open file menus when clicking outside
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.file-item')) {
-    document.querySelectorAll('#file-manager .file-item.open').forEach(el => {
-      el.classList.remove('open');
-    });
-  }
+document.addEventListener('click', event => {
+  if (event.target.closest('.file-item')) return;
+  document.querySelectorAll('#file-manager .file-item.open').forEach(item => {
+    item.classList.remove('open');
+    item.querySelector('.file-options-btn')?.setAttribute('aria-expanded', 'false');
+  });
 });
 
 // ---- Web embed detection ----
@@ -451,7 +432,7 @@ function toggleYoutubeOptions(display, embedType) {
   container.style.display = embedType === "youtube" ? "flex" : "none";
   if (embedType === "youtube") {
     container.style.flexWrap = "wrap";
-    container.style.justifyContent = "center";
+    container.style.justifyContent = "flex-start";
     container.style.gap = "10px";
   }
 }

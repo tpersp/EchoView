@@ -1,0 +1,15 @@
+{% macro input(name, label, value='', type='text', min=none, max=none, step=none, help='', required=false, placeholder='') -%}
+<label class="field"><span class="field-label">{{ label }}</span>
+  <input type="{{ type }}" name="{{ name }}" value="{{ value }}"{% if min is not none %} min="{{ min }}"{% endif %}{% if max is not none %} max="{{ max }}"{% endif %}{% if step is not none %} step="{{ step }}"{% endif %}{% if required %} required{% endif %}{% if placeholder %} placeholder="{{ placeholder }}"{% endif %}>
+  {% if help %}<small>{{ help }}</small>{% endif %}
+</label>
+{%- endmacro %}
+{% macro select(name, label, value, options, help='') -%}
+<label class="field"><span class="field-label">{{ label }}</span>
+  <select name="{{ name }}">{% for key, text in options %}<option value="{{ key }}"{% if key|string == value|string %} selected{% endif %}>{{ text }}</option>{% endfor %}</select>
+  {% if help %}<small>{{ help }}</small>{% endif %}
+</label>
+{%- endmacro %}
+{% macro toggle(name, label, checked=false, id='', css='', help='', value='1') -%}
+<label class="toggle-field"><input type="checkbox" name="{{ name }}" value="{{ value }}"{% if checked %} checked{% endif %}{% if id %} id="{{ id }}"{% endif %}{% if css %} class="{{ css }}"{% endif %}><span>{{ label }}{% if help %}<small>{{ help }}</small>{% endif %}</span></label>
+{%- endmacro %}

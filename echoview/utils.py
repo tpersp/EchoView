@@ -8,7 +8,8 @@ import requests
 import random
 import psutil
 import shutil
-from datetime import datetime
+import tempfile
+from functools import lru_cache
 
 from echoview.config import (
     APP_VERSION,
@@ -67,7 +68,8 @@ def _video_dimensions_ffprobe(path: str) -> tuple[int, int] | tuple[()]:
                 "-of",
                 "csv=s=x:p=0",
                 path,
-            ]
+            ],
+            timeout=5,
         ).decode().strip()
         if "x" in out:
             w_str, h_str = out.split("x", 1)
@@ -78,6 +80,20 @@ def _video_dimensions_ffprobe(path: str) -> tuple[int, int] | tuple[()]:
 
 
 def media_aspect_label(path: str) -> str:
+    """Classify media, reusing metadata only while the file is unchanged."""
+    path = os.path.abspath(os.fspath(path))
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return "unknown"
+    return _cached_media_aspect_label(
+        path, stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns,
+        stat.st_ctime_ns,
+    )
+
+
+@lru_cache(maxsize=2048)
+def _cached_media_aspect_label(path, device, inode, size, mtime_ns, ctime_ns):
     """
     Return "square", "landscape", "portrait", or "unknown" for a media file.
     Images/GIFs are inspected with Pillow; videos use ffprobe when available.
@@ -108,6 +124,7 @@ def init_config():
     if not os.path.exists(CONFIG_PATH):
         default_cfg = {
             "theme": "dark",
+            "resource_profile": "standard",
             # displays dictionary for multi-display logic
             "displays": {
                 "Display0": {
@@ -133,12 +150,17 @@ def init_config():
                     "spotify_progress_update_interval": 200,       # New: update interval in ms
                     "spotify_font_color": "#FFFFFF",
                     "video_category": "",
+                    "specific_video": "",
+                    "schedule": [],
                     "shuffle_videos": False,
                     "video_mute": True,
                     "video_volume": 100,
                     "video_play_to_end": True,
                     "video_max_seconds": 120,
                     "aspect_filter": "any",
+                    "output_mode": "auto",
+                    "display_aspect": "auto",
+                    "safe_area": {"left": 0, "right": 0, "top": 0, "bottom": 0},
                 }
             },
             "overlay": {
@@ -185,14 +207,6 @@ def init_config():
     except Exception:
         return
 
-    if "displays" in cfg and len(cfg["displays"]) > 1:
-        removed = False
-        for key in list(cfg["displays"].keys()):
-            if key.lower() in ("display0", "default"):
-                del cfg["displays"][key]
-                removed = True
-        if removed:
-            save_config(cfg)
 
 def load_config():
     if not os.path.exists(CONFIG_PATH):
@@ -204,14 +218,27 @@ def load_config():
     return cfg
 
 def save_config(cfg):
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(cfg, f, indent=2)
+    """Publish a complete config so readers never see a partially written file."""
+    directory = os.path.dirname(os.path.abspath(CONFIG_PATH))
+    os.makedirs(directory, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=directory,
+            prefix=".viewerconfig-", suffix=".tmp", delete=False,
+        ) as f:
+            temp_path = f.name
+            json.dump(cfg, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, CONFIG_PATH)
+    finally:
+        if temp_path is not None and os.path.exists(temp_path):
+            os.unlink(temp_path)
 
 def log_message(msg):
-    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
-    with open(LOG_PATH, "a") as f:
-        f.write(f"{datetime.now()}: {msg}\n")
+    from echoview.log_store import append_log
+    append_log(LOG_PATH,msg)
     print(msg)
 
 def get_system_stats():
@@ -227,7 +254,7 @@ def get_system_stats():
     temp = "N/A"
     try:
         out = subprocess.check_output(["vcgencmd", "measure_temp"]).decode().strip()
-        temp = out
+        temp = out.removeprefix("temp=").replace("'C", "°C")
     except:
         pass
     return (cpu, mem_used_mb, mem_total_mb, load1, temp)
@@ -277,10 +304,9 @@ def get_pi_model():
 def get_subfolders():
     """Return a sorted list of subfolders inside IMAGE_DIR."""
     try:
-        folders = [
-            d for d in os.listdir(IMAGE_DIR)
-            if os.path.isdir(os.path.join(IMAGE_DIR, d)) and not is_ignored_folder(d)
-        ]
+        with os.scandir(IMAGE_DIR) as entries:
+            folders = [entry.name for entry in entries
+                       if not is_ignored_folder(entry.name) and entry.is_dir()]
         folders.sort(key=lambda x: x.lower())
         return folders
     except Exception:
@@ -307,7 +333,21 @@ def upgrade_config(cfg):
     """
     changed = False
     displays = cfg.get("displays", {})
+    if cfg.get("resource_profile") not in ("standard", "pi3"):
+        cfg["resource_profile"] = "pi3" if any(d.get("resource_profile") == "pi3" for d in displays.values()) else "standard"
+        changed = True
     for dcfg in displays.values():
+        if "safe_area" not in dcfg:
+            dcfg["safe_area"] = {"left": 0, "right": 0, "top": 0, "bottom": 0}
+            changed = True
+        if "resource_profile" in dcfg:
+            del dcfg["resource_profile"]
+            changed = True
+        # Legacy chosen_mode was display-only; never activate it on upgrade.
+        for key in ("output_mode", "display_aspect"):
+            if key not in dcfg:
+                dcfg[key] = "auto"
+                changed = True
         if "embed_metadata" not in dcfg:
             dcfg["embed_metadata"] = None
             changed = True
@@ -328,5 +368,11 @@ def upgrade_config(cfg):
             changed = True
         if "aspect_filter" not in dcfg:
             dcfg["aspect_filter"] = "any"
+            changed = True
+        if "specific_video" not in dcfg:
+            dcfg["specific_video"] = ""
+            changed = True
+        if "schedule" not in dcfg:
+            dcfg["schedule"] = []
             changed = True
     return changed

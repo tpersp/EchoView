@@ -1,80 +1,67 @@
-{% extends "base.html" %}
-{% block title %}Configure Spotify{% endblock %}
+{% extends 'base.html' %}
+{% import 'components/fields.html' as f %}
+{% block title %}Spotify{% endblock %}
 {% block content %}
-
-<div class="page-section" style="max-width:1200px;">
-  <h2>Configure Spotify Integration</h2>
-  {% if not creds_set %}
-  <div class="flash-message">Missing credentials. Fill in the form below.</div>
-  {% elif not token_cached %}
-  <div class="flash-message">Credentials saved but token not authorized.</div>
-  {% else %}
-  <div class="flash-message">Spotify authorized.</div>
-  {% endif %}
-
-  <!-- Collapsible Steps -->
-  <div class="collapsible-header">1. Spotify Developer Dashboard</div>
-  <div class="collapsible-content">
-    <p>
-      Visit the <a href="https://developer.spotify.com/dashboard/" target="_blank">Spotify Developer Dashboard</a>
-      and log in (or sign up if you don't have an account).
-    </p>
+<div class="page-section">
+  <header class="page-header"><div><h1>Spotify</h1></div><span class="pill"><i class="fa-brands fa-spotify" aria-hidden="true"></i> Integration</span></header>
+  {% include 'components/now_playing.html' %}
+  <div class="spotify-layout">
+    <section class="card">
+      <header class="panel-header"><div><h2>Connect your account</h2></div></header>
+      <div class="status-note" id="spotify-status" role="status">{{ spotify_status }}</div>
+      {% if spotify_setup_url %}
+      <div class="status-note" role="alert"><strong>Open the callback address before authorizing.</strong><p>This page and Spotify’s callback use different addresses. Your browser cannot carry the authorization session between them.</p><p>Keep your SSH tunnel running for a loopback address, then open the link below and choose Authorize Spotify there.</p><a class="button" href="{{ spotify_setup_url }}">Open Spotify setup at the callback address</a><p class="help-text">{{ spotify_setup_url }}</p></div>
+      {% endif %}
+      <form method="post">
+        <div class="fields-grid">
+          {{ f.input('client_id','Client ID',spotify.client_id|default(''),required=true) }}
+          <label class="field"><span class="field-label">Authorization method</span><select name="auth_method" id="spotify-auth-method"><option value="pkce"{% if spotify_auth_method == 'pkce' %} selected{% endif %}>PKCE · no Client Secret</option><option value="authorization_code"{% if spotify_auth_method == 'authorization_code' %} selected{% endif %}>Authorization code · Client Secret</option></select></label>
+          <div class="full-width" id="spotify-secret-field"{% if spotify_auth_method == 'pkce' %} hidden{% endif %}>{{ f.input('client_secret','Client secret','','password',placeholder='Leave blank to keep the saved secret',help='Switching to PKCE removes the saved secret.') }}</div>
+          <div class="full-width">{{ f.input('redirect_uri','Redirect URI',spotify.redirect_uri|default('http://127.0.0.1:8080/callback'),required=true,placeholder='https://your-controller.example/callback') }}</div>
+          <div class="full-width">{{ f.input('scope','Permissions (scope)',spotify.scope|default('user-read-currently-playing user-read-playback-state')) }}</div>
+        </div>
+        <div class="form-actions"><button type="submit" class="primary">Save Spotify settings</button></div>
+      </form>
+      <hr>
+      <div class="form-actions"><a class="button" href="{{ url_for('main.spotify_auth') }}">Authorize Spotify <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a><form method="post" action="{{ url_for('main.spotify_check') }}" id="spotify-check-form"><button type="submit" class="quiet">Check connection</button></form></div>
+    </section>
+    <aside class="card">
+      <header class="panel-header"><div><h2>Setup guide</h2></div></header>
+      <details class="setup-step"><summary><span class="step-number">1</span> Create an application</summary><p>Open the <a href="https://developer.spotify.com/dashboard/" target="_blank" rel="noopener noreferrer">Spotify Developer Dashboard</a>, create an application, and copy its Client ID. A Client Secret is unnecessary with PKCE. Development mode requires the app owner to have Spotify Premium; other accounts must be allowed in the app settings.</p></details>
+      <details class="setup-step"><summary><span class="step-number">2</span> Register your callback</summary><p>Register the exact Redirect URI. Use an HTTPS controller address ending in <code>/callback</code>, or explicit loopback such as <code>http://127.0.0.1:8080/callback</code>. HTTP LAN addresses and localhost are not accepted.</p></details>
+      <details class="setup-step"><summary><span class="step-number">3</span> Save and authorize</summary><p>Save your details, then choose Authorize Spotify. Use the same browser and controller address throughout the flow; authorization expires after ten minutes. Switching methods requires authorization again. Check connection tests token refresh and API access.</p></details>
+      <details class="setup-step"><summary><span class="step-number">4</span> Connecting from another computer</summary><p>For loopback authorization, run <code>ssh -N -L 8080:127.0.0.1:8080 user@PI-IP</code>, then open <code>http://127.0.0.1:8080/configure_spotify</code>. Keep the tunnel open through the callback and do not edit the callback address. Alternatively, use your HTTPS controller address throughout.</p></details>
+    </aside>
   </div>
-
-  <div class="collapsible-header">2. Create a New Application</div>
-  <div class="collapsible-content">
-    <p>
-      After creation, note down your <strong>Client ID</strong> and <strong>Client Secret</strong>.
-      In your app settings, set the <strong>Redirect URI</strong> to something like
-      <code>http://127.0.0.1:8080/callback</code> (or your Pi's IP).
-    </p>
-  </div>
-
-  <div class="collapsible-header">3. Enter Your Config Below</div>
-  <div class="collapsible-content">
-    <p>
-      Fill in Client ID, Client Secret, Redirect URI, and the desired Scope,
-      then click "Save Spotify Settings".
-    </p>
-  </div>
-
-  <div class="collapsible-header">4. Authorize & Use</div>
-  <div class="collapsible-content">
-    <p>
-      Click <strong>Authorize Spotify</strong> to begin the OAuth flow.
-      Once Spotify redirects you back to <code>http://127.0.0.1:8080/callback</code>,
-      replace <code>127.0.0.1</code> in the address bar with your Pi’s IP (e.g.
-      <code>http://192.168.x.x:8080/callback?code=…</code>) and press Enter so EchoView
-      can receive the token. After authorization, the token is cached at the
-      path in <code>SPOTIFY_CACHE_PATH</code> (created automatically if it doesn't
-      exist), and EchoView can fetch your currently playing track’s album art.
-
-    </p>
-  </div>
-
-  <!-- Actual Form -->
-  <form method="POST" style="margin-top:15px;">
-    <div style="margin-bottom:10px;">
-      <label>Spotify Client ID:</label><br>
-      <input type="password" name="client_id" value="{{ spotify.client_id|default('') }}" required>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label>Spotify Client Secret:</label><br>
-      <input type="password" name="client_secret" value="{{ spotify.client_secret|default('') }}" required>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label>Redirect URI:</label><br>
-      <input type="text" name="redirect_uri" value="{{ spotify.redirect_uri|default('http://127.0.0.1:8080/callback') }}" required>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label>Scope:</label><br>
-      <input type="text" name="scope" value="{{ spotify.scope|default('user-read-currently-playing user-read-playback-state') }}">
-    </div>
-    <button type="submit">Save Spotify Settings</button>
-  </form>
-
-  <br>
-  <a href="{{ url_for('main.spotify_auth') }}"><button>Authorize Spotify</button></a>
 </div>
+{% endblock %}
 
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='now_playing.js') }}"></script>
+<script>
+  const method = document.getElementById('spotify-auth-method');
+  const secret = document.getElementById('spotify-secret-field');
+  function updateMethod() {
+    secret.hidden = method.value !== 'authorization_code';
+    secret.querySelector('input').disabled = secret.hidden;
+  }
+  method.addEventListener('change', updateMethod);
+  updateMethod();
+  const checkForm = document.getElementById('spotify-check-form');
+  checkForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = checkForm.querySelector('button');
+    const status = document.getElementById('spotify-status');
+    button.disabled = true;
+    status.textContent = 'Checking Spotify connection…';
+    try {
+      const response = await fetch(checkForm.action, {method: 'POST', signal: AbortSignal.timeout(15000)});
+      status.textContent = await response.text();
+    } catch (_) {
+      status.textContent = 'Could not check Spotify. Check the controller connection and try again.';
+    } finally {
+      button.disabled = false;
+    }
+  });
+</script>
 {% endblock %}

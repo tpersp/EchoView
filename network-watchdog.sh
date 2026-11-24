@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
 # Network watchdog for EchoView
-# Pings a target multiple times and reboots only after sustained failures.
+# Check the primary first, then optional fallback; reboot after sustained failure of both.
 
 set -euo pipefail
 
 PING_BIN="/bin/ping"
 IP_BIN="/usr/sbin/ip"
 AWK_BIN="/usr/bin/awk"
-DATE_BIN="/bin/date"
-TEE_BIN="/usr/bin/tee"
 MKDIR_BIN="/bin/mkdir"
 CHOWN_BIN="/bin/chown"
 CHMOD_BIN="/bin/chmod"
 TOUCH_BIN="/usr/bin/touch"
 DIRNAME_BIN="/usr/bin/dirname"
 SYSTEMCTL_BIN="/bin/systemctl"
-REBOOT_BIN="/sbin/reboot"
 SEQ_BIN="/usr/bin/seq"
 ID_BIN="/usr/bin/id"
 GETENT_BIN="/usr/bin/getent"
@@ -31,8 +28,13 @@ WATCHDOG_UID="${WATCHDOG_UID:-1000}"
 WATCHDOG_GID="${WATCHDOG_GID:-1000}"
 WATCHDOG_LOG="${WATCHDOG_LOG:-/home/pi/EchoView/viewer.log}"
 WATCHDOG_TARGET="${WATCHDOG_TARGET:-}"
+WATCHDOG_FALLBACK_TARGET="${WATCHDOG_FALLBACK_TARGET:-}"
 WATCHDOG_ATTEMPTS="${WATCHDOG_ATTEMPTS:-5}"
 WATCHDOG_FAIL_THRESHOLD="${WATCHDOG_FAIL_THRESHOLD:-3}"
+
+valid_target() {
+  [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.:%-]*$ ]]
+}
 
 is_positive_int() {
   [[ "$1" =~ ^[1-9][0-9]*$ ]]
@@ -40,7 +42,15 @@ is_positive_int() {
 
 log() {
   local msg="${1:-}"
-  printf '%s - %s\n' "$("$DATE_BIN" -Iseconds)" "$msg" | "$TEE_BIN" -a "$WATCHDOG_LOG" >/dev/null
+  local app_dir python writer
+  app_dir=$(cd -- "$("$DIRNAME_BIN" "${BASH_SOURCE[0]}")" && pwd)
+  if [[ "$app_dir" == */bin ]]; then app_dir=$("$DIRNAME_BIN" "$app_dir"); fi
+  python="${WATCHDOG_PYTHON:-$app_dir/.venv/bin/python3}"
+  writer="${WATCHDOG_LOG_WRITER:-$app_dir/echoview/log_store.py}"
+  if ! printf '%s' "$msg" | "$python" "$writer" "$WATCHDOG_LOG"; then
+    # Never fall back to an unbounded append. systemd handles stderr retention.
+    printf 'Network watchdog: %s\n' "$msg" >&2
+  fi
 }
 
 ensure_log_file() {
@@ -84,17 +94,26 @@ detect_default_target() {
   echo "1.1.1.1"
 }
 
-reboot_system() {
-  log "FAIL watchdog triggering reboot via systemctl"
-  if ! "$SYSTEMCTL_BIN" reboot; then
-    "$REBOOT_BIN"
+run_recovery() {
+  local mode="$1" app_dir python helper
+  app_dir=$(cd -- "$("$DIRNAME_BIN" "${BASH_SOURCE[0]}")" && pwd)
+  if [[ "$app_dir" == */bin ]]; then app_dir=$("$DIRNAME_BIN" "$app_dir"); fi
+  python="${WATCHDOG_PYTHON:-$app_dir/.venv/bin/python3}"
+  helper="$app_dir/echoview/watchdog_recovery.py"
+  if [ ! -f "$helper" ] || ! WATCHDOG_USER="$WATCHDOG_USER" WATCHDOG_LOG="$WATCHDOG_LOG" "$python" "$helper" "$mode" --home "$app_dir" --target "$target" --fallback "$fallback"; then
+    log "ERROR recovery helper unavailable; skipping automatic recovery"
+    return 1
   fi
+}
+
+reboot_system() {
+  run_recovery network
 }
 
 main() {
   ensure_log_file
 
-  local target attempts threshold successes=0 failures=0 consecutive=0
+  local target fallback attempts threshold successes=0 failures=0 consecutive=0
 
   target="$WATCHDOG_TARGET"
   if [ -z "$target" ]; then
@@ -103,6 +122,14 @@ main() {
   else
     log "INFO watchdog target configured as $target"
   fi
+
+  fallback="$WATCHDOG_FALLBACK_TARGET"
+  if ! valid_target "$target" || { [ -n "$fallback" ] && ! valid_target "$fallback"; }; then
+    log "ERROR invalid watchdog target; skipping reboot decision"
+    return 0
+  fi
+  if [ "$fallback" = "$target" ]; then fallback=""; fi
+  if [ -n "$fallback" ]; then log "INFO watchdog fallback configured as $fallback"; fi
 
   attempts="$WATCHDOG_ATTEMPTS"
   if ! is_positive_int "$attempts"; then
@@ -122,13 +149,17 @@ main() {
     if "$PING_BIN" -c 1 -W 2 "$target" >/dev/null 2>&1; then
       successes=$((successes + 1))
       consecutive=0
+    elif [ -n "$fallback" ] && "$PING_BIN" -c 1 -W 2 "$fallback" >/dev/null 2>&1; then
+      successes=$((successes + 1))
+      consecutive=0
+      log "OK primary $target unavailable; fallback $fallback reachable (attempt $i/$attempts); no reboot"
     else
       failures=$((failures + 1))
       consecutive=$((consecutive + 1))
-      log "WARN ping attempt $i/$attempts to $target failed (consecutive $consecutive/$threshold)"
+      log "WARN connectivity attempt $i/$attempts failed (primary=$target, fallback=${fallback:-none}, consecutive $consecutive/$threshold)"
 
       if (( consecutive >= threshold )); then
-        log "FAIL consecutive failure threshold reached ($consecutive/$threshold); rebooting"
+        log "FAIL consecutive failure threshold reached ($consecutive/$threshold); starting bounded recovery"
         reboot_system
         exit 0
       fi
@@ -136,12 +167,13 @@ main() {
   done
 
   if (( successes == 0 )); then
-    log "FAIL $attempts ping attempts to $target failed; rebooting"
+    log "FAIL $attempts ping attempts to $target failed; starting bounded recovery"
     reboot_system
     exit 0
   fi
 
-  log "OK $target reachable ($successes/$attempts successes, $failures failures)"
+  log "OK connectivity available (primary=$target, fallback=${fallback:-none}; $successes/$attempts successful rounds, $failures failed rounds)"
+  run_recovery storage
 }
 
 main "$@"

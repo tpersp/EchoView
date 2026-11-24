@@ -1,0 +1,36 @@
+<div id="{{ dname }}_spotify_section" class="mode-section">
+  <div class="section-heading"><h3>Track information</h3><span class="pill">Spotify</span></div>
+  <div class="fields-grid">
+    {{ f.select(pre ~ 'spotify_layout','Display layout',dcfg.get('spotify_layout','classic'), [('classic','Classic'),('album_card','Album card'),('poster','Poster')]) }}
+    {{ f.select(pre ~ 'fallback_mode', 'When nothing is playing', dcfg.get('fallback_mode','random_image'), [('random_image','Random image / GIF'),('specific_image','Specific image / GIF'),('mixed','Multiple folders'),('none','Nothing')]) }}
+    {{ f.input(pre ~ 'spotify_font_size', 'Text size', dcfg.get('spotify_font_size',18), 'number') }}
+    {{ f.select(pre ~ 'spotify_info_position', 'Track information position', dcfg.get('spotify_info_position','bottom-center'), positions) }}
+    <div id="{{ dname }}_spotify_font_color_container">{{ f.input(pre ~ 'spotify_font_color','Text color',dcfg.get('spotify_font_color','#FFFFFF'),'color') }}</div>
+  </div>
+  <div class="toggle-grid form-actions">
+    {{ f.toggle(pre ~ 'spotify_show_song','Song title',dcfg.get('spotify_show_song',true)) }}
+    {{ f.toggle(pre ~ 'spotify_show_artist','Artist',dcfg.get('spotify_show_artist',true)) }}
+    {{ f.toggle(pre ~ 'spotify_show_album','Album',dcfg.get('spotify_show_album',true)) }}
+    {{ f.toggle(pre ~ 'spotify_show_device','Playing on device',dcfg.get('spotify_show_device',false)) }}
+    {{ f.toggle(pre ~ 'spotify_show_progress','Playback progress',dcfg.get('spotify_show_progress',false)) }}
+    <input type="hidden" name="{{ pre }}spotify_time_present" value="1">
+    {{ f.toggle(pre ~ 'spotify_show_time','Elapsed / total time',dcfg.get('spotify_show_time',false)) }}
+    {{ f.toggle(pre ~ 'spotify_negative_font','Automatic contrast',dcfg.get('spotify_negative_font',true),id=pre ~ 'spotify_negative_font',css='spotify-negative-font') }}
+  </div>
+  {% include 'components/spotify_preview.html' %}
+  <details class="playback-options">
+    <summary>Background appearance</summary>
+    <div class="fields-grid">
+      {{ f.select(pre ~ 'spotify_background_mode','Background',dcfg.get('spotify_background_mode','black'), [('black','Black'),('artwork','Artwork colour'),('gradient','Artwork gradient'),('blurred','Blurred artwork')]) }}
+      <label class="field"><span class="field-label">Dimming <output data-background-dim-value>{{ dcfg.get('spotify_background_dim',65) }}%</output></span><input type="range" name="{{ pre }}spotify_background_dim" value="{{ dcfg.get('spotify_background_dim',65) }}" min="0" max="95" step="1" data-background-dim></label>
+    </div>
+  </details>
+  <details class="playback-options">
+    <summary>Progress appearance</summary>
+    {{ f.toggle(pre ~ 'spotify_smooth_progress','Smooth progress animation',dcfg.get('spotify_smooth_progress',true)) }}
+    <div class="fields-grid">
+      {{ f.select(pre ~ 'spotify_progress_position','Progress position',dcfg.get('spotify_progress_position','below_info'), [('above_info','Above track information'),('below_info','Below track information'),('top-center','Top center'),('bottom-center','Bottom center')]) }}
+      {{ f.select(pre ~ 'spotify_progress_theme','Progress theme',dcfg.get('spotify_progress_theme','dark'), [('dark','Dark'),('spotify','Spotify'),('coffee','Coffee'),('light','Light')]) }}
+    </div>
+  </details>
+</div>

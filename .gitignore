@@ -2,3 +2,16 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+
+# Local authorization secrets and tokens
+.env
+.spotify_cache
+.oauth_state.sqlite3*
+
+.streaming-enabled
+.update.lock
+.update-job.lock
+.update-state*
+.update-backups/
+
+.network-watchdog-recovery/

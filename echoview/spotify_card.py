@@ -1,0 +1,193 @@
+"""Artwork-first Spotify layouts; constructed only by the native viewer."""
+from PySide6.QtCore import Qt, QRect, QSize
+from PySide6.QtGui import QFont, QPixmap, QTransform, QPainter, QBrush, QColor, QLinearGradient, QGradient, QFontMetrics
+from PySide6.QtWidgets import QWidget, QLabel
+from echoview.displays import fit_dimensions
+from echoview.presentation import text_stretch, bounded_int
+from echoview.spotify_background import background_style, background_colours, foreground_colour, BlurredArtwork
+
+
+class SpotifyCard(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName('spotify-card')
+        self.setStyleSheet('QLabel { background: transparent; color: #edf2f7; }')
+        self.setAttribute(Qt.WA_OpaquePaintEvent, True)
+        self.background_brush = QBrush(QColor('#000000'))
+        self.artwork = QLabel(self)
+        self.artwork.setAlignment(Qt.AlignCenter)
+        self.artwork.setStyleSheet('background: #1c2634; color: #9ba9bc; border-radius: 8px;')
+        self.labels = [QLabel(self) for _ in range(4)]
+        for label in self.labels:
+            label.setWordWrap(True)
+            label.setTextFormat(Qt.PlainText)
+        self.pixmap = QPixmap()
+        self.path = None
+        self.rotation = None
+        self.scaled_key = None
+        self.layout_name = 'album_card'
+        self.options = {}
+        self.pixel_aspect = 1.0
+        self.background_key = None
+        self.art_colors = ()
+        self.blurred_artwork = BlurredArtwork()
+        self.blurred_pixmap = QPixmap()
+
+    def set_track(self, path, info, options, pixel_aspect):
+        self.options, self.pixel_aspect = options, pixel_aspect
+        self.layout_name = options.get('spotify_layout', 'album_card')
+        self.art_colors = info.get('art_colors',())
+        background = background_style(options,self.art_colors)
+        if background != self.background_key:
+            if options.get('spotify_background_mode') == 'gradient':
+                first, second = background_colours(options,self.art_colors)
+                gradient = QLinearGradient(0,0,1,0)
+                gradient.setCoordinateMode(QGradient.CoordinateMode.ObjectBoundingMode)
+                gradient.setColorAt(0,QColor(first))
+                gradient.setColorAt(1,QColor(second))
+                self.background_brush = QBrush(gradient)
+            else:
+                self.background_brush = QBrush(QColor(background))
+            self.background_key = background
+            self.update()
+        rotation = bounded_int(options.get('rotate', 0), 0, -3600, 3600)
+        if path != self.path or rotation != self.rotation:
+            self.path, self.rotation, self.scaled_key = path, rotation, None
+            self.pixmap = QPixmap(path) if path else QPixmap()
+            if rotation and not self.pixmap.isNull():
+                self.pixmap = self.pixmap.transformed(QTransform().rotate(rotation), Qt.SmoothTransformation)
+        for label, name in zip(self.labels, ('song', 'artist', 'album', 'device')):
+            text = ('Playing on ' + info['device_name'] if info.get('device_name') else '') if name == 'device' else info.get(name, '')
+            label.setText(text if options.get('spotify_show_' + name, name != 'device') else '')
+            label.setVisible(bool(label.text()))
+        self.arrange()
+
+    def paintEvent(self, event):
+        # Custom QWidget backgrounds must be painted during normal window
+        # painting, not merely when QWidget.grab()/render() forces a background.
+        painter = QPainter(self)
+        painter.fillRect(self.rect(),self.background_brush)
+        if not self.blurred_pixmap.isNull():
+            painter.drawPixmap(0,0,self.blurred_pixmap)
+
+    def hideEvent(self, event):
+        self.blurred_artwork = BlurredArtwork()
+        self.blurred_pixmap = QPixmap()
+        super().hideEvent(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.arrange()
+
+    def arrange(self):
+        if not hasattr(self, 'labels'):
+            return
+        w, h = self.width(), self.height()
+        if self.options.get("spotify_background_mode") == "blurred":
+            self.blurred_pixmap = self.blurred_artwork.get(self.pixmap,self.options.get("spotify_background_dim",65),self.size())
+        else:
+            self.blurred_pixmap = QPixmap()
+            self.blurred_artwork = BlurredArtwork()
+        self.update()
+        margin = max(8, min(40, min(w, h) // 15))
+        gap = max(8, margin)
+        # Reserve the bottom edge for progress and display safe-area insets.
+        usable_h = max(1, h - margin * 2 - 25)
+        poster = self.layout_name == 'poster' or w * self.pixel_aspect < h * 1.2
+        if poster:
+            side = max(1, min(int(usable_h * .60), int((w-2*margin)*self.pixel_aspect)))
+            art_w = max(1, round(side / self.pixel_aspect))
+            self.artwork.setGeometry((w-art_w)//2, margin, art_w, side)
+            text_rect = QRect(margin, margin+side+gap, max(1,w-2*margin), max(1,usable_h-side-gap))
+        else:
+            side = max(1, min(usable_h, int((w-3*margin)*self.pixel_aspect*.48)))
+            art_w = max(1, round(side / self.pixel_aspect))
+            self.artwork.setGeometry(margin, margin+(usable_h-side)//2, art_w, side)
+            text_rect = QRect(margin+art_w+gap, margin, max(1,w-art_w-2*margin-gap), usable_h)
+        size = self.artwork.size()
+        key = (self.path, size.width(), size.height(), self.pixel_aspect)
+        if key != self.scaled_key:
+            if self.pixmap.isNull():
+                self.artwork.clear()
+                self.artwork.setText('Artwork unavailable')
+            else:
+                width, height = fit_dimensions(self.pixmap.width(), self.pixmap.height(), size.width(), size.height(), self.pixel_aspect)
+                self.artwork.setPixmap(self.pixmap.scaled(width, height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
+            self.scaled_key = key
+        base = bounded_int(self.options.get('spotify_font_size', 18), 18, 8, max(8, h//12))
+        visible = [label for label in self.labels if label.text()]
+        heights = []
+        color = foreground_colour(self.options,self.art_colors)
+        for index, label in enumerate(self.labels):
+            font = QFont(label.font())
+            font.setPixelSize(max(8, round(base * (1.8 if index == 0 else 1 if index == 1 else .85 if index == 2 else .75))))
+            font.setBold(index == 0)
+            font.setStretch(text_stretch(self.pixel_aspect))
+            label.setFont(font)
+            label.setStyleSheet('color: ' + color + '; background: transparent;')
+            label.setAlignment((Qt.AlignHCenter if poster else Qt.AlignLeft) | Qt.AlignVCenter)
+            if label in visible:
+                heights.append(max(font.pixelSize()+6, label.heightForWidth(text_rect.width())))
+        total = sum(heights) + max(0,len(heights)-1)*8
+        scale = min(1, text_rect.height()/max(1,total))
+        top = text_rect.y() + max(0,round((text_rect.height()-total*scale)/2))
+        for label, height in zip(visible, heights):
+            label.setGeometry(text_rect.x(), top, text_rect.width(), max(1,round(height*scale)))
+            top += round((height+8)*scale)
+
+
+class SpotifyClassicLabel(QLabel):
+    """Compact track information painted over the full-sized Classic cover."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.useDifference = False  # Kept for the viewer's existing font controls.
+        self.rows = []
+        self.options = {}
+
+    def set_track(self, info, options):
+        self.options = options
+        self.rows = []
+        for name, factor in (('song',1.25),('artist',1),('album',.85),('device',.75)):
+            text = ('Playing on '+info['device_name'] if info.get('device_name') else '') if name=='device' else info.get(name,'')
+            if text and options.get('spotify_show_'+name,name!='device'):
+                # Metadata is always plain text; one bounded row per field.
+                self.rows.append((' '.join(text.split()),factor,name=='song'))
+        self.updateGeometry()
+        self.update()
+
+    def row_fonts(self, scale=1):
+        for text,factor,bold in self.rows:
+            font=QFont(self.font())
+            font.setPixelSize(max(1,round(self.font().pixelSize()*factor*scale)))
+            font.setBold(bold)
+            yield text,font
+
+    def heightForWidth(self, width):
+        return 16+sum(round(font.pixelSize()*1.4) for _,font in self.row_fonts()) if self.rows else 0
+
+    def sizeHint(self):
+        return QSize(320,self.heightForWidth(320))
+
+    def paintEvent(self, event):
+        if not self.rows:
+            return
+        painter=QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        color=QColor('#edf2f7' if self.options.get('spotify_negative_font',True)
+                     else self.options.get('spotify_font_color','#ffffff'))
+        panel=QColor(0,0,0,184) if color.lightness()>=128 else QColor(255,255,255,210)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(panel)
+        painter.drawRoundedRect(self.rect(),8,8)
+        painter.setPen(color)
+        natural=max(1,self.heightForWidth(self.width())-16)
+        scale=min(1,max(1,self.height()-16)/natural)
+        y=8
+        horizontal=self.alignment() & Qt.AlignHorizontal_Mask
+        for text,font in self.row_fonts(scale):
+            height=round(font.pixelSize()*1.4)
+            painter.setFont(font)
+            metrics=QFontMetrics(font)
+            text=metrics.elidedText(text,Qt.ElideRight,max(1,self.width()-16))
+            painter.drawText(QRect(8,y,max(1,self.width()-16),height),horizontal|Qt.AlignVCenter,text)
+            y+=height

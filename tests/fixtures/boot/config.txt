@@ -1,0 +1,15 @@
+# Sample Raspberry Pi boot configuration
+[all]
+dtparam=audio=on
+camera_auto_detect=1
+display_auto_detect=1
+dtoverlay=vc4-kms-v3d,cma-128
+max_framebuffers=2
+hdmi_force_hotplug:0=1
+hdmi_force_hotplug:1=1
+[pi3]
+sdtv_mode=2
+[cm4]
+otg_mode=1
+[all]
+arm_boost=1

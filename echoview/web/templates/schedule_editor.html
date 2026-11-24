@@ -1,0 +1,16 @@
+<div id="{{ dname }}_schedule_section" class="mode-section">
+  <section class="schedule-editor" data-display="{{ dname }}"
+           data-folders='{{ subfolders|tojson }}' data-clock='{{ schedule_clock|tojson }}'
+           data-clock-url="{{ url_for('main.schedule_clock') }}">
+    <h4>Daily playback schedule</h4>
+    <p class="schedule-device-clock"></p>
+    <input type="hidden" name="{{ dname }}_schedule" value='{{ dcfg.schedule|default([])|tojson }}'>
+    <div class="schedule-preview" aria-live="polite"></div>
+    <div class="schedule-slots"></div>
+    <div class="schedule-actions">
+      <button type="button" class="schedule-add">Add time slot</button>
+      <button type="button" class="schedule-example">Start with 06:00 / 14:00 / 18:00</button>
+    </div>
+    <p class="schedule-error" role="alert" tabindex="-1"></p>
+  </section>
+</div>

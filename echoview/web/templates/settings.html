@@ -1,108 +1,85 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
+{% import 'components/fields.html' as f %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-
-<div class="page-section" style="max-width:1200px;">
-  <h2>Settings</h2>
-
-  <!-- Theme selection card -->
-  <div class="card" style="margin-bottom:20px;">
-    <form method="POST" enctype="multipart/form-data">
-
-      <label>Theme:</label><br>
-      <select name="theme">
-        <option value="dark"   {% if cfg.theme=="dark"   %}selected{% endif %}>Dark</option>
-        <option value="light"  {% if cfg.theme=="light"  %}selected{% endif %}>Light</option>
-        <option value="custom" {% if cfg.theme=="custom" %}selected{% endif %}>Custom</option>
-      </select>
-      <br><br>
-
-      {% if cfg.theme=="custom" %}
-        <label>Upload Custom BG:</label><br>
-        <input type="file" name="bg_image" accept="image/*">
-        <br><br>
-      {% endif %}
-
-      <button type="submit">Save Theme</button>
-    </form>
-  </div>
-
-  <!-- GUI settings card -->
-  <div class="cards-container">
-
-    <!-- GUI card -->
-    <div class="card">
-      <h3>GUI Settings</h3>
-      <form method="POST" enctype="multipart/form-data">
-        <fieldset style="border:none;">
-          <input type="hidden" name="theme" value="{{ cfg.theme }}">
-          <label>Background Blur Radius:</label><br>
-          <input type="number" name="background_blur_radius"
-                 value="{{ cfg.gui.background_blur_radius|default('20') }}" min="0">
-          <br><br>
-
-          <label>Background Resolution Scale (%):</label><br>
-          <input type="number" name="background_scale_percent"
-                 value="{{ cfg.gui.background_scale_percent|default('100') }}"
-                 step="1" min="1" max="100">
-          <br><br>
-
-          <label>Foreground Resolution Scale (%):</label><br>
-          <input type="number" name="foreground_scale_percent"
-                 value="{{ cfg.gui.foreground_scale_percent|default('100') }}"
-                 step="1" min="1" max="100">
-          <br><br>
-
-          <label>Cached Images:</label><br>
-          <input type="number" name="cache_capacity"
-                 value="{{ cfg.cache_capacity|default('15') }}" min="1" max="100">
-          <br><br>
-
-          <label>Preloaded Media Count:</label><br>
-          <input type="number" name="preload_count"
-                 value="{{ cfg.preload_count|default('1') }}" min="0" max="50">
-          <br>
-          <small style="color:#888;">Changing these may reduce performance or cause crashes on weak hardware.</small>
-          <br><br>
-        </fieldset>
-        <button type="submit">Save GUI Settings</button>
+<div class="page-section">
+  <header class="page-header"><div><h1>Settings</h1></div><span class="pill">v{{ version }}</span></header>
+  {% for message in get_flashed_messages() %}<div class="flash-message" role="status">{{ message }}</div>{% endfor %}
+  <div class="settings-grid">
+    <section class="card">
+      <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-solid fa-palette" aria-hidden="true"></i></span><div><h2>Appearance</h2></div></div></header>
+      <form method="post" enctype="multipart/form-data">
+        <div class="appearance-choices">
+          {% for value,label,icon in [('dark','Dark','moon'),('light','Light','sun'),('custom','Custom','image')] %}
+          <label class="appearance-choice"><input type="radio" name="theme" value="{{ value }}"{% if cfg.theme|default('dark') == value %} checked{% endif %}><span class="appearance-swatch {{ value }}"><i class="fa-regular fa-{{ icon }}" aria-hidden="true"></i></span><span>{{ label }}</span></label>
+          {% endfor %}
+        </div>
+        {% if cfg.theme == 'custom' %}<label class="field form-actions"><span class="field-label">Background image</span><input type="file" name="bg_image" accept="image/*"></label>{% endif %}
+        <div class="form-actions"><button type="submit">Save appearance</button></div>
       </form>
-    </div>
-
-  </div>
-
-
-  <!-- New: Application Version Card -->
-  <div class="card" style="margin-top:20px;">
-    <h3>Application Version</h3>
-    <p>Current version: {{ version }}</p>
-  </div>
-
-  <!-- Update from GitHub, logs, reset config, etc. as a final card -->
-  <div class="card" style="margin-top:20px;">
-    <p><strong>Update from GitHub</strong></p>
-    <p>Branch: <em>{{ update_branch }}</em></p>
-    <form method="POST" action="{{ url_for('main.update_app') }}">
-      <button type="submit">Update</button>
-    </form>
-    <p style="font-size:smaller; margin-bottom:10px;">Pull latest code and restart services.</p>
-    <form method="POST" action="{{ url_for('main.full_update') }}">
-      <button type="submit">Full Update &amp; Reboot</button>
-    </form>
-    <p style="font-size:smaller;">Reset to branch, run setup if needed and reboot the device.</p>
-    <hr>
-    <p style="margin-top:10px;">
-      <a href="{{ url_for('main.download_log') }}"><button>Download Log</button></a>
-    </p>
-    <hr>
-    <!-- Button to clear config and revert to default -->
-    <form method="POST" action="{{ url_for('main.clear_config') }}"
-          onsubmit="return confirm('Are you sure you want to completely reset the config to defaults?')">
-      <button type="submit" style="margin-top:10px; background-color:rgb(147, 41, 41); color:white;">
-        Reset Entire Config to Default
-      </button>
-    </form>
+    </section>
+    <section class="card">
+      <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i></span><div><h2>Device performance</h2></div></div></header>
+      <form method="post"><input type="hidden" name="action" value="resource_profile">
+        <label class="field"><span class="field-label">Resource profile (all displays)</span><select id="resource-profile" name="resource_profile"><option value="standard"{% if cfg.resource_profile|default('standard') == 'standard' %} selected{% endif %}>Standard</option><option value="pi3"{% if cfg.resource_profile == 'pi3' %} selected{% endif %}>Pi 3 low resource</option></select></label>
+        <details class="playback-options"><summary>Profile details</summary><p>Pi 3 disables blur and preloading, and reduces image size, cache size and video decoder threads.</p></details>
+        <div class="form-actions"><button type="submit">Save device performance</button></div>
+      </form>
+    </section>
+    <section class="card full-width">
+      <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-solid fa-sliders" aria-hidden="true"></i></span><div><h2>Image rendering</h2></div></div></header>
+      <form method="post" enctype="multipart/form-data"><input type="hidden" name="theme" value="{{ cfg.theme }}">
+        <div class="fields-grid rendering-fields">
+          {{ f.input('background_blur_radius','Background blur radius',cfg.gui.background_blur_radius|default(20),'number',min=0) }}
+          {{ f.input('background_scale_percent','Background resolution (%)',cfg.gui.background_scale_percent|default(100),'number',min=1,max=100,step=1) }}
+          {{ f.input('foreground_scale_percent','Foreground resolution (%)',cfg.gui.foreground_scale_percent|default(100),'number',min=1,max=100,step=1) }}
+          {{ f.input('cache_capacity','Cached images',cfg.cache_capacity|default(15),'number',min=1,max=100) }}
+          {{ f.input('preload_count','Preloaded media',cfg.preload_count|default(1),'number',min=0,max=50) }}
+        </div>
+        <div class="form-actions"><button type="submit">Save rendering settings</button></div>
+      </form>
+    </section>
+    <section class="card full-width">
+      <header class="panel-header"><div class="panel-title-group"><span class="panel-icon"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i></span><div><h2>Updates &amp; maintenance</h2><p>Current version: {{ version }}</p></div></div><span class="pill">{{ update_branch }}</span></header>
+      <form method="post" class="inline-form"><input type="hidden" name="action" value="update_branch">
+        <label class="field"><span class="field-label">Update branch</span><select id="update-branch" name="update_branch">{% for branch in branches %}<option value="{{ branch }}"{% if branch == update_branch %} selected{% endif %}>{{ branch }}</option>{% endfor %}</select></label>
+        <button type="submit">Save update branch</button><button type="button" class="quiet" id="refresh-branches">Refresh branches</button>
+      </form>
+      <p id="branch-status" class="help-text form-actions" role="status">Saved branch: {{ update_branch }}.</p>
+      <hr>
+      <div class="form-actions"><button type="button" id="check-update">Check for updates</button><span id="release-status" role="status" aria-live="polite"></span></div>
+      <ul id="release-changes"></ul>
+      <div class="update-actions" data-saved-branch="{{ update_branch }}"><form method="post" action="{{ url_for('main.update_app') }}"><button type="submit" class="primary">Update application</button></form><form method="post" action="{{ url_for('main.full_update') }}"><button type="submit">Full update &amp; reboot</button></form></div>
+      <div id="update-progress" class="form-actions" hidden>
+        <div><strong id="update-stage" role="status" aria-live="polite"></strong><p id="update-detail" class="help-text"></p><small id="update-elapsed"></small></div>
+      </div>
+      <p class="help-text">Keep the device powered during installation. Full update reboots the device; it does not upgrade the operating system.</p>
+      <div class="form-actions"><a class="button quiet" href="{{ url_for('main.download_log') }}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download log</a></div>
+    </section>
+    <details class="card foldout danger-panel full-width"><summary><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Reset configuration</summary><form method="post" action="{{ url_for('main.clear_config') }}" onsubmit="return confirm('Are you sure you want to completely reset the config to defaults?')"><button type="submit" class="danger">Reset entire configuration</button></form></details>
   </div>
 </div>
-
+{% endblock %}
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='updates.js') }}" defer></script>
+<script>
+(() => {
+  const select = document.getElementById('update-branch');
+  const status = document.getElementById('branch-status');
+  const button = document.getElementById('refresh-branches');
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      const response = await fetch({{ url_for('main.update_branches')|tojson }});
+      if (!response.ok) throw new Error('Branch lookup failed');
+      const data = await response.json();
+      const chosen = select.value;
+      const names = [...new Set([...Array.from(select.options, option => option.value), ...data.branches, chosen])].sort();
+      select.replaceChildren(...names.map(name => new Option(name, name, false, name === chosen)));
+      status.textContent = data.available ? 'Branches loaded.' : 'Origin unavailable; showing saved and locally known branches.';
+    } catch (_) { status.textContent = 'Branch lookup unavailable; existing choices remain available.'; }
+    finally { button.disabled = false; }
+  });
+})();
+</script>
 {% endblock %}

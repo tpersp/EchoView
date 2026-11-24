@@ -1,83 +1,23 @@
-{% extends "base.html" %}
-{% block title %}Upload Media{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Media library{% endblock %}
 {% block content %}
-<div class="page-section" style="max-width:1200px;" id="file-manager">
-  <h2>Manage Files</h2>
-  <form method="post" action="{{ url_for('main.create_folder') }}" class="d-flex" style="gap:10px; margin-bottom:10px;">
-    <input type="text" name="folder_name" placeholder="New Folder Name">
-    <button type="submit">Create Folder</button>
-  </form>
-  <form method="get" action="{{ url_for('main.upload_media') }}" style="margin-bottom:10px;">
-    <label for="sort_select">Sort:</label>
-    <select id="sort_select" name="sort" onchange="this.form.submit()">
-      <option value="name_asc" {% if sort_option == 'name_asc' %}selected{% endif %}>Name (A-Z)</option>
-      <option value="name_desc" {% if sort_option == 'name_desc' %}selected{% endif %}>Name (Z-A)</option>
-      <option value="date_desc" {% if sort_option == 'date_desc' %}selected{% endif %}>Date Added (Newest)</option>
-      <option value="date_asc" {% if sort_option == 'date_asc' %}selected{% endif %}>Date Added (Oldest)</option>
-    </select>
-  </form>
-  {% for folder, files in folder_files.items() %}
-  <details class="card">
-    <summary>{{ folder }}</summary>
-    <form method="post" action="{{ url_for('main.rename_folder') }}" class="d-flex" style="gap:10px;">
-      <input type="hidden" name="folder" value="{{ folder }}">
-      <input type="text" name="new_name" placeholder="Rename folder">
-      <button type="submit">Rename</button>
-    </form>
-    <form method="post" action="{{ url_for('main.delete_folder') }}" style="margin-top:5px;">
-      <input type="hidden" name="folder" value="{{ folder }}">
-      <button type="submit">Delete Folder</button>
-    </form>
-    <div class="folder-grid">
-      {% for f in files %}
-      <div class="file-item">
-        {% if f.lower().endswith(('.mp4','.mov','.avi','.mkv','.webm')) %}
-        <video src="/images/{{ folder }}/{{ f }}" class="file-thumb" controls></video>
-        {% else %}
-        <img src="/thumb/{{ folder }}/{{ f }}?size=120" class="file-thumb" loading="lazy">
-        {% endif %}
-        <button type="button" class="file-options-btn" onclick="toggleFileMenu(this)">⋮</button>
-        <div class="file-options-menu">
-          <form method="post" action="{{ url_for('main.rename_image') }}">
-            <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
-            <input type="text" name="new_name" placeholder="rename">
-            <button type="submit">Rename</button>
-          </form>
-          <form method="post" action="{{ url_for('main.delete_image') }}">
-            <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
-            <button type="submit">Delete</button>
-          </form>
-          <a href="{{ url_for('main.download_file', filename=folder ~ '/' ~ f) }}">Download</a>
-          <form method="post" action="{{ url_for('main.move_image') }}">
-            <input type="hidden" name="path" value="{{ folder }}/{{ f }}">
-            <select name="dest">
-              {% for dest in subfolders %}
-                {% if dest != folder %}
-                  <option value="{{ dest }}">{{ dest }}</option>
-                {% endif %}
-              {% endfor %}
-            </select>
-            <button type="submit">Move</button>
-          </form>
-        </div>
-        <div class="filename" style="word-break:break-all;">{{ f }}</div>
-      </div>
-      {% endfor %}
-      <div class="file-item">
-        <form method="POST" enctype="multipart/form-data" action="{{ url_for('main.upload_media') }}">
-          <input type="hidden" name="subfolder" value="{{ folder }}">
-          <label class="upload-thumb">
-            +
-            <input type="file" name="mediafiles" accept=".gif,.png,.jpg,.jpeg,.mp4,.mov,.avi,.mkv,.webm" multiple style="display:none" onchange="this.form.submit()">
-          </label>
-        </form>
-      </div>
-    </div>
+<div class="page-section" id="file-manager">
+  <header class="page-header"><div><h1>Media library</h1></div><span class="pill">{{ subfolders|length }} folders</span></header>
+  <p id="media-play-status" class="flash-message" role="status" aria-live="polite"></p>
+  {% for message in get_flashed_messages() %}<div class="flash-message" role="status">{{ message }}</div>{% endfor %}
+  <div class="card media-toolbar">
+    <label class="folder-search-label"><span class="field-label">Find a folder</span><input type="search" id="folder-search" placeholder="Search your library"></label>
+    <form id="media-sort-form" class="sort-control" method="get" action="{{ url_for('main.upload_media') }}"><label class="field"><span class="field-label">Sort files</span><select id="sort_select" name="sort"><option value="name_asc"{% if sort_option == 'name_asc' %} selected{% endif %}>Name · A to Z</option><option value="name_desc"{% if sort_option == 'name_desc' %} selected{% endif %}>Name · Z to A</option><option value="date_desc"{% if sort_option == 'date_desc' %} selected{% endif %}>Newest first</option><option value="date_asc"{% if sort_option == 'date_asc' %} selected{% endif %}>Oldest first</option></select></label></form>
+    <details class="inline-create"><summary class="button"><i class="fa-solid fa-plus" aria-hidden="true"></i> New folder</summary><form method="post" action="{{ url_for('main.create_folder') }}"><label class="field"><span class="field-label">Folder name</span><input type="text" name="folder_name" placeholder="A name for your collection" required></label><div class="form-actions"><button type="submit">Create folder</button></div></form></details>
+  </div>
+  <p id="folder-search-status" role="status">Open a folder to browse. Previews load only when needed.</p>
+  {% for folder in subfolders %}
+  <details class="card media-folder" data-folder-name="{{ folder }}"{% if folder == selected_folder %} open{% endif %}>
+    <summary><span class="folder-icon"><i class="fa-regular fa-folder" aria-hidden="true"></i></span><span class="folder-title">{{ folder }}</span><i class="fa-solid fa-chevron-down folder-chevron" aria-hidden="true"></i></summary>
+    <div class="folder-content" data-url="{{ url_for('main.media_folder', folder=folder, sort=sort_option) }}" aria-live="polite"><a href="{{ url_for('main.upload_media', folder=folder, sort=sort_option) }}">Open folder</a></div>
   </details>
+  {% else %}
+  <section class="card empty-state"><i class="fa-regular fa-folder-open" aria-hidden="true"></i><h2>No folders to show</h2><p>Check your media connection, or create a folder to start a new collection.</p></section>
   {% endfor %}
-  <form method="post" action="{{ url_for('main.create_folder') }}" class="d-flex" style="gap:10px; margin-top:10px;">
-    <input type="text" name="folder_name" placeholder="New Folder Name">
-    <button type="submit">Create Folder</button>
-  </form>
 </div>
 {% endblock %}

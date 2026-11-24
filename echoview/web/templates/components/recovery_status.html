@@ -1,0 +1,5 @@
+<section class="card recovery-panel" data-recovery-panel data-always-visible="{{ 'true' if recovery_standalone|default(false) else 'false' }}" data-url="{{ url_for('main.recovery_status') }}" data-restart-url="{{ url_for('main.restart_viewer') }}" data-media-url="{{ url_for('main.upload_media') }}" data-spotify-url="{{ url_for('main.configure_spotify') }}" data-displays-url="{{ url_for('main.index') }}#display-settings-form" data-log-url="{{ url_for('main.download_log') }}" aria-label="Playback recovery"{% if not recovery_standalone|default(false) %} hidden{% endif %}>
+    <header class="section-heading"><h2>{{ 'Playback status' if recovery_standalone|default(false) else 'Needs attention' }}</h2><button type="button" class="quiet" data-recovery-refresh>Check again</button></header>
+    <div data-recovery-issues role="status" aria-live="polite"></div>
+    <p class="recovery-feedback" data-recovery-feedback role="status" hidden></p>
+  </section>

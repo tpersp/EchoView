@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "echoview"))
 
 # Stub PySide6 modules
 qtcore = types.ModuleType("PySide6.QtCore")
+qtcore.Signal = lambda *args: None
 class DummyQt:
     AlignCenter = 0
     AlignLeft = 0
@@ -176,6 +177,7 @@ def test_build_video_list(tmp_path, monkeypatch):
 
 def test_build_mpv_command_volume(monkeypatch):
     dw = DisplayWindow.__new__(DisplayWindow)
+    dw.disp_name = "HDMI-1"
     dw.disp_cfg = {"video_mute": False, "video_volume": 55}
     cmd = DisplayWindow.build_mpv_command(dw, "/tmp/test.mp4")
     assert "--mute=no" in cmd
@@ -185,6 +187,7 @@ def test_build_mpv_command_volume(monkeypatch):
 
 def test_build_mpv_command_mute(monkeypatch):
     dw = DisplayWindow.__new__(DisplayWindow)
+    dw.disp_name = "HDMI-1"
     dw.disp_cfg = {"video_mute": True, "video_volume": 55}
     cmd = DisplayWindow.build_mpv_command(dw, "/tmp/test.mp4")
     assert "--mute=yes" in cmd
@@ -222,14 +225,15 @@ def test_build_chromium_command_uses_browser_like_flags(monkeypatch, tmp_path):
     geom = types.SimpleNamespace(x=lambda: 10, y=lambda: 20, width=lambda: 800, height=lambda: 480)
     dw = DisplayWindow.__new__(DisplayWindow)
     dw.disp_name = "Display0"
+    dw.disp_cfg = {}
     dw.assigned_screen = types.SimpleNamespace(name=lambda: "HDMI-1", geometry=lambda: geom)
 
     cmd = DisplayWindow._build_chromium_command(dw, "https://youtube.com/watch?v=test")
 
     assert cmd is not None
-    assert "--disable-gpu" in cmd
+    assert "--disable-gpu" not in cmd
     assert "--disable-software-rasterizer" not in cmd
-    assert f"--user-agent={viewer.STANDALONE_CHROMIUM_USER_AGENT}" in cmd
+    assert not any(arg.startswith("--user-agent=") for arg in cmd)
     assert f"--user-data-dir={tmp_path / 'chromium-Display0-HDMI-1'}" in cmd
     assert os.path.isdir(tmp_path / "chromium-Display0-HDMI-1")
 
@@ -237,6 +241,7 @@ def test_build_chromium_command_uses_browser_like_flags(monkeypatch, tmp_path):
 def test_play_next_video_sequential(monkeypatch):
     dw = DisplayWindow.__new__(DisplayWindow)
     dw.disp_cfg = {"video_play_to_end": True}
+    dw.mpv_poll_timer = types.SimpleNamespace(start=lambda: None, stop=lambda: None)
     dw.image_list = ["a.mp4", "b.mp4"]
     dw.index = 0
     dw.current_video_proc = None
@@ -302,7 +307,7 @@ def test_next_image_starts_from_first(monkeypatch):
     dw.fallback_image_list = []
     dw.fallback_index = -1
     recorded = []
-    dw.show_foreground_image = lambda path, is_spotify=False: recorded.append(path)
+    dw.request_foreground_image = lambda path, is_spotify=False: recorded.append(path)
     dw.prefetch_next_image = lambda: None
     dw.clock_label = types.SimpleNamespace(update=lambda: None)
 
@@ -374,3 +379,120 @@ def test_maybe_launch_external_browser_honors_web_toggle():
         "stop_video",
         ("launch", "https://example.com/page-with-youtube"),
     ]
+
+
+def test_single_video_selection_avoids_directory_scan(monkeypatch, tmp_path):
+    clip = tmp_path / 'clip.mp4'
+    clip.touch()
+    monkeypatch.setattr(viewer, 'IMAGE_DIR', str(tmp_path))
+    window = DisplayWindow.__new__(DisplayWindow)
+    window.current_mode = 'videos'
+    window.disp_cfg = {'specific_video': 'clip.mp4', 'aspect_filter': 'any'}
+    def fail(*args):
+        raise AssertionError('Single-video playback must not scan the NAS directory')
+    window.gather_videos = fail
+    window.build_local_image_list()
+    assert window.image_list == [str(clip)]
+    clip.unlink()
+    window.build_local_image_list()
+    assert window.image_list == []
+
+
+def test_schedule_switches_once_on_boundary_without_systemd(monkeypatch):
+    from datetime import datetime
+    from echoview import scheduling
+    class Clock:
+        value = datetime(2026, 11, 18, 5, 59)
+        @classmethod
+        def now(cls): return cls.value
+    monkeypatch.setattr(viewer, 'datetime', Clock)
+    entries = scheduling.normalize_schedule([{'time': '06:00', 'folders': ['Morning']},
+                                              {'time': '18:00', 'folders': ['Evening'], 'media': 'videos'}])
+    window = DisplayWindow.__new__(DisplayWindow)
+    window.running = True
+    window.schedule_source = {'mode': 'scheduled', 'schedule': entries}
+    window.schedule_entries = entries
+    window.cfg = {'displays': {'test': window.schedule_source}}
+    _, window.schedule_key = scheduling.effective_settings(window.schedule_source, entries, Clock.now())
+    window.image_list = ['playing.mp4']
+    events = []
+    def reload(cfg):
+        assert cfg is window.cfg
+        _, window.schedule_key = scheduling.effective_settings(window.schedule_source, entries, Clock.now())
+        events.append('switch')
+    window.reload_settings = reload
+    window.next_image = lambda force=False: events.append(('play', force))
+    monkeypatch.setattr(viewer.subprocess, 'run', lambda *a, **kw: (_ for _ in ()).throw(AssertionError('No system commands during a slot switch')))
+    window._check_schedule()
+    assert events == []
+    Clock.value = datetime(2026, 11, 18, 6)
+    window._check_schedule()
+    window._check_schedule()
+    assert events == ['switch', ('play', True)]
+    Clock.value = datetime(2026, 11, 18, 19)
+    window._check_schedule()
+    assert events == ['switch', ('play', True), 'switch', ('play', True)]
+
+
+def test_schedule_retries_missing_media_at_most_every_30_seconds(monkeypatch):
+    from datetime import datetime
+    from echoview import scheduling
+    class Clock:
+        @staticmethod
+        def now(): return datetime(2026, 11, 18, 7)
+    monkeypatch.setattr(viewer, 'datetime', Clock)
+    elapsed = [0]
+    monkeypatch.setattr(viewer.time, 'monotonic', lambda: elapsed[0])
+    window = DisplayWindow.__new__(DisplayWindow)
+    window.running = True
+    window.schedule_source = {'mode': 'scheduled'}
+    window.schedule_entries = scheduling.normalize_schedule([{'time': '06:00', 'folders': ['Photos']}])
+    _, window.schedule_key = scheduling.effective_settings(window.schedule_source, window.schedule_entries, Clock.now())
+    window.schedule_retry_due = 30
+    window.image_list = []
+    window.current_mode = 'mixed'
+    calls = []
+    available = [False]
+    def build():
+        calls.append('scan')
+        if available[0]: window.image_list = ['back-online.jpg']
+    window.build_local_image_list = build
+    window.next_image = lambda force=False: calls.append(('play', force))
+    window._check_schedule()
+    elapsed[0] = 31
+    window._check_schedule()
+    elapsed[0] = 60
+    window._check_schedule()
+    assert calls == ['scan']
+    available[0] = True
+    elapsed[0] = 62
+    window._check_schedule()
+    assert calls == ['scan', 'scan', ('play', True)] and window.index == -1
+
+
+def test_scheduled_videos_gather_all_selected_folders():
+    window = DisplayWindow.__new__(DisplayWindow)
+    window.current_mode = 'videos'
+    window.disp_cfg = {'_scheduled_folders': ['A', 'B'], 'aspect_filter': 'any', 'specific_video': 'old.mp4'}
+    window.gather_videos = lambda folder: [folder + '/clip.mp4']
+    window.build_local_image_list()
+    assert window.image_list == ['A/clip.mp4', 'B/clip.mp4']
+
+
+def test_direct_and_scheduled_video_share_lightweight_scaling(monkeypatch):
+    from datetime import datetime
+    from echoview import scheduling
+    flags=('--scale=bilinear','--cscale=bilinear','--dscale=bilinear')
+    monkeypatch.setattr(viewer,'scaling_flags',lambda:flags)
+    monkeypatch.setattr(viewer,'frame_rate_flags',lambda:('--script=/tmp/fixture-fps.lua',))
+    dw=DisplayWindow.__new__(DisplayWindow)
+    dw.disp_name='HDMI-1'
+    direct={'mode':'videos','video_category':'fixture','video_mute':True}
+    scheduled={**direct,'mode':'scheduled','schedule':[{'time':'06:00','media':'videos','folders':['fixture'],'shuffle':False}]}
+    effective,_=scheduling.effective_settings(scheduled,scheduling.normalize_schedule(scheduled['schedule']),datetime(2026,1,1,12))
+    dw.disp_cfg=direct
+    first=dw.build_mpv_command('/tmp/synthetic.mp4')
+    dw.disp_cfg=effective
+    assert dw.build_mpv_command('/tmp/synthetic.mp4')==first
+    assert all(first.count(flag)==1 for flag in (*flags,'--script=/tmp/fixture-fps.lua'))
+    assert first[-2:]==['--','/tmp/synthetic.mp4']

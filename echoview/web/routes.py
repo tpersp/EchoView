@@ -2,11 +2,16 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
+import secrets
 import subprocess
 import requests
+import json
+from copy import deepcopy
+from urllib.parse import urlsplit
 from flask import (
     Blueprint, request, redirect, url_for, render_template,
-    send_from_directory, send_file, jsonify
+    send_from_directory, send_file, jsonify, session, current_app, flash
 )
 from echoview.config import (
     APP_VERSION,
@@ -19,14 +24,22 @@ from echoview.config import (
 )
 from echoview.utils import (
     load_config, save_config, init_config, log_message,
-    get_system_stats, get_subfolders, count_files_in_folder,
+    get_system_stats, get_subfolders,
     get_hostname, get_ip_address, get_pi_model,
     get_storage_stats, format_bytes,
     CONFIG_PATH,
     is_ignored_folder,
-    media_aspect_label,
 )
+from echoview.spotify_state import read_state, state_directory
+from echoview.live_settings import visual_changes, request_update
+from echoview.web.spotify_auth import DEFAULT_SCOPE, validate_config, cached_status, oauth_client, auth_method
+from echoview.presentation import safe_area_settings, RESOURCE_PROFILES, EDGES
+from echoview.displays import (discover_monitors, reconcile_displays, mode_choices,
+                               apply_output_mode, DISPLAY_ASPECTS, display_pixel_aspect)
 from echoview import embed_utils
+from echoview.web.media import folder_page, resolve_folder, resolve_file, parse_folder_order, IMAGE_EXT, SORTS
+from echoview import presets, scheduling
+from echoview.branches import branch_options, selected_branch, valid_branch
 
 # Supported media file extensions for the upload/file-manager features.
 VALID_MEDIA_EXT = (
@@ -35,71 +48,14 @@ VALID_MEDIA_EXT = (
 )
 
 def detect_monitors_extended():
-    """
-    Calls xrandr --props to find connected monitors, their preferred/current resolution,
-    plus a list of possible modes, plus a 'monitor name' from EDID if available.
-    We do NOT use these to change resolution.
-    """
-    result = {}
-    try:
-        xout = subprocess.check_output(["xrandr", "--props"], stderr=subprocess.STDOUT).decode("utf-8", "ignore")
-    except Exception as e:
-        log_message(f"Monitor detection error: {e}")
-        return {}
+    return discover_monitors()
 
-    current_monitor = None
-    for line in xout.splitlines():
-        line = line.strip()
-        if " connected " in line:
-            parts = line.split()
-            name = parts[0]
-            if "connected" in line:
-                current_monitor = name
-                result[current_monitor] = {
-                    "model": None,
-                    "connected": True,
-                    "current_mode": None,
-                    "modes": []
-                }
-                for p in parts:
-                    if "x" in p and "+" in p:
-                        mode_part = p.split("+")[0]
-                        result[current_monitor]["current_mode"] = mode_part
-                        break
-
-        elif current_monitor and "Monitor name:" in line:
-            idx = line.find("Monitor name:")
-            name_str = line[idx + len("Monitor name:"):].strip()
-            if name_str:
-                result[current_monitor]["model"] = name_str
-
-        elif current_monitor:
-            tokens = line.split()
-            if tokens:
-                mode_candidate = tokens[0]
-                if "x" in mode_candidate and mode_candidate[0].isdigit():
-                    if mode_candidate not in result[current_monitor]["modes"]:
-                        result[current_monitor]["modes"].append(mode_candidate)
-
-    return result
 
 def get_local_monitors_from_config(cfg):
-    """
-    Return a dict for referencing each monitor's resolution in overlays, etc.
-    """
-    out = {}
-    for dname, dcfg in cfg.get("displays", {}).items():
-        chosen = dcfg.get("chosen_mode")
-        if chosen:
-            out[dname] = {"resolution": chosen}
-        else:
-            sn = dcfg.get("screen_name", "")
-            if sn and ":" in sn:
-                part = sn.split(":")[-1].strip()
-                out[dname] = {"resolution": part if "x" in part else "?"}
-            else:
-                out[dname] = {"resolution": "?"}
-    return out
+    # A saved preference is not evidence that a hardware mode was applied.
+    inventory = discover_monitors()
+    return {name: {"resolution": inventory.get(name, {}).get("current_mode") or "?"}
+            for name in cfg.get("displays", {})}
 
 def compute_overlay_preview(overlay_cfg, monitors_dict):
     """
@@ -158,6 +114,133 @@ def compute_overlay_preview(overlay_cfg, monitors_dict):
 
 main_bp = Blueprint("main", __name__, static_folder="static")
 
+
+@main_bp.app_context_processor
+def controller_ui_context():
+    return {'ui_version': APP_VERSION, 'ui_background_available': os.path.isfile(WEB_BG)}
+
+
+def _save_and_restart(cfg):
+    """Keep successful saves even when applying them fails; report both states."""
+    try:
+        save_config(cfg)
+    except (OSError, TypeError, ValueError):
+        return {'saved': False, 'message': 'Could not save settings. Check free space and configuration permissions. Playback was not changed.'}, 503
+    try:
+        subprocess.run(['sudo', '-n', 'systemctl', 'restart', 'echoview.service'],
+                       check=True, timeout=20, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return {'saved': True, 'message': 'Settings saved, but the viewer restart could not be confirmed. Check the service logs or use Restart Viewer.'}, 503
+    return {'saved': True, 'message': 'Settings saved and viewer restarted.'}, 200
+
+
+def apply_live_settings(cfg, names, kind='spotify'):
+    return request_update(state_directory(VIEWER_HOME), cfg, names, kind=kind)
+
+
+def _save_display_settings(cfg, previous):
+    names = visual_changes(previous, cfg)
+    if not names:
+        return _save_and_restart(cfg)
+    return _save_live_settings(cfg, names)
+
+
+def _save_live_settings(cfg, names, kind='spotify'):
+    try:
+        save_config(cfg)
+    except (OSError, TypeError, ValueError):
+        return {'saved': False, 'message': 'Could not save settings. Playback was not changed.'}, 503
+    try:
+        confirmed = (apply_live_settings(cfg, names) if kind == 'spotify' else
+                     apply_live_settings(cfg, names, kind=kind))
+        if confirmed:
+            label = 'Overlay' if kind == 'overlay' else 'Visual'
+            return {'saved': True, 'message': f'{label} settings applied. Playback kept running.'}, 200
+    except (OSError, TypeError, ValueError):
+        pass
+    return {'saved': True, 'message': 'Settings saved, but the live update could not be confirmed. Use Restart Viewer if the display has not updated.'}, 503
+
+
+def _media_action_response(result, status, folder):
+    if request.accept_mimetypes.best == 'application/json':
+        return jsonify(result), status
+    flash(result['message'])
+    return redirect(url_for('main.upload_media', folder=folder))
+
+
+@main_bp.route('/media/play', methods=['POST'])
+def play_media():
+    cfg = deepcopy(load_config())
+    display = cfg.get('displays', {}).get(request.form.get('display', ''))
+    folder = request.form.get('folder', '')
+    if display is None:
+        return _media_action_response({'saved': False, 'message': 'Choose a configured display.'}, 400, folder)
+    action = request.form.get('selection', '')
+    try:
+        if action == 'file':
+            filename = request.form.get('filename', '')
+            resolve_file(IMAGE_DIR, folder, filename)
+            display['aspect_filter'] = 'any'  # An explicit selection should not silently disappear.
+            if filename.lower().endswith(IMAGE_EXT):
+                display.update(mode='specific_image', image_category=folder, specific_image=filename)
+            else:
+                display.update(mode='videos', video_category=folder, specific_video=filename)
+        elif action in ('folder_images', 'folder_videos'):
+            path = resolve_folder(IMAGE_DIR, folder)
+            if not os.path.isdir(path):
+                raise FileNotFoundError()
+            if action == 'folder_images':
+                display.update(mode='random_image', image_category=folder)
+            else:
+                display.update(mode='videos', video_category=folder, specific_video='')
+        else:
+            raise ValueError('Choose a file or folder to play.')
+    except ValueError as exc:
+        return _media_action_response({'saved': False, 'message': str(exc)}, 400, folder)
+    except OSError:
+        return _media_action_response({'saved': False, 'message': 'Media is unavailable. Check the NAS connection or refresh this folder.'}, 404, folder)
+    result, status = _save_and_restart(cfg)
+    return _media_action_response(result, status, folder)
+
+
+@main_bp.route('/display/presets', methods=['POST'])
+def display_presets():
+    cfg = deepcopy(load_config())
+    try:
+        name = presets.valid_name(request.form.get('name', ''))
+        action = request.form.get('action', '')
+        saved = cfg.setdefault('display_presets', {})
+        if action == 'save':
+            if any(existing.casefold() == name.casefold() for existing in saved):
+                raise ValueError('That preset name already exists. Choose a new name or delete the old preset first.')
+            if len(saved) >= presets.MAX_PRESETS:
+                raise ValueError('You can save up to 20 presets. Delete one before adding another.')
+            saved[name] = presets.snapshot(cfg)
+            save_config(cfg)
+            flash(f'Preset “{name}” saved from the applied display settings.')
+        elif action == 'delete':
+            if name not in saved:
+                raise ValueError('That preset no longer exists. Refresh the page.')
+            del saved[name]
+            save_config(cfg)
+            flash(f'Preset “{name}” deleted. Playback was not changed.')
+        elif action == 'apply':
+            if name not in saved:
+                raise ValueError('That preset no longer exists. Refresh the page.')
+            updated = presets.restore(cfg, saved[name])
+            if updated == cfg:
+                flash(f'Preset “{name}” is already applied.')
+            else:
+                result, status = _save_display_settings(updated, cfg)
+                flash(result['message'])
+        else:
+            raise ValueError('Unknown preset action.')
+    except ValueError as exc:
+        flash(str(exc))
+    except OSError:
+        flash('Could not save presets. Playback was not changed.')
+    return redirect(url_for('main.index'))
+
 @main_bp.route("/stats")
 def stats_json():
     cpu, mem_used_mb, mem_total_mb, load1, temp = get_system_stats()
@@ -174,13 +257,44 @@ def stats_json():
         "disk_total": total_human
     })
 
+
+@main_bp.route('/schedule/clock')
+def schedule_clock():
+    response = jsonify(scheduling.device_clock())
+    response.cache_control.no_store = True
+    return response
+
 @main_bp.route("/list_monitors")
 def list_monitors():
-    return jsonify({"Display0": {"resolution": "1920x1080", "offset_x": 0, "offset_y": 0}})
+    return jsonify({name: {**monitor, "resolution": monitor["current_mode"],
+                           "offset_x": monitor["x"], "offset_y": monitor["y"],
+                           "available_modes": mode_choices(monitor)}
+                    for name, monitor in discover_monitors().items()})
 
 @main_bp.route("/list_folders")
 def list_folders():
     return jsonify(get_subfolders())
+
+
+@main_bp.route("/player/youtube")
+def youtube_player():
+    cfg = load_config()
+    display = cfg.get("displays", {}).get(request.args.get("display", ""))
+    if not display:
+        return "Unknown display.", 404
+    previous = embed_utils.deserialize_embed_metadata(display.get("embed_metadata"))
+    metadata = embed_utils.classify_url(display.get("web_url") or (previous.original_url if previous else ""))
+    if metadata.embed_type != "youtube" or not (metadata.video_id or metadata.playlist_id or metadata.channel_id):
+        return "A video, playlist or channel ID is needed for embedding. Select the external browser for channel handles.", 400
+    origin = request.url_root.rstrip("/")
+    embed_url = embed_utils.playback_embed_url(metadata, display, origin)
+    return render_template("youtube_player.html", embed_url=embed_url)
+
+
+@main_bp.route("/streaming/status")
+def streaming_status():
+    from echoview.streaming import capabilities
+    return jsonify(capabilities())
 
 
 @main_bp.route("/embed/refresh", methods=["POST"])
@@ -199,7 +313,7 @@ def refresh_embed():
     metadata = None
     if url:
         try:
-            metadata = embed_utils.classify_url(url)
+            metadata = embed_utils.classify_url(url, enrich=True)
         except Exception as exc:  # pragma: no cover - defensive logging
             log_message(f"Embed classification failed for {url}: {exc}")
             return jsonify({"ok": False, "error": "classification_failed"}), 500
@@ -305,29 +419,13 @@ def upload_media():
     theme = cfg.get("theme", "dark")
     if request.method == "GET":
         sort_opt = request.args.get("sort", "name_asc")
-        folder_files = {}
+        if sort_opt not in SORTS:
+            sort_opt = "name_asc"
         subfolders = get_subfolders()
-        for sf in subfolders:
-            try:
-                folder_path = os.path.join(IMAGE_DIR, sf)
-                files = [
-                    f for f in os.listdir(folder_path)
-                    if f.lower().endswith(VALID_MEDIA_EXT)
-                ]
-                if sort_opt.startswith("name"):
-                    files.sort(reverse=(sort_opt == "name_desc"))
-                else:
-                    files.sort(
-                        key=lambda x: os.path.getmtime(os.path.join(folder_path, x)),
-                        reverse=(sort_opt == "date_desc")
-                    )
-                folder_files[sf] = files
-            except Exception:
-                folder_files[sf] = []
         return render_template(
             "upload_media.html",
             theme=theme,
-            folder_files=folder_files,
+            selected_folder=request.args.get("folder"),
             sort_option=sort_opt,
             subfolders=subfolders,
         )
@@ -355,13 +453,119 @@ def upload_media():
 
     return redirect(url_for("main.upload_media"))
 
+
+@main_bp.route('/media/folder')
+def media_folder():
+    try:
+        result = folder_page(IMAGE_DIR, request.args.get('folder', ''),
+                             request.args.get('sort', 'name_asc'),
+                             request.args.get('page', 1, type=int), request.args.get('q', ''))
+    except ValueError:
+        return 'Invalid media folder.', 400
+    except OSError:
+        return 'Cannot read this folder. Check the media connection and retry.', 503
+    return render_template('media_folder.html', **result, subfolders=get_subfolders(),
+                           display_names=list(load_config().get('displays', {})))
+
+
+@main_bp.route('/media/images')
+def media_images():
+    try:
+        result = folder_page(IMAGE_DIR, request.args.get('folder', ''),
+                             page=request.args.get('page', 1, type=int),
+                             query=request.args.get('q', ''), images=True,
+                             aspect=request.args.get('aspect', 'any'))
+    except ValueError:
+        return jsonify(error='Invalid media folder.'), 400
+    except OSError:
+        return jsonify(error='Cannot read images. Check the media connection and retry.'), 503
+    return jsonify(result)
+
+@main_bp.get('/media/video-preview')
+def media_video_preview():
+    from pathlib import Path
+    from echoview.web.media import VIDEO_EXT
+    from echoview.web.video_preview import request_preview
+    try:
+        name = request.args.get('file', '')
+        if not name.lower().endswith(VIDEO_EXT):raise ValueError('Not a video')
+        source = resolve_file(IMAGE_DIR, request.args.get('folder', ''), name)
+        path, status = request_preview(source, Path(VIEWER_HOME) / '.video-preview-cache',
+                                       animated=request.args.get('motion') == '1')
+    except ValueError:
+        return jsonify(error='Invalid video.'), 400
+    except OSError:
+        return jsonify(error='Video preview unavailable.'), 503
+    if status == 200:
+        return send_file(path, mimetype='image/jpeg', conditional=True, max_age=300)
+    response = jsonify(pending=status == 202)
+    response.status_code = status
+    response.headers['Retry-After'] = '1'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@main_bp.get('/media/videos')
+def media_videos():
+    try:
+        result = folder_page(IMAGE_DIR, request.args.get('folder', ''),
+                             page=request.args.get('page', 1, type=int),
+                             query=request.args.get('q', ''), videos=True)
+    except ValueError:
+        return jsonify(error='Invalid media folder.'), 400
+    except OSError:
+        return jsonify(error='Cannot read videos. Check the media connection and retry.'), 503
+    return jsonify(result)
+
+
+@main_bp.post('/identify_displays')
+def identify_displays():
+    cfg = load_config()
+    try:
+        applied = request_update(state_directory(VIEWER_HOME), cfg,
+                                 list(cfg.get('displays', {})), kind='identify', channel='identify')
+    except (OSError, ValueError):
+        applied = False
+    message = 'Display names shown for five seconds.' if applied else 'Cannot reach active displays. Check viewer status and try again.'
+    if request.accept_mimetypes.best == 'application/json':
+        return jsonify(**({'message': message} if applied else {'error': message})), 200 if applied else 503
+    flash(message)
+    return redirect(url_for('main.index'))
+
+
+@main_bp.get('/status')
+def status_page():
+    return render_template('status.html',theme=load_config().get('theme','dark'))
+
+
+@main_bp.get('/recovery_status')
+def recovery_status():
+    from pathlib import Path
+    from echoview.recovery import read, status, storage_missing
+    cfg=load_config()
+    snapshot=read(state_directory(VIEWER_HOME))
+    missing=False
+    try:
+        missing=storage_missing(IMAGE_DIR,Path('/etc/fstab').read_text(),Path('/proc/self/mountinfo').read_text())
+    except (OSError,ValueError):pass
+    response=jsonify(status(cfg,snapshot,missing))
+    response.headers['Cache-Control']='no-store'
+    return response
+
+
 @main_bp.route("/restart_viewer", methods=["POST"])
 def restart_viewer():
     try:
-        subprocess.check_output(["sudo", "systemctl", "restart", "echoview.service"])
-        return redirect(url_for("main.index"))
-    except subprocess.CalledProcessError as e:
-        return f"Failed to restart service: {e}", 500
+        subprocess.run(['sudo','-n','systemctl','restart','echoview.service'],
+                       check=True,capture_output=True,timeout=15)
+    except (OSError,subprocess.SubprocessError):
+        if request.accept_mimetypes.best=='application/json':
+            return jsonify(error='Viewer restart could not be confirmed. Check the service logs.'),503
+        flash('Viewer restart could not be confirmed. Check the service logs.')
+        return redirect(url_for('main.index'))
+    if request.accept_mimetypes.best=='application/json':
+        return jsonify(message='Viewer restart requested. Waiting for playback status.'),202
+    return redirect(url_for('main.index'))
 
 @main_bp.route("/restart_device", methods=["POST"])
 def restart_device():
@@ -435,7 +639,31 @@ def create_folder():
 def settings():
     cfg = load_config()
     if request.method == "POST":
-        new_theme = request.form.get("theme", "dark")
+        action = request.form.get("action", "appearance")
+        if action == "update_branch":
+            branch = request.form.get("update_branch", "")
+            if not valid_branch(branch):
+                return "Invalid update branch.", 400
+            cfg["update_branch"] = branch
+            save_config(cfg)
+            flash("Update branch saved. Updates will use this branch; no update has been started.")
+            return redirect(url_for("main.settings"))
+        if action == "resource_profile":
+            profile = request.form.get("resource_profile", "")
+            if profile not in RESOURCE_PROFILES:
+                return "Invalid resource profile.", 400
+            cfg["resource_profile"] = profile
+            for display in cfg.get("displays", {}).values():
+                display.pop("resource_profile", None)
+            save_config(cfg)
+            try:
+                subprocess.run(["sudo", "-n", "systemctl", "restart", "echoview.service"], check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=100)
+                flash("Device resource profile saved and applied to all displays.")
+            except (OSError, subprocess.SubprocessError):
+                flash("Device resource profile saved; restart the viewer to apply it.")
+            return redirect(url_for("main.settings"))
+        new_theme = request.form.get("theme", cfg.get("theme", "dark"))
         cfg["theme"] = new_theme
 
         if new_theme == "custom":
@@ -448,17 +676,17 @@ def settings():
         if "gui" not in cfg:
             cfg["gui"] = {}
         try:
-            cfg["gui"]["background_blur_radius"] = int(request.form.get("background_blur_radius", "20"))
+            cfg["gui"]["background_blur_radius"] = int(request.form.get("background_blur_radius", cfg["gui"].get("background_blur_radius", 20)))
         except:
             cfg["gui"]["background_blur_radius"] = 20
 
         try:
-            cfg["gui"]["background_scale_percent"] = int(request.form.get("background_scale_percent", "100"))
+            cfg["gui"]["background_scale_percent"] = int(request.form.get("background_scale_percent", cfg["gui"].get("background_scale_percent", 100)))
         except:
             cfg["gui"]["background_scale_percent"] = 100
 
         try:
-            cfg["gui"]["foreground_scale_percent"] = int(request.form.get("foreground_scale_percent", "100"))
+            cfg["gui"]["foreground_scale_percent"] = int(request.form.get("foreground_scale_percent", cfg["gui"].get("foreground_scale_percent", 100)))
         except:
             cfg["gui"]["foreground_scale_percent"] = 100
 
@@ -483,7 +711,8 @@ def settings():
             "settings.html",
             theme=theme,
             cfg=cfg,
-            update_branch=UPDATE_BRANCH,
+            update_branch=selected_branch(cfg, UPDATE_BRANCH),
+            branches=branch_options(VIEWER_HOME, selected_branch(cfg, UPDATE_BRANCH))["branches"],
             version=APP_VERSION
         )
 
@@ -512,219 +741,338 @@ def clear_config():
         log_message(f"Failed to restart echoview.service after clearing config: {e}")
     return redirect(url_for("main.settings"))
 
+def spotify_setup_address(cfg):
+    """Return the configured callback origin only after validating its URL."""
+    try:
+        validate_config(cfg)
+    except ValueError:
+        return None
+    callback = urlsplit(cfg["redirect_uri"])
+    current = urlsplit(request.url_root)
+    if (callback.hostname, callback.port) != (current.hostname, current.port):
+        return f"{callback.scheme}://{callback.netloc}/configure_spotify"
+    return None
+
+
 @main_bp.route("/configure_spotify", methods=["GET", "POST"])
 def configure_spotify():
     cfg = load_config()
-    if "spotify" not in cfg:
-        cfg["spotify"] = {}
+    cfg.setdefault("spotify", {})
     if request.method == "POST":
-        cid = request.form.get("client_id", "").strip()
-        csec = request.form.get("client_secret", "").strip()
-        ruri = request.form.get("redirect_uri", "").strip()
-        scope = request.form.get("scope", "user-read-currently-playing user-read-playback-state").strip()
-        cfg["spotify"] = {
-            "client_id": cid,
-            "client_secret": csec,
-            "redirect_uri": ruri,
-            "scope": scope
-        }
+        new = {key: request.form.get(key, "").strip()
+               for key in ("client_id", "client_secret", "redirect_uri")}
+        new["scope"] = request.form.get("scope", DEFAULT_SCOPE).strip()
+        method = request.form.get("auth_method", auth_method(new))
+        if method == "authorization_code" and not new["client_secret"] and new["client_id"] == cfg["spotify"].get("client_id"):
+            new["client_secret"] = cfg["spotify"].get("client_secret", "")
+        if "auth_method" in request.form:
+            new["auth_method"] = method
+        if method == "pkce":
+            new["client_secret"] = ""
+        try:
+            validate_config(new)
+        except ValueError as exc:
+            return str(exc), 400
+        if new != cfg["spotify"]:
+            # Invalidate before saving: never use another application's cached token.
+            try:
+                os.unlink(SPOTIFY_CACHE_PATH)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                return "Cannot invalidate old Spotify token; check cache permissions.", 500
+            session.pop("spotify_browser", None)
+        cfg["spotify"] = new
         save_config(cfg)
         return redirect(url_for("main.configure_spotify"))
-    else:
-        tok_cached = os.path.exists(SPOTIFY_CACHE_PATH)
-        creds_set = bool(
-            cfg.get("spotify", {}).get("client_id")
-            and cfg.get("spotify", {}).get("client_secret")
-            and cfg.get("spotify", {}).get("redirect_uri")
-        )
-        return render_template(
-            "configure_spotify.html",
-            spotify=cfg["spotify"],
-            theme=cfg.get("theme", "dark"),
-            token_cached=tok_cached,
-            creds_set=creds_set,
-        )
+    return render_template("configure_spotify.html", spotify=cfg["spotify"],
+                           theme=cfg.get("theme", "dark"),
+                           spotify_setup_url=spotify_setup_address(cfg["spotify"]),
+                           spotify_auth_method=auth_method(cfg["spotify"]),
+                           spotify_status=cached_status(cfg["spotify"], SPOTIFY_CACHE_PATH))
+
+
+@main_bp.get("/spotify/now-playing")
+def spotify_now_playing():
+    cfg = load_config()
+    active = any(display.get('mode') == 'spotify' for display in cfg.get('displays', {}).values())
+    state = read_state(state_directory(VIEWER_HOME), cfg.get('spotify', {}), active)
+    if state.get('artwork'):
+        state['artwork'] = url_for('main.spotify_artwork', key=state['artwork'])
+    response = jsonify(state)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@main_bp.get("/spotify/artwork/<key>.jpg")
+def spotify_artwork(key):
+    if len(key) != 16 or any(char not in '0123456789abcdef' for char in key):
+        return 'Artwork unavailable', 404
+    path = state_directory(VIEWER_HOME) / f'art-{key}.jpg'
+    if not path.is_file():
+        return 'Artwork unavailable', 404
+    return send_file(path, mimetype='image/jpeg', max_age=3600)
+
 
 @main_bp.route("/spotify_auth")
 def spotify_auth():
-    from spotipy.oauth2 import SpotifyOAuth
-    cfg = load_config()
-    sp_cfg = cfg.get("spotify", {})
-    cid = sp_cfg.get("client_id", "")
-    csec = sp_cfg.get("client_secret", "")
-    ruri = sp_cfg.get("redirect_uri", "")
-    scope = sp_cfg.get("scope", "user-read-currently-playing user-read-playback-state")
-    if not (cid and csec and ruri):
-        return "Spotify config incomplete", 400
+    cfg = load_config().get("spotify", {})
+    # A callback on another address cannot receive this browser's session cookie.
+    # Show the setup link before issuing state or sending the user to Spotify.
+    if spotify_setup_address(cfg):
+        return redirect(url_for("main.configure_spotify"))
+    try:
+        browser = secrets.token_urlsafe(32)
+        session["spotify_browser"] = browser
+        if auth_method(cfg) == "pkce":
+            verifier = secrets.token_urlsafe(64)
+            auth = oauth_client(cfg, SPOTIFY_CACHE_PATH, verifier=verifier)
+            state = current_app.extensions["spotify_states"].issue(browser, cfg, verifier=verifier)
+        else:
+            auth = oauth_client(cfg, SPOTIFY_CACHE_PATH)
+            state = current_app.extensions["spotify_states"].issue(browser, cfg)
+        return redirect(auth.get_authorize_url(state=state))
+    except ValueError as exc:
+        return str(exc), 400
+    except Exception:
+        return "Could not start Spotify authorization. Check installation and cache permissions.", 503
 
-    # Ensure the cache directory exists before spotipy writes the token
-    os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
-
-    redirect_uri = ruri or "http://127.0.0.1:8080/callback"
-    sp_oauth = SpotifyOAuth(
-        client_id=cid,
-        client_secret=csec,
-        redirect_uri=redirect_uri,
-        scope=scope,
-        cache_path=SPOTIFY_CACHE_PATH,
-    )
-    auth_url = sp_oauth.get_authorize_url()
-    return redirect(auth_url)
 
 @main_bp.route("/callback")
 def callback():
-    from spotipy.oauth2 import SpotifyOAuth
-    cfg = load_config()
-    sp_cfg = cfg.get("spotify", {})
-    cid = sp_cfg.get("client_id", "")
-    csec = sp_cfg.get("client_secret", "")
-    ruri = sp_cfg.get("redirect_uri", "")
-    scope = sp_cfg.get("scope", "user-read-currently-playing user-read-playback-state")
-
-    # Ensure the cache directory exists before spotipy writes the token
-    os.makedirs(os.path.dirname(SPOTIFY_CACHE_PATH), exist_ok=True)
-
-    redirect_uri = ruri or "http://127.0.0.1:8080/callback"
-    sp_oauth = SpotifyOAuth(
-        client_id=cid,
-        client_secret=csec,
-        redirect_uri=redirect_uri,
-        scope=scope,
-        cache_path=SPOTIFY_CACHE_PATH,
-    )
+    cfg = load_config().get("spotify", {})
+    state = request.args.get("state", "")
+    browser = session.pop("spotify_browser", None)
+    proof = current_app.extensions["spotify_states"].consume(state, browser, cfg) if state and browser else False
+    if not proof or (auth_method(cfg) == "pkce" and not isinstance(proof, str)):
+        return "Authorization expired or state did not match. Start authorization again in the same browser and address.", 400
+    if request.args.get("error"):
+        return "Spotify authorization was declined. You can authorize again.", 400
     code = request.args.get("code")
     if not code:
-        return "Authorization failed: no code provided", 400
+        return "Authorization failed: no code provided.", 400
     try:
-        token_info = sp_oauth.get_access_token(code)
-    except Exception as e:
-        log_message(f"Spotify callback error: {e}")
-        return "Spotify callback error", 500
+        auth = (oauth_client(cfg, SPOTIFY_CACHE_PATH, verifier=proof) if auth_method(cfg) == "pkce"
+                else oauth_client(cfg, SPOTIFY_CACHE_PATH))
+        token = auth.get_access_token(code, check_cache=False)
+        # SpotifyPKCE returns an access-token string; OAuth returns the full dict.
+        if isinstance(token, str):
+            token = auth.cache_handler.get_cached_token()
+        if not isinstance(token, dict) or not token.get("access_token"):
+            return "Spotify did not return a valid token. Authorize again.", 502
+        if not set(cfg.get("scope", DEFAULT_SCOPE).split()).issubset(str(token.get("scope", "")).split()):
+            try:
+                os.unlink(SPOTIFY_CACHE_PATH)
+            except FileNotFoundError:
+                pass
+            return "Spotify did not grant the required permissions. Authorize again.", 400
+    except Exception:
+        # Provider exceptions may contain authorization codes or credentials.
+        return "Spotify token exchange failed. Check credentials, registered redirect URI and network, then authorize again.", 502
+    return redirect(url_for("main.configure_spotify"))
 
-    # Auto redirect if the callback is coming via localhost
-    if "localhost" in request.host or "127.0.0.1" in request.host:
-        device_ip = get_ip_address()
-        redirect_url = f"http://{device_ip}:8080/configure_spotify"
-        html = f"""
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <meta http-equiv="refresh" content="0; url={redirect_url}">
-            <title>Spotify Authorization Complete</title>
-            <script type="text/javascript">
-              window.location.href = "{redirect_url}";
-            </script>
-          </head>
-          <body>
-            <h2>Spotify Authorization Complete</h2>
-            <p>If you are not redirected automatically, <a href="{redirect_url}">click here</a>.</p>
-          </body>
-        </html>
-        """
-        return html
-    else:
-        return redirect(url_for("main.configure_spotify"))
+
+@main_bp.route("/spotify_check", methods=["POST"])
+def spotify_check():
+    cfg = load_config().get("spotify", {})
+    try:
+        auth = oauth_client(cfg, SPOTIFY_CACHE_PATH)
+        token = auth.get_cached_token()  # Spotipy validates scopes and refreshes expired tokens.
+        if not token:
+            return "No usable Spotify token. Authorize again.", 400
+        import spotipy
+        spotipy.Spotify(auth=token["access_token"], requests_timeout=5,
+                        retries=0, status_retries=0).current_playback()
+        return "Spotify connection verified. No active playback is also a valid result."
+    except Exception as exc:
+        status = getattr(exc, "http_status", None)
+        if status == 401:
+            return "Spotify token rejected. Authorize again.", 401
+        if status == 403:
+            return "Spotify access denied. Check scopes, Developer Dashboard allowed users and app-owner Premium status.", 403
+        if status == 429:
+            return "Spotify rate or quota limit reached. Wait before checking again.", 429
+        return "Spotify connection or refresh failed. Check network and credentials; reauthorize if access was revoked.", 503
+
+def clock_preview_geometry(display, name, monitor):
+    resolution = str(monitor.get('current_mode') or display.get('output_mode') or '')
+    match = re.match(r'(\d+)x(\d+)', resolution)
+    width, height = map(int, match.groups()) if match else (1920, 1080)
+    if width <= 0 or height <= 0:
+        width, height = 1920, 1080
+    pixel_aspect = display_pixel_aspect(display.get('display_aspect', 'auto'), width, height, name)
+    return dict(width=width, height=height, pixel_aspect=pixel_aspect,
+                aspect=width*pixel_aspect/height, safe_area=safe_area_settings(display.get('safe_area', {})))
+
 
 @main_bp.route("/overlay_config", methods=["GET", "POST"])
 def overlay_config():
-    cfg = load_config()
+    cfg = deepcopy(load_config())
     if request.method == "POST":
+        sizes = {}
         for monitor in cfg.get("displays", {}):
-            new_overlay = {
+            try:
+                sizes[monitor] = int(request.form.get(f"{monitor}_clock_font_size", "26"))
+            except (ValueError, TypeError):
+                return "Clock font size must be an integer from 8 to 512.", 400
+            if not 8 <= sizes[monitor] <= 512:
+                return "Clock font size must be an integer from 8 to 512.", 400
+        changed = []
+        positions = {'top-left', 'top-center', 'top-right', 'center', 'bottom-left', 'bottom-center', 'bottom-right'}
+        for monitor, display in cfg.get('displays', {}).items():
+            old_overlay = display.get('overlay', cfg.get('overlay', {}))
+            new_overlay = {**old_overlay,
                 "clock_enabled": (f"{monitor}_clock_enabled" in request.form),
-                "clock_font_size": int(request.form.get(f"{monitor}_clock_font_size", "26")),
+                "clock_font_size": sizes[monitor],
                 "font_color": request.form.get(f"{monitor}_font_color", "#FFFFFF"),
                 "auto_negative_font": (f"{monitor}_auto_negative_font" in request.form),
                 "clock_position": request.form.get(f"{monitor}_clock_position", "bottom-center"),
             }
-            if "displays" in cfg and monitor in cfg["displays"]:
-                cfg["displays"][monitor]["overlay"] = new_overlay
-        if "overlay" not in cfg:
-            cfg["overlay"] = {}
-        try:
-            cfg["overlay"]["offset_x"] = int(request.form.get("offset_x", "0"))
-            cfg["overlay"]["offset_y"] = int(request.form.get("offset_y", "0"))
-        except Exception:
-            pass
-        save_config(cfg)
-        try:
-            subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
-        except subprocess.CalledProcessError as e:
-            log_message(f"Failed to restart echoview.service: {e}")
+            clock_format = request.form.get(f'{monitor}_clock_format', old_overlay.get('clock_format', '24'))
+            if clock_format not in ('12', '24'):
+                return 'Choose a 12-hour or 24-hour clock.', 400
+            # Old/cached forms lack these fields; retain their existing format.
+            if f'{monitor}_clock_format' in request.form:
+                show_seconds = f'{monitor}_clock_show_seconds' in request.form
+                for key, value, default in (('clock_format', clock_format, '24'),
+                                            ('clock_show_seconds', show_seconds, True)):
+                    if key in old_overlay or value != default:
+                        new_overlay[key] = value
+            if f'{monitor}_clock_blink_present' in request.form:
+                blink = f'{monitor}_clock_blink_separators' in request.form
+                if 'clock_blink_separators' in old_overlay or blink:
+                    new_overlay['clock_blink_separators'] = blink
+            if new_overlay['clock_position'] not in positions:
+                return 'Choose a valid clock position.', 400
+            if new_overlay != old_overlay:
+                display['overlay'] = new_overlay
+                changed.append(monitor)
+        # Preserve legacy offsets when the current form does not expose them.
+        for key in ('offset_x', 'offset_y'):
+            if key in request.form:
+                try:
+                    value = int(request.form[key])
+                except (TypeError, ValueError):
+                    return 'Overlay offsets must be integers.', 400
+                if value != cfg.get('overlay', {}).get(key):
+                    cfg.setdefault('overlay', {})[key] = value
+                    changed = list(cfg.get('displays', {}))
+        if changed:
+            result, status = _save_live_settings(cfg, changed, kind='overlay')
+            flash(result['message'])
+        else:
+            flash('No changes to apply. Playback was left running.')
         return redirect(url_for("main.overlay_config"))
     else:
         monitors_cfg = cfg.get("displays", {})
+        inventory = detect_monitors_extended()
         return render_template(
             "overlay.html",
             theme=cfg.get("theme", "dark"),
             monitors=monitors_cfg,
+            overlay_defaults=cfg.get('overlay', {}),
+            preview_geometry={name: clock_preview_geometry(display, name, inventory.get(name, {}))
+                              for name, display in monitors_cfg.items()},
+            overlay_clock=scheduling.device_clock(),
         )
+
+
+@main_bp.route('/overlay_preview/<display>')
+def overlay_preview_frame(display):
+    from io import BytesIO
+    from echoview.overlay_preview import request_frame, PreviewUnavailable
+    if display not in load_config().get('displays', {}):
+        return 'Unknown display', 404
+    try:
+        frame = request_frame(state_directory(VIEWER_HOME) / 'overlay-preview', display)
+        response = send_file(BytesIO(frame), mimetype='image/jpeg', max_age=0)
+    except (OSError, PreviewUnavailable):
+        response = jsonify(error='Preview unavailable')
+        response.status_code = 503
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
+@main_bp.route("/display/presentation", methods=["POST"])
+def configure_presentation():
+    cfg = load_config()
+    name = request.form.get("display", "")
+    if name not in cfg.get("displays", {}):
+        return "Unknown display.", 400
+    display = cfg["displays"][name]
+    old = safe_area_settings(display.get("safe_area", {}))
+    try:
+        margins = safe_area_settings({edge: request.form.get("safe_" + edge, old.get(edge, 0)) for edge in EDGES}, strict=True)
+    except ValueError as exc:
+        return str(exc), 400
+    display.update(safe_area=margins)
+    save_config(cfg)
+    try:
+        subprocess.run(["sudo", "systemctl", "restart", "echoview.service"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        flash("Safe-area settings saved.")
+    except (OSError, subprocess.SubprocessError):
+        flash("Presentation settings saved; restart the viewer to apply them.")
+    return redirect(url_for("main.index"))
+
+
+@main_bp.route("/display/output", methods=["POST"])
+def configure_output():
+    cfg = load_config()
+    name = request.form.get("display", "")
+    if name not in cfg.get("displays", {}):
+        return "Unknown display.", 400
+    selection = request.form.get("output_mode", "auto")
+    aspect = request.form.get("display_aspect", "auto")
+    if aspect not in DISPLAY_ASPECTS:
+        return "Invalid physical display aspect ratio.", 400
+    try:
+        apply_output_mode(name, selection)
+    except ValueError as exc:
+        return str(exc), 400
+    except RuntimeError as exc:
+        return str(exc), 503
+    cfg["displays"][name]["output_mode"] = selection
+    cfg["displays"][name]["display_aspect"] = aspect
+    save_config(cfg)
+    try:
+        subprocess.run(["sudo", "systemctl", "restart", "echoview.service"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        flash("Display mode applied and settings saved.")
+    except (OSError, subprocess.SubprocessError):
+        flash("Display mode applied and settings saved; restart the viewer to use the new aspect setting.")
+    return redirect(url_for("main.index"))
+
 
 @main_bp.route("/", methods=["GET", "POST"])
 def index():
-    cfg = load_config()
+    cfg = deepcopy(load_config())
 
     # Re-detect extended monitors, just to show their current resolution
     ext_mons = detect_monitors_extended()
     if "displays" not in cfg:
         cfg["displays"] = {}
 
-    # Remove old displays that no longer appear
-    to_remove = []
-    for dname in cfg["displays"]:
-        if dname not in ext_mons and dname.startswith("Display"):
-            to_remove.append(dname)
-        elif dname not in ext_mons and dname.startswith("HDMI"):
-            to_remove.append(dname)
-    for dr in to_remove:
-        del cfg["displays"][dr]
-
-    # Update or add each known monitor
-    for mon_name, minfo in ext_mons.items():
-        if mon_name not in cfg["displays"]:
-            cfg["displays"][mon_name] = {
-                "mode": "random_image",
-                "fallback_mode": "random_image",
-                "image_interval": 60,
-                "image_category": "",
-                "specific_image": "",
-                "shuffle_mode": False,
-                "mixed_folders": [],
-                "video_category": "",
-                "shuffle_videos": False,
-                "video_mute": True,
-                "video_volume": 100,
-                "video_play_to_end": True,
-                "video_max_seconds": 120,
-                "aspect_filter": "any",
-                "rotate": 0,
-                "screen_name": f"{mon_name}: {minfo['current_mode']}",
-                "chosen_mode": minfo["current_mode"],
-                "web_use_external_browser": False,
-                "spotify_info_position": "bottom-center"
-            }
-            log_message(f"Detected new monitor {mon_name} with current mode {minfo['current_mode']}")
-        else:
-            dcfg = cfg["displays"][mon_name]
-            dcfg["screen_name"] = f"{mon_name}: {minfo['current_mode']}"
-            if minfo.get("model"):
-                dcfg["monitor_model"] = minfo["model"]
-
-    save_config(cfg)
-
-    flash_msg = (
-      "If you experience lower performance or framerate than expected, "
-      "please consider using a physically lower resolution monitor."
-    )
+    if reconcile_displays(cfg, ext_mons):
+        save_config(cfg)
 
     if request.method == "POST":
         action = request.form.get("action", "")
         if action == "update_displays":
+            previous = deepcopy(cfg)
             # Update display modes, categories, etc.
             for dname in cfg["displays"]:
                 pre = dname + "_"
+                if pre + "mode" not in request.form:
+                    continue
                 dcfg = cfg["displays"][dname]
                 new_mode = request.form.get(pre + "mode", dcfg["mode"])
+                if new_mode == 'scheduled':
+                    try:
+                        entries = json.loads(request.form.get(pre + 'schedule', json.dumps(dcfg.get('schedule', []))))
+                        dcfg['schedule'] = scheduling.normalize_schedule(entries)
+                    except (TypeError, ValueError) as exc:
+                        return f'Cannot save schedule: {exc}', 400
                 new_interval_s = request.form.get(pre + "image_interval", str(dcfg["image_interval"]))
                 new_cat = request.form.get(pre + "image_category", dcfg["image_category"])
                 if is_ignored_folder(new_cat):
@@ -735,8 +1083,11 @@ def index():
                 shuffle_val = request.form.get(pre + "shuffle_mode", "no")
                 new_spec = request.form.get(pre + "specific_image", dcfg["specific_image"])
                 rotate_str = request.form.get(pre + "rotate", "0")
-                mixed_str = request.form.get(pre + "mixed_order", "")
-                mixed_list = [x for x in mixed_str.split(",") if x and not is_ignored_folder(x)]
+                mixed_str = request.form.get(pre + "mixed_order", json.dumps(dcfg.get('mixed_folders', [])))
+                try:
+                    mixed_list = parse_folder_order(mixed_str)
+                except ValueError as exc:
+                    return str(exc), 400
                 new_vid_cat = request.form.get(pre + "video_category", dcfg.get("video_category", ""))
                 if is_ignored_folder(new_vid_cat):
                     new_vid_cat = ""
@@ -750,6 +1101,8 @@ def index():
                     new_interval = int(new_interval_s)
                 except:
                     new_interval = dcfg["image_interval"]
+                if new_mode == 'scheduled' and not 1 <= new_interval <= 86400:
+                    return 'Scheduled image interval must be between 1 and 86400 seconds.', 400
                 try:
                     new_rotate = int(rotate_str)
                 except:
@@ -808,10 +1161,25 @@ def index():
 
                 # If Spotify, store extras
                 if new_mode == "spotify":
+                    layout = request.form.get(pre + 'spotify_layout', dcfg.get('spotify_layout', 'classic'))
+                    if layout not in ('classic', 'album_card', 'poster'):
+                        return 'Invalid Spotify layout.', 400
+                    dcfg['spotify_layout'] = layout
+                    background_mode = request.form.get(pre+'spotify_background_mode', dcfg.get('spotify_background_mode','black'))
+                    if background_mode not in ('black','artwork','gradient','blurred'):
+                        return 'Invalid Spotify background.', 400
+                    try:
+                        background_dim = int(request.form.get(pre+'spotify_background_dim',dcfg.get('spotify_background_dim',65)))
+                    except (TypeError,ValueError):
+                        return 'Background dimming must be an integer from 0 to 95.', 400
+                    if not 0 <= background_dim <= 95:
+                        return 'Background dimming must be an integer from 0 to 95.', 400
+                    dcfg.update(spotify_background_mode=background_mode, spotify_background_dim=background_dim)
                     dcfg["fallback_mode"] = request.form.get(pre + "fallback_mode", dcfg.get("fallback_mode", "random_image"))
                     dcfg["spotify_show_song"] = True if request.form.get(pre + "spotify_show_song") else False
                     dcfg["spotify_show_artist"] = True if request.form.get(pre + "spotify_show_artist") else False
                     dcfg["spotify_show_album"] = True if request.form.get(pre + "spotify_show_album") else False
+                    dcfg['spotify_show_device'] = bool(request.form.get(pre + 'spotify_show_device'))
                     try:
                         dcfg["spotify_font_size"] = int(request.form.get(pre + "spotify_font_size", "18"))
                     except:
@@ -821,6 +1189,9 @@ def index():
                     dcfg["spotify_info_position"] = request.form.get(pre + "spotify_info_position", dcfg.get("spotify_info_position", "bottom-center"))
                     # New: store the live progress bar option and its settings
                     dcfg["spotify_show_progress"] = True if request.form.get(pre + "spotify_show_progress") else False
+                    if request.form.get(pre + 'spotify_time_present'):
+                        dcfg['spotify_show_time'] = bool(request.form.get(pre + 'spotify_show_time'))
+                    dcfg["spotify_smooth_progress"] = bool(request.form.get(pre + "spotify_smooth_progress"))
                     dcfg["spotify_progress_position"] = request.form.get(pre + "spotify_progress_position", dcfg.get("spotify_progress_position", "below_info"))
                     dcfg["spotify_progress_theme"] = request.form.get(pre + "spotify_progress_theme", dcfg.get("spotify_progress_theme", "default"))
                     try:
@@ -830,11 +1201,19 @@ def index():
 
                 if new_mode == "mixed":
                     dcfg["mixed_folders"] = mixed_list
-                else:
-                    dcfg["mixed_folders"] = []
                 if new_mode == "videos":
+                    old_video_category = dcfg.get("video_category", "")
                     dcfg["video_category"] = new_vid_cat
+                    selected_video = request.form.get(pre + "specific_video", dcfg.get("specific_video", ""))
+                    if (new_vid_cat != old_video_category
+                            and request.form.get(pre + 'specific_video_folder') != new_vid_cat):
+                        selected_video = ''
+                    if selected_video and (os.path.basename(selected_video) != selected_video
+                                           or not selected_video.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".webm"))):
+                        return 'Invalid video selection.', 400
+                    dcfg["specific_video"] = selected_video
                     dcfg["shuffle_videos"] = (shuffle_videos_val == "yes")
+                if new_mode in ('videos', 'scheduled'):
                     dcfg["video_mute"] = True if video_mute_val else False
                     try:
                         dcfg["video_volume"] = int(video_vol_str)
@@ -845,54 +1224,18 @@ def index():
                         dcfg["video_max_seconds"] = int(video_max_str)
                     except:
                         dcfg["video_max_seconds"] = dcfg.get("video_max_seconds", 120)
-                else:
-                    dcfg["video_category"] = ""
-
-            save_config(cfg)
-            try:
-                subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
-            except:
-                pass
+            if cfg == previous:
+                flash('No changes to apply. Playback was left running.')
+            else:
+                result, status = _save_display_settings(cfg, previous)
+                flash(result['message'])
             return redirect(url_for("main.index"))
 
-    # Build folder counts
-    folder_counts = {}
-    for sf in get_subfolders():
-        folder_counts[sf] = count_files_in_folder(os.path.join(IMAGE_DIR, sf))
-
-    # Collect images for "specific_image" selection
-    display_images = {}
-    for dname, dcfg in cfg["displays"].items():
-        cat = dcfg.get("image_category", "")
-        base_dir = os.path.join(IMAGE_DIR, cat) if cat else IMAGE_DIR
-        img_list = []
-        if os.path.isdir(base_dir):
-            for fname in os.listdir(base_dir):
-                lf = fname.lower()
-                if lf.endswith((".jpg", ".jpeg", ".png", ".gif")):
-                    rel_path = fname
-                    img_list.append(os.path.join(cat, rel_path) if cat else rel_path)
-        img_list.sort()
-        aspect_pref = dcfg.get("aspect_filter", "any")
-        if aspect_pref not in ("", None, "any"):
-            filtered = []
-            for rel_path in img_list:
-                full_path = os.path.join(IMAGE_DIR, rel_path)
-                if not os.path.exists(full_path):
-                    continue
-                try:
-                    label = media_aspect_label(full_path)
-                except Exception:
-                    label = "unknown"
-                if label == aspect_pref:
-                    filtered.append(rel_path)
-            img_list = filtered
-        display_images[dname] = img_list
-
-    cpu, mem_used_mb, mem_total_mb, load1, temp = get_system_stats()
-    used_bytes, total_bytes = get_storage_stats()
-    disk_line = f"{format_bytes(used_bytes)}/{format_bytes(total_bytes)}"
-    mem_line = f"{round(mem_used_mb, 1)}/{round(mem_total_mb, 1)}"
+    # Navigation must not scan every NAS folder or inspect media headers.
+    # Specific-image choices load separately when their section is opened.
+    subfolders = get_subfolders()
+    cpu, mem_line, temp, disk_line = "…", "…", "…", "…"
+    load1 = 0
     host = get_hostname()
     ipaddr = get_ip_address()
     model = get_pi_model()
@@ -900,36 +1243,24 @@ def index():
 
     sub_info_line = ""
 
-    sp_cfg = cfg.get("spotify", {})
-    if (
-        sp_cfg.get("client_id")
-        and sp_cfg.get("client_secret")
-        and sp_cfg.get("redirect_uri")
-    ):
-        if os.path.exists(SPOTIFY_CACHE_PATH):
-            spotify_status = "Authorized"
-        else:
-            spotify_status = "Credentials set - authorize"
-    else:
-        spotify_status = "Not configured"
-
+    spotify_status = cached_status(cfg.get("spotify", {}), SPOTIFY_CACHE_PATH)
 
     final_monitors = {}
-    for mon_name, minfo in ext_mons.items():
-        chosen = cfg["displays"][mon_name].get("chosen_mode", minfo["current_mode"])
-        model_name = minfo["model"] or "?"
-        final_monitors[mon_name] = {
-            "resolution": chosen,
-            "available_modes": minfo["modes"],
-            "model_name": model_name
+    for name in cfg["displays"]:
+        monitor = ext_mons.get(name, {})
+        final_monitors[name] = {
+            "resolution": monitor.get("current_mode") or "Unknown",
+            "refresh": monitor.get("current_rate"),
+            "connected": monitor.get("connected", False), "active": monitor.get("active", False),
+            "available_modes": mode_choices(monitor), "model_name": monitor.get("model") or "Unknown",
+            "kind": monitor.get("kind", "unknown"),
         }
 
     return render_template(
         "index.html",
         cfg=cfg,
-        subfolders=get_subfolders(),
-        folder_counts=folder_counts,
-        display_images=display_images,
+        schedule_clock=scheduling.device_clock(),
+        subfolders=subfolders,
         cpu=cpu,
         mem_line=mem_line,
         load1=round(load1, 2),
@@ -942,282 +1273,70 @@ def index():
         version=APP_VERSION,
         sub_info_line=sub_info_line,
         monitors=final_monitors,
-        flash_msg=flash_msg,
+        display_aspects=DISPLAY_ASPECTS,
         spotify_status=spotify_status
     )
 
 
+def _update_response(reboot=False):
+    from echoview.updates import update, UpdateError
+    try:
+        if request.accept_mimetypes.best == 'application/json':
+            from echoview.update_jobs import start
+            state = start(VIEWER_HOME, selected_branch(load_config(), UPDATE_BRANCH),
+                          CONFIG_PATH, SPOTIFY_CACHE_PATH, reboot=reboot)
+            return jsonify(state), 202
+        update(VIEWER_HOME, selected_branch(load_config(), UPDATE_BRANCH), CONFIG_PATH, SPOTIFY_CACHE_PATH, reboot=reboot)
+    except UpdateError as exc:
+        log_message(str(exc))
+        if request.accept_mimetypes.best == 'application/json':
+            return jsonify(error=str(exc)), 409
+        return render_template("maintenance.html", message=str(exc), pending=False), 500
+    message = ("Installation completed. Reboot requested; wait for the device to return."
+               if reboot else "Installation completed and viewer is active. Controller restart queued.")
+    return render_template("maintenance.html", message=message, pending=True), 202
+
+
 @main_bp.route("/update_app", methods=["POST"])
 def update_app():
-    """
-    Perform a soft update by resetting the working tree to the
-    configured branch and optionally re‑running setup.sh if it changed.
-    After the update completes the viewer and controller services are
-    restarted.  Rather than rendering a barebones template this route
-    returns a small themed page similar to the full_update page to
-    provide a more polished experience.  The page automatically
-    redirects back to the home screen after a short delay.
-    """
-    cfg = load_config()
-    log_message(f"Starting soft update to origin/{UPDATE_BRANCH}")
-
-    old_hash = ""
-    try:
-        old_hash = subprocess.check_output(
-            ["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME
-        ).decode().strip()
-    except Exception as e:
-        log_message(f"Could not get old setup.sh hash: {e}")
-
-    try:
-        subprocess.check_call(["git", "fetch"], cwd=VIEWER_HOME)
-        subprocess.check_call(["git", "checkout", UPDATE_BRANCH], cwd=VIEWER_HOME)
-        subprocess.check_call(
-            ["git", "reset", "--hard", f"origin/{UPDATE_BRANCH}"], cwd=VIEWER_HOME
-        )
-    except subprocess.CalledProcessError as e:
-        log_message(f"Git update failed: {e}")
-        return "Git update failed. Check logs.", 500
-
-    new_hash = ""
-    try:
-        new_hash = subprocess.check_output(
-            ["git", "rev-parse", "HEAD:setup.sh"], cwd=VIEWER_HOME
-        ).decode().strip()
-    except Exception as e:
-        log_message(f"Could not get new setup.sh hash: {e}")
-
-    if old_hash and new_hash and (old_hash != new_hash):
-        log_message("setup.sh changed. Re-running it in --auto-update mode...")
-        try:
-            subprocess.check_call(
-                ["sudo", "bash", "setup.sh", "--auto-update"], cwd=VIEWER_HOME
-            )
-        except subprocess.CalledProcessError as e:
-            log_message(f"Re-running setup.sh failed: {e}")
-
-    log_message("Soft update completed successfully.")
-
-    # Restart services without rebooting the whole device.  The Popen
-    # calls allow this route to return immediately without blocking on
-    # service restarts.
-    subprocess.Popen(["sudo", "systemctl", "restart", "echoview.service"])
-    subprocess.Popen(["sudo", "systemctl", "restart", "controller.service"])
-
-    # Render a simple themed status page similar to the full update.
-    theme = cfg.get("theme", "dark")
-    if theme == "dark":
-        page_bg = "#121212"
-        text_color = "#ECECEC"
-        button_bg = "#444"
-        button_color = "#FFF"
-        link_hover_bg = "#666"
-    else:
-        page_bg = "#FFFFFF"
-        text_color = "#222"
-        button_bg = "#ddd"
-        button_color = "#111"
-        link_hover_bg = "#bbb"
-
-    return f"""
-    <html>
-      <head>
-        <meta charset=\"utf-8\"/>
-        <title>EchoView Update</title>
-        <style>
-          body {{
-            background-color: {page_bg};
-            color: {text_color};
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 50px;
-          }}
-          a.button {{
-            display: inline-block;
-            margin-top: 20px;
-            padding: 10px 20px;
-            background-color: {button_bg};
-            color: {button_color};
-            border: none;
-            border-radius: 6px;
-            text-decoration: none;
-            cursor: pointer;
-          }}
-          a.button:hover {{
-            background-color: {link_hover_bg};
-          }}
-        </style>
-      </head>
-      <body>
-        <h2>Soft update complete. Services are restarting…</h2>
-        <p>Please wait a moment. You will be redirected shortly.</p>
-        <p>If you are not redirected automatically, click below
-            <br>
-           <a href=\"/\" class=\"button\">Return to Home Page</a></p>
-        <script>
-          setTimeout(function() {{
-            window.location.href = "/";
-          }}, 10000);
-        </script>
-      </body>
-    </html>
-    """
+    return _update_response()
 
 
 @main_bp.route("/full_update", methods=["POST"])
 def full_update():
-    """Perform a full update and reboot the device."""
-    cfg = load_config()
-    log_message(f"Starting update: forced reset to origin/{UPDATE_BRANCH}")
+    return _update_response(reboot=True)
 
-    try:
-        subprocess.check_call(["git", "fetch"], cwd=VIEWER_HOME)
-        subprocess.check_call(["git", "checkout", UPDATE_BRANCH], cwd=VIEWER_HOME)
-        subprocess.check_call(["git", "reset", "--hard", f"origin/{UPDATE_BRANCH}"], cwd=VIEWER_HOME)
-    except subprocess.CalledProcessError as e:
-        log_message(f"Git update failed: {e}")
-        return "Git update failed. Check logs.", 500
 
-    log_message("Running setup.sh in --auto-update mode for full update...")
-    try:
-        subprocess.check_call(["sudo", "bash", "setup.sh", "--auto-update"], cwd=VIEWER_HOME)
-    except subprocess.CalledProcessError as e:
-        log_message(f"Re-running setup.sh failed: {e}")
-
-    log_message("Update completed successfully.")
-    subprocess.Popen(["sudo", "reboot"])
-
-    theme = cfg.get("theme", "dark")
-    if theme == "dark":
-        page_bg = "#121212"
-        text_color = "#ECECEC"
-        button_bg = "#444"
-        button_color = "#FFF"
-        link_hover_bg = "#666"
-    else:
-        page_bg = "#FFFFFF"
-        text_color = "#222"
-        button_bg = "#ddd"
-        button_color = "#111"
-        link_hover_bg = "#bbb"
-
-    return f"""
-    <html>
-      <head>
-        <meta charset="utf-8"/>
-        <title>EchoView Update</title>
-        <style>
-          body {{
-            background-color: {page_bg};
-            color: {text_color};
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 50px;
-          }}
-          a.button {{
-            display: inline-block;
-            margin-top: 20px;
-            padding: 10px 20px;
-            background-color: {button_bg};
-            color: {button_color};
-            border: none;
-            border-radius: 6px;
-            text-decoration: none;
-            cursor: pointer;
-          }}
-          a.button:hover {{
-            background-color: {link_hover_bg};
-          }}
-        </style>
-      </head>
-      <body>
-        <h2>Update is complete. The system is now rebooting...</h2>
-        <p>Please wait for the device to come back online.</p>
-        <p>If the device does not redirect automatically, click below
-            <br>
-           <a href="/" class="button">Return to Home Page</a></p>
-        <script>
-          setTimeout(function() {{
-            window.location.href = "/";
-          }}, 10000);
-        </script>
-      </body>
-    </html>
-    """
-
-@main_bp.route("/restart_services", methods=["POST", "GET"])
+@main_bp.route("/restart_services", methods=["POST"])
 def restart_services():
-    """
-    Restart the viewer and controller services on demand.  This route
-    returns a themed HTML page similar to the update pages instead of
-    bare HTML.  It also automatically redirects back to the home page
-    after a short delay.
-    """
+    from echoview.updates import restart_services as restart, UpdateError
     try:
-        subprocess.check_call(["sudo", "systemctl", "restart", "echoview.service"])
-        subprocess.check_call(["sudo", "systemctl", "restart", "controller.service"])
-        log_message("Services restarted.")
-    except subprocess.CalledProcessError as e:
-        log_message(f"Failed to restart services: {e}")
-        return "Failed to restart services. Check logs.", 500
+        restart()
+    except UpdateError as exc:
+        return render_template("maintenance.html", message=str(exc), pending=False), 500
+    return render_template("maintenance.html", message="Viewer is active. Controller restart queued.", pending=True), 202
 
-    # Determine theme colours for the restart page
-    cfg = load_config()
-    theme = cfg.get("theme", "dark")
-    if theme == "dark":
-        page_bg = "#121212"
-        text_color = "#ECECEC"
-        button_bg = "#444"
-        button_color = "#FFF"
-        link_hover_bg = "#666"
-    else:
-        page_bg = "#FFFFFF"
-        text_color = "#222"
-        button_bg = "#ddd"
-        button_color = "#111"
-        link_hover_bg = "#bbb"
 
-    return f"""
-    <html>
-      <head>
-        <meta charset=\"utf-8\"/>
-        <title>Restarting</title>
-        <style>
-          body {{
-            background-color: {page_bg};
-            color: {text_color};
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 50px;
-          }}
-          a.button {{
-            display: inline-block;
-            margin-top: 20px;
-            padding: 10px 20px;
-            background-color: {button_bg};
-            color: {button_color};
-            border: none;
-            border-radius: 6px;
-            text-decoration: none;
-            cursor: pointer;
-          }}
-          a.button:hover {{
-            background-color: {link_hover_bg};
-          }}
-        </style>
-      </head>
-      <body>
-        <h2>Services restarting…</h2>
-        <p>You will be redirected shortly.</p>
-        <p>If you are not redirected automatically, click below
-           <br>
-           <a href=\"/\" class=\"button\">Return to Home Page</a>
-        </p>
-        <script>
-          setTimeout(function() {{
-            window.location.href = "/";
-          }}, 10000);
-        </script>
-      </body>
-    </html>
-    """
+@main_bp.route("/update_branches", methods=["GET"])
+def update_branches():
+    branch = selected_branch(load_config(), UPDATE_BRANCH)
+    return jsonify(branch_options(VIEWER_HOME, branch, remote=True))
+
+
+@main_bp.route('/update_status', methods=['GET'])
+def update_status():
+    from echoview.update_jobs import status
+    response = jsonify(**status(VIEWER_HOME), version=APP_VERSION)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@main_bp.route('/check_update', methods=['POST'])
+def check_update():
+    from echoview.update_jobs import check_release
+    from echoview.updates import UpdateError
+    try:
+        result = check_release(VIEWER_HOME, selected_branch(load_config(), UPDATE_BRANCH))
+    except UpdateError as exc:
+        return jsonify(error=str(exc)), 503
+    return jsonify(result)

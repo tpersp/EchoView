@@ -27,7 +27,8 @@ def test_refresh_embed_updates_config_and_saved_sites(temp_config, monkeypatch):
     cfg["saved_websites"] = [test_url]
     utils.save_config(cfg)
 
-    def fake_classify(url):
+    def fake_classify(url, enrich=False):
+        assert enrich is True
         assert url == test_url
         return embed_utils.EmbedMetadata(
             embed_type="youtube",

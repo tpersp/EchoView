@@ -1,0 +1,32 @@
+<div id="{{ dname }}_web_page_section" class="mode-section">
+  <label class="field"><span class="field-label">Website or video URL</span>
+    <input type="text" class="web-url-input" data-display="{{ dname }}" name="{{ pre }}web_url" list="{{ dname }}_saved_sites" value="{{ dcfg.web_url|default('') }}" placeholder="https://example.com">
+  </label>
+  <datalist id="{{ dname }}_saved_sites">
+    {% for site in cfg.saved_websites|default([]) %}
+      {% if site is string %}<option value="{{ site }}">{{ site }}</option>{% else %}<option value="{{ site.get('url','') }}">{{ site.get('title',site.get('provider',site.get('url',''))) }}</option>{% endif %}
+    {% endfor %}
+  </datalist>
+  {% set meta = dcfg.embed_metadata %}
+  <div class="form-actions">
+    <button type="button" class="refresh-embed-btn" data-display="{{ dname }}">Refresh metadata</button>
+    <span id="{{ dname }}_embed_status" class="embed-status muted">{{ (meta.embed_type|default('iframe')|capitalize) ~ ' detected' if meta else 'No metadata cached' }}</span>
+    <span id="{{ dname }}_embed_error" class="embed-error"></span>
+  </div>
+  {{ f.toggle(pre ~ 'web_use_external_browser','Open in Chromium',dcfg.get('web_use_external_browser',false)) }}
+  <div id="{{ dname }}_embed_metadata" class="embed-metadata">
+    {% if meta %}
+      {% if meta.title %}<strong>{{ meta.title }}</strong>{% endif %}
+      <div>{{ meta.provider|default('Unknown provider') }}{% if meta.content_type %} · {{ meta.content_type|capitalize }}{% endif %}</div>
+      {% if meta.thumbnail_url %}<img src="{{ meta.thumbnail_url }}" alt="Media preview" loading="lazy" style="max-width:200px; border-radius:6px; margin-top:8px;">{% endif %}
+      {% if meta.canonical_url %}<div><code>{{ meta.canonical_url }}</code></div>{% endif %}
+    {% else %}<span class="muted">Enter a URL and refresh its metadata.</span>{% endif %}
+  </div>
+  <div id="{{ dname }}_youtube_controls" class="youtube-options" data-display="{{ dname }}" style="display:{{ 'flex' if meta and meta.embed_type == 'youtube' else 'none' }}; flex-wrap:wrap;">
+    {{ f.toggle(pre ~ 'youtube_autoplay','Autoplay',dcfg.get('youtube_autoplay',false),value='on') }}
+    {{ f.toggle(pre ~ 'youtube_mute','Mute on load',dcfg.get('youtube_mute',false),value='on') }}
+    {{ f.toggle(pre ~ 'youtube_captions','Closed captions',dcfg.get('youtube_captions',false),value='on') }}
+    {{ f.select(pre ~ 'youtube_quality','Video quality',dcfg.get('youtube_quality','default'), [('default','Default'),('small','144p'),('medium','360p'),('large','480p'),('hd720','720p'),('hd1080','1080p'),('highres','Highest available')]) }}
+  </div>
+  {{ f.toggle(pre ~ 'save_web','Remember this website',false) }}
+</div>

@@ -13,26 +13,70 @@
 #   8) Configure Openbox autologin & picom in openbox autostart
 #   9) Reboots (unless in --auto-update mode)
 #
-# Usage:  sudo ./setup.sh  [--auto-update]
+# Usage: sudo ./setup.sh [--auto-update] [--video-profile keep|hdmi|composite-pal|composite-ntsc]
+# Optional YouTube extraction stack: add --with-streaming
+# Preview: ./setup.sh --video-profile composite-pal --dry-run
+# Restore: sudo ./setup.sh --restore-video BACKUP_DIR [--dry-run]
 #   If you run with --auto-update, it will skip user prompts and final reboot.
 
-# -------------------------------------------------------
-# Must be run as root
-# -------------------------------------------------------
-if [[ $EUID -ne 0 ]]; then
-  echo "Please run this script as root (e.g. sudo ./setup.sh)."
-  exit 1
-fi
-
-# -------------------------------------------------------
-# Check if we're in "auto-update" mode
-# -------------------------------------------------------
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+set -e
+source "$SCRIPT_DIR/scripts/setup-runtime.sh" || exit 1
 AUTO_UPDATE="false"
-if [[ "$1" == "--auto-update" ]]; then
-  AUTO_UPDATE="true"
+INSTALL_STREAMING="false"
+VIDEO_PROFILE="keep"
+VIDEO_DRY_RUN="false"
+VIDEO_RESTORE=""
+VIDEO_BOOT_ARGS=()
+VIDEO_FORCE_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --auto-update) AUTO_UPDATE="true"; shift ;;
+    --with-streaming) INSTALL_STREAMING="true"; shift ;;
+    --video-profile)
+      [[ $# -ge 2 ]] || { echo "Missing video profile." >&2; exit 1; }
+      VIDEO_PROFILE="$2"; shift 2 ;;
+    --boot-dir)
+      [[ $# -ge 2 ]] || { echo "Missing boot directory." >&2; exit 1; }
+      VIDEO_BOOT_ARGS=(--boot-dir "$2"); shift 2 ;;
+    --dry-run) VIDEO_DRY_RUN="true"; shift ;;
+    --restore-video)
+      [[ $# -ge 2 ]] || { echo "Missing backup directory." >&2; exit 1; }
+      VIDEO_RESTORE="$2"; shift 2 ;;
+    --force-restore) VIDEO_FORCE_ARGS=(--force-restore); shift ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+case "$VIDEO_PROFILE" in
+  keep|hdmi|composite-pal|composite-ntsc) ;;
+  *) echo "Unknown video profile: $VIDEO_PROFILE" >&2; exit 1 ;;
+esac
+if [[ -n "$VIDEO_RESTORE" && "$VIDEO_PROFILE" != keep ]]; then
+  echo "Choose either --restore-video or --video-profile." >&2; exit 1
+fi
+if [[ ${#VIDEO_FORCE_ARGS[@]} -gt 0 && -z "$VIDEO_RESTORE" ]]; then
+  echo "--force-restore requires --restore-video." >&2; exit 1
+fi
+# Preview/restore are standalone: no apt, services, OS migration or reboot.
+if [[ -n "$VIDEO_RESTORE" ]]; then
+  VIDEO_PREVIEW_ARGS=()
+  [[ "$VIDEO_DRY_RUN" == true ]] && VIDEO_PREVIEW_ARGS=(--dry-run)
+  exec python3 "$SCRIPT_DIR/echoview/boot_profiles.py" --restore "$VIDEO_RESTORE" "${VIDEO_BOOT_ARGS[@]}" "${VIDEO_PREVIEW_ARGS[@]}" "${VIDEO_FORCE_ARGS[@]}"
+fi
+if [[ "$VIDEO_DRY_RUN" == true ]]; then
+  exec python3 "$SCRIPT_DIR/echoview/boot_profiles.py" --profile "$VIDEO_PROFILE" "${VIDEO_BOOT_ARGS[@]}" --dry-run
+fi
+# Validate before apt, service, boot or configuration changes.
+python3 "$SCRIPT_DIR/echoview/runtime_check.py" --installer || exit 1
+if [[ $EUID -ne 0 ]]; then
+  echo "Please run setup as root (e.g. sudo ./setup.sh)." >&2; exit 1
+fi
+python3 "$SCRIPT_DIR/echoview/boot_profiles.py" --profile "$VIDEO_PROFILE" "${VIDEO_BOOT_ARGS[@]}" --dry-run || exit 1
+if [[ "$AUTO_UPDATE" == true ]]; then
+  resolve_update_config "$SCRIPT_DIR" || exit 1
 fi
 
-QTWEBENGINE_FLAGS="--no-sandbox --disable-gpu --autoplay-policy=no-user-gesture-required --user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+QTWEBENGINE_FLAGS="--autoplay-policy=no-user-gesture-required"
 
 ensure_chromium_bin() {
   if [ -n "${CHROMIUM_BIN:-}" ]; then
@@ -112,7 +156,7 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo "==============================================================="
   echo
   echo "This script will perform the following tasks:"
-  echo "  1) Install lightdm (Xorg), python3, etc. plus system python3-pyside6"
+  echo "  1) Install lightdm (Xorg), python3, etc. and native Qt dependencies"
   echo "  2) Create a Python virtualenv and install dependencies inside it"
   echo "  3) Disable screen blanking"
   echo "  4) Prompt for user & paths"
@@ -130,13 +174,14 @@ fi
 # -------------------------------------------------------
 echo
 echo "== Step 1: Installing packages (lightdm, Xorg, python3, etc.) =="
-apt-get update
+apt-get update || exit 1
 
 apt-get install -y \
   lightdm \
   lightdm-gtk-greeter \
   accountsservice \
   dbus-x11 \
+  dbus-user-session \
   polkitd \
   pkexec \
   xorg \
@@ -158,11 +203,17 @@ apt-get install -y \
   libxcb-shape0 \
   libxcb-xfixes0 \
   libxcb-xinerama0 \
-  libxkbcommon-x11-0\
-  libxcb-icccm4\
+  libxkbcommon-x11-0 \
+  libxcb-icccm4 \
   libxcb-keysyms1 \
   libgl1 \
   libegl1 \
+  libgbm1 \
+  libnss3 \
+  libnspr4 \
+  libpulse0 \
+  libpipewire-0.3-0t64 \
+  pipewire-bin \
   libxi6 \
   libxcomposite1 \
   libxdamage1 \
@@ -170,12 +221,12 @@ apt-get install -y \
   libxtst6 \
   libxkbcommon0 \
   libxkbfile1 \
-  libasound2 \
+  libasound2t64 \
   libxslt1.1 \
-  libminizip1 \
+  libminizip1t64 \
   libwebp7 \
   libtiff6 \
-  libevent-2.1-7 \
+  libevent-2.1-7t64 \
   chromium \
   chromium-common \
   chromium-sandbox
@@ -185,30 +236,30 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+install_audio_runtime || {
+  echo "ERROR: Audio runtime installation failed." >&2
+  exit 1
+}
+
 ensure_chromium_bin
 
-# -------------------------------------------------------
-# Ensure PySide6 WebEngine libraries exist
-# -------------------------------------------------------
-# Create compatibility symlinks if older versions are missing
-for LIB in libwebp.so.6 libtiff.so.5; do
-  if ! find /usr/lib -name "$LIB" | grep -q .; then
-    TARGET=$(find /usr/lib -name "${LIB%.so.*}.so.*" | head -n1)
-    if [ -n "$TARGET" ]; then
-      ln -s "$TARGET" "$(dirname "$TARGET")/$LIB"
-    fi
-  fi
-done
+# Native packages and PySide6 wheels must agree on ABI. Never synthesize
+# libwebp/libtiff/libminizip sonames; runtime imports below detect missing libs.
 
 # -------------------------------------------------------
-# Symlink libminizip.so.1 for PySide6 WebEngine
+# 2) Create virtualenv and install Python deps
 # -------------------------------------------------------
-if [ -f /usr/lib/aarch64-linux-gnu/libminizip.so.1 ] && [ ! -f /usr/lib/libminizip.so.1 ]; then
-  ln -s /usr/lib/aarch64-linux-gnu/libminizip.so.1 /usr/lib/libminizip.so.1
+VENV_DIR="$SCRIPT_DIR/.venv"
+
+echo
+echo "== Step 2: Creating/updating Python virtualenv =="
+install_python_runtime "$VENV_DIR" "$SCRIPT_DIR" || {
+  echo "ERROR: Runtime installation/verification failed; service/configuration updates stopped." >&2
+  exit 1
+}
+if [[ "$INSTALL_STREAMING" == true || -f "$SCRIPT_DIR/.streaming-enabled" ]]; then
+  install_streaming_runtime "$VENV_DIR" "$SCRIPT_DIR" || exit 1
 fi
-
-# Ensure required runtime libs are installed
-ldconfig
 
 # Create /var/lib/lightdm/data so LightDM can store user-data:
 mkdir -p /var/lib/lightdm/data
@@ -226,40 +277,6 @@ else
   echo "Warning: raspi-config not found; skipping auto-login configuration."
 fi
 
-# -------------------------------------------------------
-# 2) Create virtualenv and install Python deps
-# -------------------------------------------------------
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-VENV_DIR="$SCRIPT_DIR/.venv"
-REQ_FILE="$SCRIPT_DIR/requirements.txt"
-
-echo
-echo "== Step 2: Creating/updating Python virtualenv =="
-if [ ! -d "$VENV_DIR" ]; then
-  python3 -m venv "$VENV_DIR"
-  if [ $? -ne 0 ]; then
-    echo "Error creating virtualenv at $VENV_DIR. Exiting."
-    exit 1
-  fi
-fi
-
-"$VENV_DIR/bin/python3" -m pip install --upgrade pip
-if [ $? -ne 0 ]; then
-  echo "Failed to upgrade pip inside the virtualenv. Exiting."
-  exit 1
-fi
-
-if [ -f "$REQ_FILE" ]; then
-  echo "Installing dependencies from $REQ_FILE ..."
-  "$VENV_DIR/bin/pip" install -r "$REQ_FILE"
-else
-  echo "requirements.txt not found; installing core dependencies ..."
-  "$VENV_DIR/bin/pip" install flask psutil requests spotipy PySide6 Pillow
-fi
-if [ $? -ne 0 ]; then
-  echo "Error installing pip packages inside the virtualenv. Exiting."
-  exit 1
-fi
 
 # -------------------------------------------------------
 # 3) Disable screen blanking and configure Wi-Fi power save (install only)
@@ -289,29 +306,6 @@ if [ -f /etc/lightdm/lightdm.conf ]; then
   sed -i 's/^\(greeter-session=.*\)$/#\1/' /etc/lightdm/lightdm.conf
   sed -i 's/^\(user-session=.*\)$/#\1/' /etc/lightdm/lightdm.conf
   sed -i 's/^\(autologin-session=.*\)$/#\1/' /etc/lightdm/lightdm.conf
-fi
-
-# -------------------------------------------------------
-# 3a) Update boot firmware configuration (enable full KMS + force hotplug)
-# -------------------------------------------------------
-echo
-echo "== Step 3a: Updating boot firmware configuration in /boot/firmware/config.txt =="
-if [ -f /boot/firmware/config.txt ]; then
-  cp /boot/firmware/config.txt /boot/firmware/config.txt.backup
-
-  # Insert dtoverlay=vc4-kms-v3d if missing (full KMS)
-  grep -q '^dtoverlay=vc4-kms-v3d' "/boot/firmware/config.txt" || \
-    sed -i '/^# Enable DRM VC4 V3D driver/ a dtoverlay=vc4-kms-v3d' "/boot/firmware/config.txt"
-
-  # Insert max_framebuffers=2 if missing
-  grep -q '^max_framebuffers=2' "/boot/firmware/config.txt" || \
-    sed -i '/^dtoverlay=vc4-kms-v3d/ a max_framebuffers=2' "/boot/firmware/config.txt"
-
-  # Ensure both HDMI ports are forced hotplug
-  for port in 0 1; do
-    grep -q "^hdmi_force_hotplug:${port}=1" "/boot/firmware/config.txt" || \
-      sed -i "/^max_framebuffers=2/ a hdmi_force_hotplug:${port}=1" "/boot/firmware/config.txt"
-  done
 fi
 
 # -------------------------------------------------------
@@ -364,6 +358,10 @@ systemctl start wifi-powersave-off.service
 
 fi
 
+# Explicit profile changes also work in auto-update mode. Default keep never
+# edits boot files, so repeated updates preserve HDMI/composite selection.
+python3 "$SCRIPT_DIR/echoview/boot_profiles.py" --profile "$VIDEO_PROFILE" "${VIDEO_BOOT_ARGS[@]}" || exit 1
+
 # -------------------------------------------------------
 # 4) Prompt user for config (skip if AUTO_UPDATE)
 # -------------------------------------------------------
@@ -408,22 +406,6 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
 else
   echo
   echo "== Auto-Update Mode: skipping interactive user/path prompts. =="
-  VIEWER_USER="pi"
-  USER_ID="$(id -u "$VIEWER_USER")"
-  if [ -z "$USER_ID" ]; then
-    echo "User 'pi' not found. Exiting auto-update."
-    exit 1
-  fi
-  VIEWER_HOME="/home/$VIEWER_USER/EchoView"
-  ENV_FILE="$VIEWER_HOME/.env"
-  if [ -f "$ENV_FILE" ]; then
-    echo "Using existing $ENV_FILE"
-    set -a
-    source "$ENV_FILE"
-    set +a
-  else
-    IMAGE_DIR="/mnt/EchoViews"
-  fi
 fi
 
 if [ -n "${QTWEBENGINE_CHROMIUM_FLAGS:-}" ]; then
@@ -446,21 +428,20 @@ fi
 # 5) Create .env
 # -------------------------------------------------------
 ENV_FILE="$VIEWER_HOME/.env"
-if [[ "$AUTO_UPDATE" == "false" || ! -f "$ENV_FILE" ]]; then
+if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo "Creating $ENV_FILE with VIEWER_HOME + IMAGE_DIR + WebEngine defaults..."
   cat <<EOF > "$ENV_FILE"
 VIEWER_HOME=$VIEWER_HOME
 IMAGE_DIR=$IMAGE_DIR
 CHROMIUM_BIN=$CHROMIUM_BIN
-QTWEBENGINE_DISABLE_SANDBOX=1
+QTWEBENGINE_DISABLE_SANDBOX=${QTWEBENGINE_DISABLE_SANDBOX:-0}
 QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_FLAGS"
 EOF
   chown "$VIEWER_USER:$VIEWER_USER" "$ENV_FILE"
 fi
 
 echo
-echo "Contents of $ENV_FILE:"
-cat "$ENV_FILE"
+echo "Environment configuration retained at $ENV_FILE."
 echo
 
 # -------------------------------------------------------
@@ -511,12 +492,11 @@ if [[ "$AUTO_UPDATE" == "false" ]]; then
 VIEWER_HOME=$VIEWER_HOME
 IMAGE_DIR=$IMAGE_DIR
 CHROMIUM_BIN=$CHROMIUM_BIN
-QTWEBENGINE_DISABLE_SANDBOX=1
+QTWEBENGINE_DISABLE_SANDBOX=${QTWEBENGINE_DISABLE_SANDBOX:-0}
 QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_FLAGS"
 EOF
     chown "$VIEWER_USER:$VIEWER_USER" "$ENV_FILE"
-    echo "Updated .env file:"
-    cat "$ENV_FILE"
+    echo "Updated environment configuration at $ENV_FILE."
   fi
 else
   echo
@@ -534,21 +514,23 @@ echo "Creating $ECHOVIEW_SERVICE ..."
 cat <<EOF > "$ECHOVIEW_SERVICE"
 [Unit]
 Description=EchoView PySide6 Slideshow + Overlay
-After=lightdm.service
-Wants=lightdm.service
+After=lightdm.service controller.service
+Wants=lightdm.service controller.service
 
 [Service]
 User=$VIEWER_USER
 Group=$VIEWER_USER
 WorkingDirectory=$VIEWER_HOME
 EnvironmentFile=$ENV_FILE
-Environment="DISPLAY=:0"
-Environment="XAUTHORITY=/home/$VIEWER_USER/.Xauthority"
-Environment="QTWEBENGINE_DISABLE_SANDBOX=1"
+Environment="DISPLAY=${DISPLAY:-:0}"
+Environment="XAUTHORITY=${XAUTHORITY:-$(getent passwd "$VIEWER_USER" | cut -d: -f6)/.Xauthority}"
 Environment="QTWEBENGINE_CHROMIUM_FLAGS=$QTWEBENGINE_FLAGS"
 Environment="PATH=$VENV_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="PYTHONUNBUFFERED=1"
-ExecStartPre=/bin/sleep 5
+Environment="XDG_RUNTIME_DIR=/run/user/$USER_ID"
+Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$USER_ID/bus"
+ExecStartPre=/bin/bash "$SCRIPT_DIR/scripts/wait-for-display.sh"
+TimeoutStartSec=130
 ExecStart=$VENV_DIR/bin/python3 -m echoview.viewer
 
 Restart=always
@@ -574,8 +556,8 @@ WorkingDirectory=$VIEWER_HOME
 EnvironmentFile=$ENV_FILE
 Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$USER_ID/bus"
 Environment="XDG_RUNTIME_DIR=/run/user/$USER_ID"
-Environment="DISPLAY=:0"
-Environment="XAUTHORITY=/home/$VIEWER_USER/.Xauthority"
+Environment="DISPLAY=${DISPLAY:-:0}"
+Environment="XAUTHORITY=${XAUTHORITY:-$(getent passwd "$VIEWER_USER" | cut -d: -f6)/.Xauthority}"
 Environment="PATH=$VENV_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 
@@ -589,12 +571,17 @@ WantedBy=multi-user.target
 EOF
 
 
+configure_user_audio "$VIEWER_USER" "$USER_ID" || {
+  echo "ERROR: Audio service setup failed; application services were not started." >&2
+  exit 1
+}
+
 echo "Reloading systemd..."
 systemctl daemon-reload
 systemctl enable echoview.service
 systemctl enable controller.service
-systemctl start echoview.service
 systemctl start controller.service
+systemctl start echoview.service
 
 # -------------------------------------------------------
 # 8) Configure Openbox autologin & picom in openbox autostart
@@ -696,6 +683,12 @@ install_network_watchdog() {
   local target="$1"
   local attempts="$2"
   local threshold="$3"
+  local fallback="${4:-}"
+  if [[ ! "$target" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.:%-]*$ ]] ||
+     { [[ -n "$fallback" ]] && [[ ! "$fallback" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.:%-]*$ ]]; }; then
+    echo "Invalid watchdog host/IP; existing configuration left unchanged." >&2
+    return 1
+  fi
   local watchdog_dir="$VIEWER_HOME/bin"
   local watchdog_script="$watchdog_dir/network-watchdog.sh"
   local watchdog_conf="$VIEWER_HOME/network-watchdog.conf"
@@ -730,6 +723,7 @@ WATCHDOG_UID=$user_id
 WATCHDOG_GID=$group_id
 WATCHDOG_LOG=$log_path
 WATCHDOG_TARGET=$target
+WATCHDOG_FALLBACK_TARGET=$fallback
 WATCHDOG_ATTEMPTS=$attempts
 WATCHDOG_FAIL_THRESHOLD=$threshold
 EOF
@@ -744,6 +738,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+TimeoutStartSec=90
 ExecStart=$watchdog_script
 EnvironmentFile=-$watchdog_conf
 User=root
@@ -784,7 +779,7 @@ EOF
   systemctl enable --now network-watchdog.timer
   systemctl restart network-watchdog.service
 
-  echo "Network watchdog installed (target=$target, attempts=$attempts, threshold=$threshold)."
+  echo "Network watchdog installed (primary=$target, fallback=${fallback:-none}, attempts=$attempts, threshold=$threshold)."
   echo "Configuration file: $watchdog_conf"
 }
 
@@ -793,21 +788,38 @@ cleanup_legacy_watchdog_cron
 if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo
   echo "== Optional: Network Watchdog (systemd timer) =="
-  echo "This replaces the old cron-based reboot on single ping failure."
+  echo "Primary target is checked first; fallback is checked only if primary fails."
+  echo "Either target responding prevents a network-failure reboot."
+  echo "Configured NAS shares also get bounded recovery checks, with guarded reboot as a last resort."
   read -p "Enable network watchdog timer? (y/n): " setup_watchdog
 
   if [[ "$setup_watchdog" =~ ^[Yy]$ ]]; then
     default_target="$(detect_watchdog_default_target)"
-    read -p "Enter the host/IP to ping (default: $default_target): " PING_TARGET_INPUT
+    read -p "Primary host/IP (e.g. NAS; default: $default_target): " PING_TARGET_INPUT
     PING_TARGET=${PING_TARGET_INPUT:-$default_target}
+    while [[ ! "$PING_TARGET" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.:%-]*$ ]]; do
+      read -p "Enter a valid primary host/IP: " PING_TARGET
+    done
+    fallback_default="$default_target"
+    if [[ "$PING_TARGET" == "$default_target" ]]; then fallback_default=""; fi
+    if [[ -n "$fallback_default" ]]; then
+      read -p "Fallback host/IP (default: $fallback_default; '-' disables): " FALLBACK_TARGET_INPUT
+      FALLBACK_TARGET=${FALLBACK_TARGET_INPUT:-$fallback_default}
+      if [[ "$FALLBACK_TARGET" == "-" ]]; then FALLBACK_TARGET=""; fi
+    else
+      read -p "Fallback host/IP (optional; blank disables): " FALLBACK_TARGET
+    fi
+    while [[ -n "$FALLBACK_TARGET" ]] && [[ ! "$FALLBACK_TARGET" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.:%-]*$ ]]; do
+      read -p "Enter a valid fallback host/IP, or leave blank: " FALLBACK_TARGET
+    done
 
     read -p "Attempts per run (default: 5): " WATCHDOG_ATTEMPTS_INPUT
     WATCHDOG_ATTEMPTS=${WATCHDOG_ATTEMPTS_INPUT:-5}
 
-    read -p "Consecutive failures before reboot (default: 3): " WATCHDOG_FAIL_THRESHOLD_INPUT
+    read -p "Consecutive failed rounds before reboot (default: 3): " WATCHDOG_FAIL_THRESHOLD_INPUT
     WATCHDOG_FAIL_THRESHOLD=${WATCHDOG_FAIL_THRESHOLD_INPUT:-3}
 
-    install_network_watchdog "$PING_TARGET" "$WATCHDOG_ATTEMPTS" "$WATCHDOG_FAIL_THRESHOLD"
+    install_network_watchdog "$PING_TARGET" "$WATCHDOG_ATTEMPTS" "$WATCHDOG_FAIL_THRESHOLD" "$FALLBACK_TARGET"
   else
     echo "Skipping watchdog setup."
   fi
@@ -816,21 +828,23 @@ else
   echo "== Auto-Update Mode: systemd network watchdog =="
   WATCHDOG_CONF_FILE="$VIEWER_HOME/network-watchdog.conf"
 
-  if systemctl list-unit-files | grep -q '^network-watchdog.timer'; then
+  if systemctl is-enabled --quiet network-watchdog.timer; then
     echo "Refreshing watchdog script and units..."
     default_target="$(detect_watchdog_default_target)"
     existing_target="$default_target"
+    existing_fallback=""
     attempts=5
     threshold=3
 
     if [ -f "$WATCHDOG_CONF_FILE" ]; then
       source "$WATCHDOG_CONF_FILE"
       existing_target="${WATCHDOG_TARGET:-$default_target}"
+      existing_fallback="${WATCHDOG_FALLBACK_TARGET:-}"
       attempts="${WATCHDOG_ATTEMPTS:-$attempts}"
       threshold="${WATCHDOG_FAIL_THRESHOLD:-$threshold}"
     fi
 
-    install_network_watchdog "$existing_target" "$attempts" "$threshold"
+    install_network_watchdog "$existing_target" "$attempts" "$threshold" "$existing_fallback"
   else
     echo "Timer not previously enabled; skipping watchdog install."
   fi

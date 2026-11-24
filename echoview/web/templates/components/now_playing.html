@@ -1,0 +1,7 @@
+<section class="card now-playing" data-now-playing data-url="{{ url_for('main.spotify_now_playing') }}" aria-label="Spotify now playing">
+  <header class="panel-header"><div><h2>Now playing</h2><p>What’s playing right now.</p></div><span class="pill" data-np-status role="status">Connecting</span></header>
+  <div class="now-playing-body">
+    <div class="now-playing-cover"><span aria-hidden="true">♫</span><img data-np-art alt="Current album or episode artwork" hidden></div>
+    <div class="now-playing-details"><p class="eyebrow" data-np-device>Spotify</p><h3 data-np-title>Waiting for playback</h3><p data-np-artist></p><p class="help-text" data-np-album></p><div class="now-playing-meter" role="progressbar" aria-label="Track progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-np-fill></span></div><div class="now-playing-times"><span data-np-elapsed>0:00</span><span data-np-duration>0:00</span></div><p class="help-text" data-np-note>Choose Spotify as a display’s playback mode to show what you’re listening to.</p></div>
+  </div>
+</section>

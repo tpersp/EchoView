@@ -1,0 +1,205 @@
+from pathlib import Path
+import json
+from types import SimpleNamespace
+import pytest
+from echoview.watchdog_recovery import Recovery,StateStore,Backend,discover_mount,BOOT_GRACE,HEALTHY_CONFIRM
+
+MOUNT={'path':'/mnt/media','host':'nas','port':445}
+
+
+class Fake:
+    def __init__(self):self.up=True;self.healthy=False;self.online=False;self.events=[]
+    def service_up(self,mount):return self.up
+    def probe(self,mount):self.events.append('probe');return self.healthy
+    def remount(self,mount):self.events.append('remount');return False
+    def reconnect(self):self.events.append('reconnect');return True
+    def reachable(self,targets):return self.online
+    def pause(self,seconds):pass
+    def reboot(self):self.events.append('reboot')
+    def log(self,message):pass
+
+
+def runner(state,backend,now,saves=None,uptime=10000):
+    return Recovery(state,backend,lambda data:(saves.append(dict(data)) if saves is not None else None),now,uptime)
+
+
+def test_offline_nas_gets_one_prompt_reboot_then_no_reboot_loop():
+    state={};backend=Fake();backend.up=False
+    runner(state,backend,10000).storage(MOUNT)
+    assert backend.events==['reboot']
+    for tick in range(1,100):runner(state,backend,10000+tick*300).storage(MOUNT)
+    assert backend.events==['reboot']
+
+
+def test_healthy_mount_does_not_change_playback_and_clears_failure_state():
+    state={'storage_since':1,'mount_attempts':2,'mount':'/mnt/media'};backend=Fake();backend.healthy=True
+    runner(state,backend,10000).storage(MOUNT)
+    assert backend.events==['probe'] and 'storage_since' not in state and 'mount_attempts' not in state
+
+
+def test_confirmed_share_failure_attempts_mount_and_reboots_in_same_run():
+    state={};backend=Fake();saves=[]
+    runner(state,backend,10000,saves).storage(MOUNT)
+    assert backend.events==['probe','probe','remount','probe','reboot']
+    assert saves[-1]['reboot_at']==10000
+    runner(state,backend,10300,saves).storage(MOUNT)
+    assert backend.events.count('reboot')==1
+
+
+def test_transient_failure_recovers_on_confirmation_without_remount_or_reboot():
+    state={};backend=Fake()
+    def pause(seconds):backend.healthy=True
+    backend.pause=pause
+    runner(state,backend,10000).storage(MOUNT)
+    assert backend.events==['probe','probe'] and 'storage_since' not in state
+
+
+def test_quick_mount_recovery_is_verified_immediately_without_reboot():
+    state={};backend=Fake()
+    def remount(mount):backend.events.append('remount');backend.healthy=True;return True
+    backend.remount=remount
+    runner(state,backend,10000).storage(MOUNT)
+    assert backend.events==['probe','probe','remount','probe']
+    assert 'storage_since' not in state
+
+
+def test_guard_persists_but_rearms_for_a_new_outage_without_hours_of_wait(tmp_path):
+    store=StateStore(tmp_path);backend=Fake();state={}
+    runner(state,backend,10000,[],uptime=BOOT_GRACE-1).reboot('test');assert 'reboot' not in backend.events
+    Recovery(state,backend,store.save,10000,10000).reboot('test')
+    state=store.load()
+    Recovery(state,backend,store.save,10001,10000).mark_healthy();store.save(state)
+    Recovery(state,backend,store.save,10002,10000).reboot('test')
+    assert backend.events.count('reboot')==1
+    Recovery(state,backend,store.save,10001+HEALTHY_CONFIRM,10000).mark_healthy();store.save(state)
+    assert not state.get('network_rebooted')
+    Recovery(store.load(),backend,store.save,9000,10000).reboot('backwards clock')
+    assert backend.events.count('reboot')==1
+    Recovery(store.load(),backend,store.save,10002+HEALTHY_CONFIRM,10000).reboot('new outage')
+    assert backend.events.count('reboot')==2
+    assert len(store.path.read_bytes())<4096 and not list(store.directory.glob('.state-*'))
+
+
+def test_network_reconnect_is_attempted_before_reboot_and_rate_limited():
+    state={};backend=Fake();backend.up=False
+    runner(state,backend,10000).network(MOUNT,['nas','gateway'])
+    assert backend.events==['reconnect','reboot']
+    runner(state,backend,10300).network(MOUNT,['nas','gateway'])
+    assert backend.events==['reconnect','reboot']
+
+
+def test_recovered_network_and_share_avoid_reboot():
+    state={};backend=Fake();backend.up=False;backend.online=True
+    def reconnect():backend.events.append('reconnect');backend.up=True;backend.healthy=True;return True
+    backend.reconnect=reconnect
+    runner(state,backend,10000).network(MOUNT,['nas','gateway'])
+    assert backend.events==['reconnect','probe']
+
+
+def test_nas_service_reachable_despite_failed_pings_prevents_network_reset():
+    state={};backend=Fake();backend.healthy=True
+    runner(state,backend,10000).network(MOUNT,['nas','gateway'])
+    assert backend.events==['probe']
+
+
+def test_discovery_uses_fstab_not_filesystem_probes(monkeypatch):
+    monkeypatch.setattr(Path,'stat',lambda *a,**kw:pytest.fail('No filesystem probing'))
+    fstab='//nas/share /mnt/media cifs credentials=/secret 0 0\n/dev/root / ext4 defaults 0 0\n'
+    assert discover_mount('/mnt/media/folder',fstab)==MOUNT
+    assert discover_mount('/mnt/media-other',fstab) is None
+    assert discover_mount('/local/uploads',fstab) is None
+    assert discover_mount('/anything','nas:/ / nfs defaults 0 0') is None
+
+
+def test_busy_probe_does_not_spawn_another_process(monkeypatch,tmp_path):
+    backend=Backend(tmp_path);calls=[]
+    def run(args,timeout=5):calls.append(args);return SimpleNamespace(returncode=0,stdout='deactivating\n')
+    monkeypatch.setattr(backend,'run',run)
+    assert backend.probe(MOUNT) is False
+    assert len(calls)==1 and calls[0][0]=='systemctl'
+
+
+def test_remount_never_uses_forced_or_lazy_unmount(monkeypatch,tmp_path):
+    backend=Backend(tmp_path);calls=[]
+    def run(args,timeout=5):
+        calls.append(args)
+        return SimpleNamespace(returncode=0,stdout='mnt-media.mount\n' if args[0]=='systemd-escape' else 'ForceUnmount=no\nLazyUnmount=no\nJob=\n')
+    monkeypatch.setattr(backend,'run',run)
+    assert backend.remount(MOUNT)
+    assert calls[-1]==['systemctl','--no-block','restart','mnt-media.mount']
+    def forced(args,timeout=5):return SimpleNamespace(returncode=0,stdout='mnt-media.mount\n' if args[0]=='systemd-escape' else 'ForceUnmount=yes\nLazyUnmount=no\nJob=\n')
+    monkeypatch.setattr(backend,'run',forced);monkeypatch.setattr(backend,'log',lambda message:None)
+    assert backend.remount(MOUNT) is False
+
+
+def test_corrupt_state_rejected_instead_of_resetting_reboot_limit(tmp_path):
+    store=StateStore(tmp_path)
+    for text in ('bad','[]','{"reboot_at":"bad"}','{"reboot_at":NaN}'):
+        store.path.write_text(text)
+        with pytest.raises(ValueError):store.load()
+
+
+def test_no_reboot_loop_on_persistent_outage_even_days_later():
+    state={};backend=Fake();backend.up=False
+    runner(state,backend,10000).network(MOUNT,['nas','gateway'])
+    for index in range(1,10):runner(state,backend,10000+index*86400).network(MOUNT,['nas','gateway'])
+    assert backend.events.count('reboot')==1
+
+
+def test_storage_reboot_latch_survives_offline_nas_and_clears_only_when_share_works():
+    state={'mount':'/mnt/media','storage_rebooted':True};backend=Fake();backend.up=False
+    runner(state,backend,10000).storage(MOUNT);assert state['storage_rebooted']
+    backend.up=True
+    runner(state,backend,11000).storage(MOUNT);assert state['storage_rebooted']
+    backend.healthy=True
+    runner(state,backend,12000).storage(MOUNT);assert state['storage_rebooted']
+    runner(state,backend,12000+HEALTHY_CONFIRM).storage(MOUNT);assert 'storage_rebooted' not in state
+
+
+def test_full_cli_reads_app_env_without_external_dependencies(tmp_path,monkeypatch):
+    from echoview import watchdog_recovery as module
+    import sys
+    (tmp_path/'.env').write_text('IMAGE_DIR="/mnt/media"'+chr(10))
+    monkeypatch.delenv('IMAGE_DIR',raising=False)
+    original=Path.read_text
+    def read(path,*args,**kwargs):
+        if str(path)=='/etc/fstab':return '//nas/share /mnt/media cifs defaults 0 0'+chr(10)
+        return original(path,*args,**kwargs)
+    monkeypatch.setattr(Path,'read_text',read)
+    backend=Fake();backend.healthy=True
+    monkeypatch.setattr(module,'Backend',lambda home:backend)
+    monkeypatch.setattr(sys,'argv',['watchdog_recovery.py','storage','--home',str(tmp_path)])
+    assert module.main()==0
+    state=json.loads((tmp_path/'.network-watchdog-recovery/state.json').read_text())
+    assert state['mount']=='/mnt/media' and state['boot']
+    assert backend.events==['probe'] and 'storage_since' not in state
+
+
+def test_env_media_root_uses_same_simple_quoting_and_environment_priority(tmp_path,monkeypatch):
+    from echoview.watchdog_recovery import media_root
+    (tmp_path/'.env').write_text('# ignored'+chr(10)+"IMAGE_DIR='/mnt/media with spaces'"+chr(10))
+    monkeypatch.delenv('IMAGE_DIR',raising=False)
+    assert media_root(tmp_path)=='/mnt/media with spaces'
+    monkeypatch.setenv('IMAGE_DIR','/custom')
+    assert media_root(tmp_path)=='/custom'
+
+
+def test_full_cli_corrupt_state_fails_closed_with_error_status(tmp_path,monkeypatch):
+    from echoview import watchdog_recovery as module
+    import sys
+    store=StateStore(tmp_path);store.path.write_text('corrupt')
+    backend=Fake();monkeypatch.setattr(module,'Backend',lambda home:backend)
+    monkeypatch.setattr(sys,'argv',['watchdog_recovery.py','storage','--home',str(tmp_path)])
+    assert module.main()==1 and backend.events==[]
+
+
+def test_gateway_recovery_alone_does_not_leave_nas_outage_unhandled():
+    state={};backend=Fake();backend.up=False;backend.online=True
+    runner(state,backend,10000).network(MOUNT,['nas','gateway'])
+    assert backend.events==['reconnect','reboot'] and state['storage_rebooted']
+
+
+def test_one_outage_cannot_reboot_once_for_storage_and_again_for_network():
+    state={'storage_rebooted':True};backend=Fake();backend.up=False
+    runner(state,backend,10000).network(MOUNT,['nas','gateway'])
+    assert backend.events==['reconnect']
