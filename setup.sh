@@ -683,6 +683,12 @@ install_network_watchdog() {
   local target="$1"
   local attempts="$2"
   local threshold="$3"
+  local fallback="${4:-}"
+  if [[ ! "$target" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.:%-]*$ ]] ||
+     { [[ -n "$fallback" ]] && [[ ! "$fallback" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.:%-]*$ ]]; }; then
+    echo "Invalid watchdog host/IP; existing configuration left unchanged." >&2
+    return 1
+  fi
   local watchdog_dir="$VIEWER_HOME/bin"
   local watchdog_script="$watchdog_dir/network-watchdog.sh"
   local watchdog_conf="$VIEWER_HOME/network-watchdog.conf"
@@ -717,6 +723,7 @@ WATCHDOG_UID=$user_id
 WATCHDOG_GID=$group_id
 WATCHDOG_LOG=$log_path
 WATCHDOG_TARGET=$target
+WATCHDOG_FALLBACK_TARGET=$fallback
 WATCHDOG_ATTEMPTS=$attempts
 WATCHDOG_FAIL_THRESHOLD=$threshold
 EOF
@@ -771,7 +778,7 @@ EOF
   systemctl enable --now network-watchdog.timer
   systemctl restart network-watchdog.service
 
-  echo "Network watchdog installed (target=$target, attempts=$attempts, threshold=$threshold)."
+  echo "Network watchdog installed (primary=$target, fallback=${fallback:-none}, attempts=$attempts, threshold=$threshold)."
   echo "Configuration file: $watchdog_conf"
 }
 
@@ -780,21 +787,37 @@ cleanup_legacy_watchdog_cron
 if [[ "$AUTO_UPDATE" == "false" ]]; then
   echo
   echo "== Optional: Network Watchdog (systemd timer) =="
-  echo "This replaces the old cron-based reboot on single ping failure."
+  echo "Primary target is checked first; fallback is checked only if primary fails."
+  echo "Either target responding prevents reboot. Both must fail repeatedly to reboot."
   read -p "Enable network watchdog timer? (y/n): " setup_watchdog
 
   if [[ "$setup_watchdog" =~ ^[Yy]$ ]]; then
     default_target="$(detect_watchdog_default_target)"
-    read -p "Enter the host/IP to ping (default: $default_target): " PING_TARGET_INPUT
+    read -p "Primary host/IP (e.g. NAS; default: $default_target): " PING_TARGET_INPUT
     PING_TARGET=${PING_TARGET_INPUT:-$default_target}
+    while [[ ! "$PING_TARGET" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.:%-]*$ ]]; do
+      read -p "Enter a valid primary host/IP: " PING_TARGET
+    done
+    fallback_default="$default_target"
+    if [[ "$PING_TARGET" == "$default_target" ]]; then fallback_default=""; fi
+    if [[ -n "$fallback_default" ]]; then
+      read -p "Fallback host/IP (default: $fallback_default; '-' disables): " FALLBACK_TARGET_INPUT
+      FALLBACK_TARGET=${FALLBACK_TARGET_INPUT:-$fallback_default}
+      if [[ "$FALLBACK_TARGET" == "-" ]]; then FALLBACK_TARGET=""; fi
+    else
+      read -p "Fallback host/IP (optional; blank disables): " FALLBACK_TARGET
+    fi
+    while [[ -n "$FALLBACK_TARGET" ]] && [[ ! "$FALLBACK_TARGET" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.:%-]*$ ]]; do
+      read -p "Enter a valid fallback host/IP, or leave blank: " FALLBACK_TARGET
+    done
 
     read -p "Attempts per run (default: 5): " WATCHDOG_ATTEMPTS_INPUT
     WATCHDOG_ATTEMPTS=${WATCHDOG_ATTEMPTS_INPUT:-5}
 
-    read -p "Consecutive failures before reboot (default: 3): " WATCHDOG_FAIL_THRESHOLD_INPUT
+    read -p "Consecutive failed rounds before reboot (default: 3): " WATCHDOG_FAIL_THRESHOLD_INPUT
     WATCHDOG_FAIL_THRESHOLD=${WATCHDOG_FAIL_THRESHOLD_INPUT:-3}
 
-    install_network_watchdog "$PING_TARGET" "$WATCHDOG_ATTEMPTS" "$WATCHDOG_FAIL_THRESHOLD"
+    install_network_watchdog "$PING_TARGET" "$WATCHDOG_ATTEMPTS" "$WATCHDOG_FAIL_THRESHOLD" "$FALLBACK_TARGET"
   else
     echo "Skipping watchdog setup."
   fi
@@ -803,21 +826,23 @@ else
   echo "== Auto-Update Mode: systemd network watchdog =="
   WATCHDOG_CONF_FILE="$VIEWER_HOME/network-watchdog.conf"
 
-  if systemctl list-unit-files | grep -q '^network-watchdog.timer'; then
+  if systemctl is-enabled --quiet network-watchdog.timer; then
     echo "Refreshing watchdog script and units..."
     default_target="$(detect_watchdog_default_target)"
     existing_target="$default_target"
+    existing_fallback=""
     attempts=5
     threshold=3
 
     if [ -f "$WATCHDOG_CONF_FILE" ]; then
       source "$WATCHDOG_CONF_FILE"
       existing_target="${WATCHDOG_TARGET:-$default_target}"
+      existing_fallback="${WATCHDOG_FALLBACK_TARGET:-}"
       attempts="${WATCHDOG_ATTEMPTS:-$attempts}"
       threshold="${WATCHDOG_FAIL_THRESHOLD:-$threshold}"
     fi
 
-    install_network_watchdog "$existing_target" "$attempts" "$threshold"
+    install_network_watchdog "$existing_target" "$attempts" "$threshold" "$existing_fallback"
   else
     echo "Timer not previously enabled; skipping watchdog install."
   fi

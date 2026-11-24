@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Network watchdog for EchoView
-# Pings a target multiple times and reboots only after sustained failures.
+# Check the primary first, then optional fallback; reboot after sustained failure of both.
 
 set -euo pipefail
 
@@ -29,8 +29,13 @@ WATCHDOG_UID="${WATCHDOG_UID:-1000}"
 WATCHDOG_GID="${WATCHDOG_GID:-1000}"
 WATCHDOG_LOG="${WATCHDOG_LOG:-/home/pi/EchoView/viewer.log}"
 WATCHDOG_TARGET="${WATCHDOG_TARGET:-}"
+WATCHDOG_FALLBACK_TARGET="${WATCHDOG_FALLBACK_TARGET:-}"
 WATCHDOG_ATTEMPTS="${WATCHDOG_ATTEMPTS:-5}"
 WATCHDOG_FAIL_THRESHOLD="${WATCHDOG_FAIL_THRESHOLD:-3}"
+
+valid_target() {
+  [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.:%-]*$ ]]
+}
 
 is_positive_int() {
   [[ "$1" =~ ^[1-9][0-9]*$ ]]
@@ -100,7 +105,7 @@ reboot_system() {
 main() {
   ensure_log_file
 
-  local target attempts threshold successes=0 failures=0 consecutive=0
+  local target fallback attempts threshold successes=0 failures=0 consecutive=0
 
   target="$WATCHDOG_TARGET"
   if [ -z "$target" ]; then
@@ -109,6 +114,14 @@ main() {
   else
     log "INFO watchdog target configured as $target"
   fi
+
+  fallback="$WATCHDOG_FALLBACK_TARGET"
+  if ! valid_target "$target" || { [ -n "$fallback" ] && ! valid_target "$fallback"; }; then
+    log "ERROR invalid watchdog target; skipping reboot decision"
+    return 0
+  fi
+  if [ "$fallback" = "$target" ]; then fallback=""; fi
+  if [ -n "$fallback" ]; then log "INFO watchdog fallback configured as $fallback"; fi
 
   attempts="$WATCHDOG_ATTEMPTS"
   if ! is_positive_int "$attempts"; then
@@ -128,10 +141,14 @@ main() {
     if "$PING_BIN" -c 1 -W 2 "$target" >/dev/null 2>&1; then
       successes=$((successes + 1))
       consecutive=0
+    elif [ -n "$fallback" ] && "$PING_BIN" -c 1 -W 2 "$fallback" >/dev/null 2>&1; then
+      successes=$((successes + 1))
+      consecutive=0
+      log "OK primary $target unavailable; fallback $fallback reachable (attempt $i/$attempts); no reboot"
     else
       failures=$((failures + 1))
       consecutive=$((consecutive + 1))
-      log "WARN ping attempt $i/$attempts to $target failed (consecutive $consecutive/$threshold)"
+      log "WARN connectivity attempt $i/$attempts failed (primary=$target, fallback=${fallback:-none}, consecutive $consecutive/$threshold)"
 
       if (( consecutive >= threshold )); then
         log "FAIL consecutive failure threshold reached ($consecutive/$threshold); rebooting"
@@ -147,7 +164,7 @@ main() {
     exit 0
   fi
 
-  log "OK $target reachable ($successes/$attempts successes, $failures failures)"
+  log "OK connectivity available (primary=$target, fallback=${fallback:-none}; $successes/$attempts successful rounds, $failures failed rounds)"
 }
 
 main "$@"

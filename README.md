@@ -62,6 +62,14 @@ During the setup:
 
 Once the Pi is up and running:
 
+### Optional network watchdog
+
+The installer can enable automatic network recovery with a primary target (for
+example, your NAS) and an optional fallback (for example, the gateway). A reply
+from either prevents rebooting; both must fail for the configured consecutive
+rounds before the Pi reboots. Existing single-target setups remain supported.
+See [watchdog behavior and configuration](docs/network-watchdog.md).
+
 ### Web Interface
 
 Browse to `http://<PI-IP>:8080` to access the interface. You’ll see:
