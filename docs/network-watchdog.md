@@ -23,27 +23,37 @@ as the viewer user. It does not recursively scan or open media files, change
 credentials, write to the NAS, or restart the NAS itself. An empty local directory
 under a missing mount is not accepted as a healthy share.
 
-- NAS service offline: wait and retry; no share recovery reboot.
-- Service responds but share unusable: allow 15 minutes for normal reconnection.
-- Still unusable: request an ordinary restart of only that mount unit, with up to
-  three attempts separated by at least five minutes. Busy mounts may refuse this;
-  no forced/lazy unmounts or viewer stops are used. Existing mount jobs are left alone.
-- Still unusable on a later check: request a guarded reboot as a last resort.
+- NAS service offline or share unusable: confirm after a two-second retry.
+- If the service responds but the share still fails, request one ordinary restart
+  of only that mount unit and recheck after two seconds. Busy mounts may refuse
+  this; no forced/lazy unmounts or viewer stops are used. Existing jobs are left alone.
+- Still unavailable/unusable: request a guarded reboot in the **same watchdog run**.
+  An offline NAS also gets one reboot attempt, then the continuous-outage guard
+  prevents repeated reboots until the share becomes healthy.
 
-An isolated transient systemd probe has an eight-second runtime limit. Its fixed
+There is no 15-minute share grace or sequence of attempts across multiple timer
+runs. The existing roughly five-minute detection interval is unchanged.
+
+An isolated transient systemd probe has an four-second runtime limit. Its fixed
 unit name prevents accumulating stuck filesystem probes; completed/failed units
 are collected. A stuck kernel filesystem task cannot block the watchdog itself.
 Local media configurations skip the NAS checks.
 
 ## Reboot guards and storage
 
-There is a 15-minute boot grace and a six-hour minimum between automatic reboots.
-Only one reboot is allowed per continuous network/share failure episode. That
-latch survives reboot and clears only when the relevant connectivity/share becomes
-healthy, preventing reboot loops during a persistent outage. The cooldown is
-recorded durably before requesting reboot; a backwards clock change suppresses,
-rather than bypasses, it. Missing/corrupt recovery machinery never falls back to
-an unguarded reboot.
+There is a 60-second boot settling guard, but no multi-minute failure grace or
+hours-long block on a new recovered-then-failed connection. Only one reboot is
+allowed per continuous network/share failure episode. That latch survives reboot
+and is shared across failure types so a single outage cannot trigger separate
+network and storage reboot loops.
+
+Protection re-arms after healthy share/connectivity checks at least five minutes
+apart. This healthy confirmation occurs **after recovery**, not before the first
+reboot. A new failure can then be handled promptly, without waiting six hours.
+The reboot decision is recorded durably before the request. A backwards clock
+change suppresses rather than bypasses protection; boot changes discard incomplete
+healthy-confirmation windows. Missing/corrupt recovery machinery fails closed and
+never falls back to an unguarded reboot.
 
 State is kept in one bounded (4 KiB) private JSON file plus an empty lock file under
 `.network-watchdog-recovery`, outside the NAS. Logs use the existing bounded

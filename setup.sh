@@ -738,7 +738,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-TimeoutStartSec=60
+TimeoutStartSec=90
 ExecStart=$watchdog_script
 EnvironmentFile=-$watchdog_conf
 User=root

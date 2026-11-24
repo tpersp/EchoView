@@ -11,9 +11,10 @@ import sys
 import tempfile
 import time
 
-GRACE = 15 * 60
-RETRY = 5 * 60
-COOLDOWN = 6 * 60 * 60
+BOOT_GRACE = 60
+NETWORK_RETRY = 15 * 60
+CONFIRM_SECONDS = 2
+HEALTHY_CONFIRM = 5 * 60
 PROBE_UNIT = 'echoview-nas-probe.service'
 NETWORK_TYPES = ('cifs', 'nfs', 'nfs4')
 
@@ -80,7 +81,7 @@ class StateStore:
         if not self.path.exists():return {}
         if self.path.stat().st_size > 4096:raise ValueError('Oversized recovery state')
         value = json.loads(self.path.read_text())
-        allowed = {'boot', 'reboot_at', 'network_at', 'storage_since', 'mount_at', 'mount_attempts', 'mount', 'storage_rebooted', 'network_rebooted'}
+        allowed = {'boot', 'reboot_at', 'network_at', 'storage_since', 'mount_at', 'mount_attempts', 'mount', 'storage_rebooted', 'network_rebooted', 'healthy_since'}
         if not isinstance(value, dict) or value.keys() - allowed:raise ValueError('Invalid recovery state')
         for key, number in value.items():
             if key in ('storage_rebooted', 'network_rebooted'):
@@ -131,12 +132,12 @@ class Backend:
         result = self.run(['systemctl', 'show', PROBE_UNIT, '-p', 'ActiveState', '--value'])
         if result and result.stdout.strip() in ('active', 'activating', 'deactivating'):return False
         result = self.run(['systemd-run', '--quiet', '--collect', '--wait', '--service-type=exec',
-                           '--unit=' + PROBE_UNIT, '--property=RuntimeMaxSec=8s',
-                           '--property=TimeoutStopSec=2s', '--property=Nice=10',
+                           '--unit=' + PROBE_UNIT, '--property=RuntimeMaxSec=4s',
+                           '--property=TimeoutStopSec=1s', '--property=Nice=10',
                            '--property=NoNewPrivileges=yes', '--property=User=' + os.environ.get('WATCHDOG_USER', 'pi'),
                            '--property=StandardOutput=null',
                            '--property=StandardError=null', sys.executable, str(Path(__file__).absolute()),
-                           '--probe', mount['path']], timeout=13)
+                           '--probe', mount['path']], timeout=6)
         return result is not None and result.returncode == 0
 
     def remount(self, mount):
@@ -163,9 +164,12 @@ class Backend:
                 return result is not None and result.returncode == 0
         return False
 
+    def pause(self, seconds):
+        time.sleep(seconds)
+
     def reboot(self):
         result = self.run(['systemctl', 'reboot'])
-        if result is None or result.returncode:self.log('Reboot request failed; cooldown retained')
+        if result is None or result.returncode:self.log('Reboot request failed; outage guard retained')
 
 
 class Recovery:
@@ -175,12 +179,23 @@ class Recovery:
     def reset_storage(self):
         for key in ('storage_since', 'mount_at', 'mount_attempts'):self.state.pop(key, None)
 
+    def mark_healthy(self):
+        self.reset_storage()
+        self.state.pop('network_at', None)
+        if self.state.get('storage_rebooted') or self.state.get('network_rebooted'):
+            since = self.state.setdefault('healthy_since', self.now)
+            if self.now < since:self.state['healthy_since'] = self.now
+            elif self.now - since >= HEALTHY_CONFIRM:
+                for key in ('storage_rebooted', 'network_rebooted', 'healthy_since'):self.state.pop(key, None)
+                self.backend.log('Connectivity/share healthy across checks; reboot guard re-armed')
+        else:self.state.pop('healthy_since', None)
+
     def reboot(self, reason, kind='network'):
-        if self.state.get(kind + '_rebooted'):
+        if self.state.get('storage_rebooted') or self.state.get('network_rebooted'):
             self.backend.log('Reboot suppressed until this failure episode recovers: ' + reason);return
         last = self.state.get('reboot_at')
-        if self.uptime < GRACE or (last is not None and self.now - last < COOLDOWN):
-            self.backend.log('Reboot suppressed by boot grace/cooldown: ' + reason);return
+        if self.uptime < BOOT_GRACE or (last is not None and self.now < last):
+            self.backend.log('Reboot suppressed by boot grace/backwards clock: ' + reason);return
         self.state['reboot_at'] = self.now
         self.state[kind + '_rebooted'] = True
         self.save(self.state)  # Durable before requesting reboot; survives reboot/clock rollback.
@@ -190,36 +205,41 @@ class Recovery:
     def storage(self, mount):
         if not mount:return
         if self.state.get('mount') != mount['path']:
-            self.reset_storage();self.state.pop('storage_rebooted', None);self.state['mount'] = mount['path']
-        if not self.backend.service_up(mount):
-            self.reset_storage();self.backend.log('NAS service unavailable; waiting without reboot');return
-        if self.backend.probe(mount):
+            self.reset_storage();self.state['mount'] = mount['path']
+        def healthy():
             if 'storage_since' in self.state:self.backend.log('NAS share recovered')
-            self.reset_storage();self.state.pop('storage_rebooted', None);return
-        since = self.state.setdefault('storage_since', self.now)
-        if self.now - since < GRACE:
-            self.backend.log('NAS service responds but share probe failed; within recovery grace');return
-        if self.now - self.state.get('mount_at', 0) < RETRY:return
-        if self.state.get('mount_attempts', 0) >= 3:
-            self.reboot('NAS service responds but share remains unusable after mount recovery attempts', kind='storage');return
-        self.state['mount_at'] = self.now
-        self.state['mount_attempts'] = self.state.get('mount_attempts', 0) + 1
-        self.save(self.state)
-        started = self.backend.remount(mount)
-        self.backend.log('Ordinary mount recovery ' + ('queued; checking next run' if started else 'unavailable/busy; checking next run'))
+            self.mark_healthy()
+        if self.backend.service_up(mount) and self.backend.probe(mount):
+            healthy();return
+        self.state.pop('healthy_since', None)
+        self.state.setdefault('storage_since', self.now)
+        self.backend.log('NAS unavailable/unusable; confirming after brief retry')
+        self.backend.pause(CONFIRM_SECONDS)
+        online = self.backend.service_up(mount)
+        if online and self.backend.probe(mount):
+            healthy();return
+        if online:
+            self.backend.log('Share failure confirmed; attempting one quick ordinary mount recovery')
+            self.backend.remount(mount)
+            self.backend.pause(CONFIRM_SECONDS)
+            if self.backend.service_up(mount) and self.backend.probe(mount):
+                healthy();return
+        self.reboot('NAS remains unavailable/unusable after brief confirmation and quick recovery', kind='storage')
 
     def network(self, mount, targets):
         if mount and self.backend.service_up(mount):
-            self.state.pop('network_rebooted', None)
             self.backend.log('NAS service reachable despite failed pings; no network reboot')
             self.storage(mount);return
-        if self.now - self.state.get('network_at', 0) >= GRACE:
+        self.state.pop('healthy_since', None)
+        if self.now - self.state.get('network_at', 0) >= NETWORK_RETRY:
             self.state['network_at'] = self.now;self.save(self.state)
             self.backend.log('Attempting reconnect of existing active physical network profile')
             self.backend.reconnect()
         if self.backend.reachable(targets):
-            self.state.pop('network_rebooted', None)
-            self.backend.log('Network targets recovered');self.storage(mount);return
+            self.backend.log('Network targets recovered')
+            if mount:self.storage(mount)
+            else:self.mark_healthy()
+            return
         self.reboot('both network targets remain unreachable after network recovery')
 
 
@@ -246,13 +266,12 @@ def main():
             state = store.load();before = dict(state)
             boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
             if state.get('boot') != boot:
-                for key in ('storage_since', 'mount_at', 'mount_attempts', 'network_at'):state.pop(key, None)
+                for key in ('storage_since', 'mount_at', 'mount_attempts', 'network_at', 'healthy_since'):state.pop(key, None)
                 state['boot'] = boot
             recovery = Recovery(state, backend, store.save, time.time(), float(Path('/proc/uptime').read_text().split()[0]))
             if args.mode == 'network':recovery.network(mount, [args.target, args.fallback])
-            else:
-                state.pop('network_rebooted', None)
-                recovery.storage(mount)
+            elif mount:recovery.storage(mount)
+            else:recovery.mark_healthy()
             if state != before:store.save(state)
     except Exception as error:
         backend.log('Recovery unavailable (' + type(error).__name__ + '); no automatic reboot')

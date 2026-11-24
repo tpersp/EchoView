@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 from types import SimpleNamespace
 import pytest
-from echoview.watchdog_recovery import Recovery,StateStore,Backend,discover_mount,GRACE,RETRY,COOLDOWN
+from echoview.watchdog_recovery import Recovery,StateStore,Backend,discover_mount,BOOT_GRACE,HEALTHY_CONFIRM
 
 MOUNT={'path':'/mnt/media','host':'nas','port':445}
 
@@ -14,6 +14,7 @@ class Fake:
     def remount(self,mount):self.events.append('remount');return False
     def reconnect(self):self.events.append('reconnect');return True
     def reachable(self,targets):return self.online
+    def pause(self,seconds):pass
     def reboot(self):self.events.append('reboot')
     def log(self,message):pass
 
@@ -22,10 +23,12 @@ def runner(state,backend,now,saves=None,uptime=10000):
     return Recovery(state,backend,lambda data:(saves.append(dict(data)) if saves is not None else None),now,uptime)
 
 
-def test_offline_nas_never_probes_remounts_or_reboots():
+def test_offline_nas_gets_one_prompt_reboot_then_no_reboot_loop():
     state={};backend=Fake();backend.up=False
-    for tick in range(100):runner(state,backend,10000+tick*300).storage(MOUNT)
-    assert backend.events==[] and 'storage_since' not in state
+    runner(state,backend,10000).storage(MOUNT)
+    assert backend.events==['reboot']
+    for tick in range(1,100):runner(state,backend,10000+tick*300).storage(MOUNT)
+    assert backend.events==['reboot']
 
 
 def test_healthy_mount_does_not_change_playback_and_clears_failure_state():
@@ -34,36 +37,45 @@ def test_healthy_mount_does_not_change_playback_and_clears_failure_state():
     assert backend.events==['probe'] and 'storage_since' not in state and 'mount_attempts' not in state
 
 
-def test_share_grace_then_three_spaced_mount_attempts_then_guarded_reboot():
+def test_confirmed_share_failure_attempts_mount_and_reboots_in_same_run():
     state={};backend=Fake();saves=[]
     runner(state,backend,10000,saves).storage(MOUNT)
-    runner(state,backend,10000+GRACE-1,saves).storage(MOUNT)
-    assert 'remount' not in backend.events
-    for tick in range(3):runner(state,backend,10000+GRACE+tick*RETRY,saves).storage(MOUNT)
-    assert backend.events.count('remount')==3 and 'reboot' not in backend.events
-    when=10000+GRACE+3*RETRY
-    runner(state,backend,when,saves).storage(MOUNT)
-    assert backend.events.count('reboot')==1 and saves[-1]['reboot_at']==when
-    runner(state,backend,when+300,saves).storage(MOUNT)
+    assert backend.events==['probe','probe','remount','probe','reboot']
+    assert saves[-1]['reboot_at']==10000
+    runner(state,backend,10300,saves).storage(MOUNT)
     assert backend.events.count('reboot')==1
 
 
-def test_mount_success_recovers_on_next_run_without_reboot():
-    state={'mount':'/mnt/media','storage_since':1};backend=Fake()
-    runner(state,backend,10000).storage(MOUNT);backend.healthy=True
-    runner(state,backend,10300).storage(MOUNT)
-    assert backend.events.count('remount')==1 and 'reboot' not in backend.events
+def test_transient_failure_recovers_on_confirmation_without_remount_or_reboot():
+    state={};backend=Fake()
+    def pause(seconds):backend.healthy=True
+    backend.pause=pause
+    runner(state,backend,10000).storage(MOUNT)
+    assert backend.events==['probe','probe'] and 'storage_since' not in state
 
 
-def test_reboot_cooldown_persists_across_store_reload_and_clock_rollback(tmp_path):
+def test_quick_mount_recovery_is_verified_immediately_without_reboot():
+    state={};backend=Fake()
+    def remount(mount):backend.events.append('remount');backend.healthy=True;return True
+    backend.remount=remount
+    runner(state,backend,10000).storage(MOUNT)
+    assert backend.events==['probe','probe','remount','probe']
+    assert 'storage_since' not in state
+
+
+def test_guard_persists_but_rearms_for_a_new_outage_without_hours_of_wait(tmp_path):
     store=StateStore(tmp_path);backend=Fake();state={}
-    runner(state,backend,10000,[],uptime=100).reboot('test');assert 'reboot' not in backend.events
-    recovery=Recovery(state,backend,store.save,10000,10000);recovery.reboot('test')
-    for now in (9000,10001,10000+COOLDOWN-1):
-        Recovery(store.load(),backend,store.save,now,10000).reboot('test')
+    runner(state,backend,10000,[],uptime=BOOT_GRACE-1).reboot('test');assert 'reboot' not in backend.events
+    Recovery(state,backend,store.save,10000,10000).reboot('test')
+    state=store.load()
+    Recovery(state,backend,store.save,10001,10000).mark_healthy();store.save(state)
+    Recovery(state,backend,store.save,10002,10000).reboot('test')
     assert backend.events.count('reboot')==1
-    recovered=store.load();recovered.pop('network_rebooted')  # A new, recovered-then-failed episode.
-    Recovery(recovered,backend,store.save,10000+COOLDOWN,10000).reboot('test')
+    Recovery(state,backend,store.save,10001+HEALTHY_CONFIRM,10000).mark_healthy();store.save(state)
+    assert not state.get('network_rebooted')
+    Recovery(store.load(),backend,store.save,9000,10000).reboot('backwards clock')
+    assert backend.events.count('reboot')==1
+    Recovery(store.load(),backend,store.save,10002+HEALTHY_CONFIRM,10000).reboot('new outage')
     assert backend.events.count('reboot')==2
     assert len(store.path.read_bytes())<4096 and not list(store.directory.glob('.state-*'))
 
@@ -76,10 +88,12 @@ def test_network_reconnect_is_attempted_before_reboot_and_rate_limited():
     assert backend.events==['reconnect','reboot']
 
 
-def test_recovered_network_avoids_reboot():
+def test_recovered_network_and_share_avoid_reboot():
     state={};backend=Fake();backend.up=False;backend.online=True
+    def reconnect():backend.events.append('reconnect');backend.up=True;backend.healthy=True;return True
+    backend.reconnect=reconnect
     runner(state,backend,10000).network(MOUNT,['nas','gateway'])
-    assert backend.events==['reconnect']
+    assert backend.events==['reconnect','probe']
 
 
 def test_nas_service_reachable_despite_failed_pings_prevents_network_reset():
@@ -125,10 +139,10 @@ def test_corrupt_state_rejected_instead_of_resetting_reboot_limit(tmp_path):
         with pytest.raises(ValueError):store.load()
 
 
-def test_no_reboot_loop_even_after_cooldown_without_a_healthy_episode():
+def test_no_reboot_loop_on_persistent_outage_even_days_later():
     state={};backend=Fake();backend.up=False
     runner(state,backend,10000).network(MOUNT,['nas','gateway'])
-    for index in range(1,10):runner(state,backend,10000+index*COOLDOWN).network(MOUNT,['nas','gateway'])
+    for index in range(1,10):runner(state,backend,10000+index*86400).network(MOUNT,['nas','gateway'])
     assert backend.events.count('reboot')==1
 
 
@@ -138,7 +152,8 @@ def test_storage_reboot_latch_survives_offline_nas_and_clears_only_when_share_wo
     backend.up=True
     runner(state,backend,11000).storage(MOUNT);assert state['storage_rebooted']
     backend.healthy=True
-    runner(state,backend,12000).storage(MOUNT);assert 'storage_rebooted' not in state
+    runner(state,backend,12000).storage(MOUNT);assert state['storage_rebooted']
+    runner(state,backend,12000+HEALTHY_CONFIRM).storage(MOUNT);assert 'storage_rebooted' not in state
 
 
 def test_full_cli_reads_app_env_without_external_dependencies(tmp_path,monkeypatch):
@@ -176,3 +191,15 @@ def test_full_cli_corrupt_state_fails_closed_with_error_status(tmp_path,monkeypa
     backend=Fake();monkeypatch.setattr(module,'Backend',lambda home:backend)
     monkeypatch.setattr(sys,'argv',['watchdog_recovery.py','storage','--home',str(tmp_path)])
     assert module.main()==1 and backend.events==[]
+
+
+def test_gateway_recovery_alone_does_not_leave_nas_outage_unhandled():
+    state={};backend=Fake();backend.up=False;backend.online=True
+    runner(state,backend,10000).network(MOUNT,['nas','gateway'])
+    assert backend.events==['reconnect','reboot'] and state['storage_rebooted']
+
+
+def test_one_outage_cannot_reboot_once_for_storage_and_again_for_network():
+    state={'storage_rebooted':True};backend=Fake();backend.up=False
+    runner(state,backend,10000).network(MOUNT,['nas','gateway'])
+    assert backend.events==['reconnect']
