@@ -102,6 +102,7 @@ run_recovery() {
   helper="$app_dir/echoview/watchdog_recovery.py"
   if [ ! -f "$helper" ] || ! WATCHDOG_USER="$WATCHDOG_USER" WATCHDOG_LOG="$WATCHDOG_LOG" "$python" "$helper" "$mode" --home "$app_dir" --target "$target" --fallback "$fallback"; then
     log "ERROR recovery helper unavailable; skipping automatic recovery"
+    return 1
   fi
 }
 

@@ -139,3 +139,40 @@ def test_storage_reboot_latch_survives_offline_nas_and_clears_only_when_share_wo
     runner(state,backend,11000).storage(MOUNT);assert state['storage_rebooted']
     backend.healthy=True
     runner(state,backend,12000).storage(MOUNT);assert 'storage_rebooted' not in state
+
+
+def test_full_cli_reads_app_env_without_external_dependencies(tmp_path,monkeypatch):
+    from echoview import watchdog_recovery as module
+    import sys
+    (tmp_path/'.env').write_text('IMAGE_DIR="/mnt/media"'+chr(10))
+    monkeypatch.delenv('IMAGE_DIR',raising=False)
+    original=Path.read_text
+    def read(path,*args,**kwargs):
+        if str(path)=='/etc/fstab':return '//nas/share /mnt/media cifs defaults 0 0'+chr(10)
+        return original(path,*args,**kwargs)
+    monkeypatch.setattr(Path,'read_text',read)
+    backend=Fake();backend.healthy=True
+    monkeypatch.setattr(module,'Backend',lambda home:backend)
+    monkeypatch.setattr(sys,'argv',['watchdog_recovery.py','storage','--home',str(tmp_path)])
+    assert module.main()==0
+    state=json.loads((tmp_path/'.network-watchdog-recovery/state.json').read_text())
+    assert state['mount']=='/mnt/media' and state['boot']
+    assert backend.events==['probe'] and 'storage_since' not in state
+
+
+def test_env_media_root_uses_same_simple_quoting_and_environment_priority(tmp_path,monkeypatch):
+    from echoview.watchdog_recovery import media_root
+    (tmp_path/'.env').write_text('# ignored'+chr(10)+"IMAGE_DIR='/mnt/media with spaces'"+chr(10))
+    monkeypatch.delenv('IMAGE_DIR',raising=False)
+    assert media_root(tmp_path)=='/mnt/media with spaces'
+    monkeypatch.setenv('IMAGE_DIR','/custom')
+    assert media_root(tmp_path)=='/custom'
+
+
+def test_full_cli_corrupt_state_fails_closed_with_error_status(tmp_path,monkeypatch):
+    from echoview import watchdog_recovery as module
+    import sys
+    store=StateStore(tmp_path);store.path.write_text('corrupt')
+    backend=Fake();monkeypatch.setattr(module,'Backend',lambda home:backend)
+    monkeypatch.setattr(sys,'argv',['watchdog_recovery.py','storage','--home',str(tmp_path)])
+    assert module.main()==1 and backend.events==[]

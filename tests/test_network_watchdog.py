@@ -14,6 +14,7 @@ source "$1"
 ensure_log_file() { :; }
 log() { echo "LOG $1"; }
 reboot_system() { echo REBOOT; }
+run_recovery() { :; }
 a=0; b=0
 read -ra primary_results <<< "$PRIMARY_RESULTS"
 read -ra fallback_results <<< "$FALLBACK_RESULTS"
@@ -105,3 +106,16 @@ systemctl() { :; }
     assert 'WATCHDOG_TARGET=nas\n' in conf
     assert f'WATCHDOG_FALLBACK_TARGET={fallback}\n' in conf
     assert (tmp_path/'app/bin/network-watchdog.sh').read_text()==(ROOT/'network-watchdog.sh').read_text()
+
+
+def test_recovery_entrypoint_forwards_user_and_log_and_reports_failure(tmp_path):
+    import sys,json
+    app=tmp_path/'app';(app/'bin').mkdir(parents=True);(app/'echoview').mkdir()
+    functions=app/'bin/watchdog.sh'
+    functions.write_text((ROOT/'network-watchdog.sh').read_text().rsplit('main "$@"',1)[0])
+    (app/'echoview/watchdog_recovery.py').write_text('import os,json,sys;print(json.dumps([os.getenv("WATCHDOG_USER"),os.getenv("WATCHDOG_LOG"),sys.argv[1]]));sys.exit(1)')
+    harness='source "$1"; target=nas; fallback=gateway; WATCHDOG_USER=fixture; WATCHDOG_LOG=/local/test.log; log() { echo ERROR; }; run_recovery storage'
+    env=dict(os.environ,WATCHDOG_CONF=str(tmp_path/'absent'),WATCHDOG_PYTHON=sys.executable)
+    result=subprocess.run(['bash','-c',harness,'test',str(functions)],env=env,capture_output=True,text=True)
+    assert result.returncode==1
+    assert json.loads(result.stdout.splitlines()[0])==['fixture','/local/test.log','storage']

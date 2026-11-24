@@ -20,6 +20,16 @@ with tempfile.TemporaryDirectory(prefix='ev-recovery-probe-') as directory:
         started=time.monotonic()
         assert backend.probe(mount),'Declared network share must pass its read-only root-directory probe'
         print('Native share probe passed in',round(time.monotonic()-started,2),'seconds; no media files opened.',flush=True)
+    if media:
+        from echoview import watchdog_recovery
+        (Path(directory)/'.env').write_text('IMAGE_DIR='+media+chr(10))
+        env=dict(os.environ);env.pop('IMAGE_DIR',None)
+        subprocess.run([sys.executable,str(Path(watchdog_recovery.__file__).absolute()),
+                        'storage','--home',directory],env=env,check=True,timeout=20)
+        import json
+        state=json.loads((Path(directory)/'.network-watchdog-recovery/state.json').read_text())
+        assert state['mount']==mount['path'] and 'storage_since' not in state
+        print('Native full recovery CLI: environment discovery, isolated probe and state publication passed.',flush=True)
     subprocess.run(['systemd-run','--quiet','--collect','--unit='+PROBE_UNIT,
                     '--property=RuntimeMaxSec=2s','/bin/sleep','2'],check=True,timeout=5)
     started=time.monotonic()

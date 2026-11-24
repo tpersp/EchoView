@@ -43,6 +43,23 @@ def discover_mount(media_root, fstab):
     return max(candidates, key=lambda item:len(item['path']), default=None)
 
 
+def media_root(home):
+    # Match config.py's small .env loader, without importing the Qt/web package
+    # or requiring an optional dotenv dependency in the watchdog interpreter.
+    if os.environ.get('IMAGE_DIR'):return os.environ['IMAGE_DIR']
+    try:
+        lines = (Path(home) / '.env').read_text().splitlines()
+    except FileNotFoundError:lines = []
+    for line in lines:
+        key, separator, value = line.strip().partition('=')
+        if separator and key.strip() == 'IMAGE_DIR':
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in (chr(34), chr(39)):
+                value = value[1:-1]
+            return value
+    return str(Path(home) / 'Uploads')
+
+
 def directory_probe(path):
     # Called only in an isolated, fixed-name transient service. An unkillable
     # filesystem task cannot trap the watchdog or create unlimited probe tasks.
@@ -219,8 +236,7 @@ def main():
         except OSError:return 1
     backend = Backend(args.home)
     try:
-        from dotenv import dotenv_values
-        media = os.environ.get('IMAGE_DIR') or dotenv_values(Path(args.home) / '.env').get('IMAGE_DIR') or str(Path(args.home) / 'Uploads')
+        media = media_root(args.home)
         mount = discover_mount(media, Path('/etc/fstab').read_text())
         store = StateStore(args.home)
         with (store.directory / 'state.lock').open('a') as lock:
@@ -240,6 +256,7 @@ def main():
             if state != before:store.save(state)
     except Exception as error:
         backend.log('Recovery unavailable (' + type(error).__name__ + '); no automatic reboot')
+        return 1
     return 0
 
 
